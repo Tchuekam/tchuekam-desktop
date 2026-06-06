@@ -144,7 +144,7 @@ async function checkRuntime(ctx: OnboardingContext): Promise<RuntimeReadinessRes
 }
 
 function notifyReady(provider: string) {
-  notify({ kind: 'success', title: 'Hermes is ready', message: `${provider} connected.` })
+  notify({ kind: 'success', title: 'TchuekaM is ready', message: `${provider} connected.` })
 }
 
 // Human-friendly labels for tools auto-routed through the Nous Tool Gateway,
@@ -308,8 +308,8 @@ function providerResolutionFailure(reason: null | string) {
   const detail = reason?.trim()
 
   return detail
-    ? `Connected, but Hermes still cannot resolve a usable provider. ${detail}`
-    : 'Connected, but Hermes still cannot resolve a usable provider.'
+    ? `Connected, but TchuekaM still cannot resolve a usable provider. ${detail}`
+    : 'Connected, but TchuekaM still cannot resolve a usable provider.'
 }
 
 async function refreshProviders() {
@@ -604,7 +604,7 @@ export async function recheckExternalSignin(ctx: OnboardingContext) {
       provider,
       message:
         reason?.trim() ||
-        `Hermes still cannot reach ${provider.name}. Run \`${provider.cli_command}\` in a terminal first.`
+        `TchuekaM still cannot reach ${provider.name}. Run \`${provider.cli_command}\` in a terminal first.`
     })
   )
 }
@@ -650,7 +650,7 @@ export async function saveOnboardingApiKey(envKey: string, value: string, label:
 
       return {
         ok: false,
-        message: failureDetail || `Saved, but Hermes still cannot reach ${label}. Double-check the value.`
+        message: failureDetail || `Saved, but TchuekaM still cannot reach ${label}. Double-check the value.`
       }
     }
 

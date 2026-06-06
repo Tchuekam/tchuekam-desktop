@@ -201,7 +201,7 @@ function IdleView({
 
         <DialogTitle className="text-center text-xl">New update available</DialogTitle>
         <DialogDescription className="text-center text-sm">
-          A new version of Hermes is ready to install.
+          A new version of TchuekaM is ready to install.
         </DialogDescription>
       </div>
 

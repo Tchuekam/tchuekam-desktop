@@ -149,15 +149,15 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   model_context_length: "Leave at 0 to use the selected model's detected context window.",
   fallback_providers: 'Backup provider:model entries to try if the default model fails.',
   'display.personality': 'Default assistant style for new sessions.',
-  timezone: 'Used when Hermes needs local time context. Blank uses the system timezone.',
+  timezone: 'Used when TchuekaM needs local time context. Blank uses the system timezone.',
   'display.show_reasoning': 'Show reasoning sections when the backend provides them.',
   'agent.image_input_mode': 'Controls how image attachments are sent to the model.',
   'terminal.cwd': 'Default project folder for tool and terminal work.',
   'code_execution.mode': 'How strictly code execution is scoped to the current project.',
   'terminal.persistent_shell': 'Keep shell state between commands when the backend supports it.',
   'terminal.env_passthrough': 'Environment variables to pass into tool execution.',
-  file_read_max_chars: 'Maximum characters Hermes can read from one file request.',
-  'approvals.mode': 'How Hermes handles commands that need explicit approval.',
+  file_read_max_chars: 'Maximum characters TchuekaM can read from one file request.',
+  'approvals.mode': 'How TchuekaM handles commands that need explicit approval.',
   'approvals.timeout': 'How long approval prompts wait before timing out.',
   'security.redact_secrets': 'Hide detected secrets from model-visible content when possible.',
   'checkpoints.enabled': 'Create rollback snapshots before file edits.',
@@ -168,7 +168,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   'voice.auto_tts': 'Automatically speak assistant responses.',
   'stt.enabled': 'Enable local or provider-backed speech transcription.',
   'stt.elevenlabs.language_code': 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.',
-  'agent.max_turns': 'Upper bound for tool-calling turns before Hermes stops a run.'
+  'agent.max_turns': 'Upper bound for tool-calling turns before TchuekaM stops a run.'
 }
 
 // Curated desktop config surface: only fields a user might tune from the app.
@@ -300,7 +300,7 @@ export const MODE_OPTIONS: ModeOption[] = [
 ]
 
 export const SEARCH_PLACEHOLDER: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string> = {
-  about: 'About Hermes Desktop',
+  about: 'About TchuekaM',
   config: 'Search settings...',
   gateway: 'Gateway connection...',
   keys: 'Search API keys...',

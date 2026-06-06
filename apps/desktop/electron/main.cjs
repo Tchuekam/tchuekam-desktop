@@ -226,7 +226,7 @@ const BOOT_FAKE_STEP_MS = (() => {
   if (!Number.isFinite(raw) || raw <= 0) return 650
   return Math.max(120, raw)
 })()
-const APP_NAME = 'Hermes'
+const APP_NAME = 'TchuekaM'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 const WINDOW_BUTTON_POSITION = {
@@ -383,7 +383,7 @@ function previewFileMetadata(filePath, mimeType) {
 app.setName(APP_NAME)
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
-  copyright: 'Copyright © 2026 Nous Research'
+  copyright: 'Copyright © 2026 TchuekaM'
 })
 
 // Custom scheme for streaming local media (video/audio) into the renderer.
@@ -479,7 +479,7 @@ let desktopLogFlushPromise = Promise.resolve()
 let bootProgressState = {
   error: null,
   fakeMode: BOOT_FAKE_MODE,
-  message: 'Waiting to start Hermes backend',
+  message: 'Waiting to start TchuekaM backend',
   phase: 'idle',
   progress: 0,
   running: false,
@@ -1863,7 +1863,7 @@ function resolveHermesBackend(dashboardArgs) {
   //    is a recoverable state the GUI can drive through.
   return {
     kind: 'bootstrap-needed',
-    label: 'Hermes Agent not installed yet; bootstrap required',
+    label: 'TchuekaM not installed yet; bootstrap required',
     command: null,
     args: dashboardArgs,
     bootstrap: true,
@@ -1936,7 +1936,7 @@ async function ensureRuntime(backend) {
     bootstrapAbortController = null
 
     if (bootstrapResult.cancelled) {
-      const cancelledError = new Error('Hermes install was cancelled.')
+      const cancelledError = new Error('TchuekaM install was cancelled.')
       cancelledError.isBootstrapFailure = true
       cancelledError.bootstrapCancelled = true
       bootstrapFailure = cancelledError
@@ -2013,7 +2013,7 @@ async function ensureRuntime(backend) {
   backend.label = `Hermes at ${ACTIVE_HERMES_ROOT} (venv: ${VENV_ROOT})`
   updateBootProgress({
     phase: 'runtime.ready',
-    message: 'Hermes runtime is ready',
+    message: 'TchuekaM runtime is ready',
     progress: 82,
     running: true,
     error: null
@@ -3358,12 +3358,12 @@ async function startHermes() {
     })
 
     const baseUrl = `http://127.0.0.1:${port}`
-    await advanceBootProgress('backend.wait', 'Waiting for Hermes backend to become ready', 90)
+    await advanceBootProgress('backend.wait', 'Waiting for TchuekaM backend to become ready', 90)
     await Promise.race([waitForHermes(baseUrl, token), backendStartFailed])
     backendReady = true
     updateBootProgress({
       phase: 'backend.ready',
-      message: 'Hermes backend is ready. Finalizing desktop startup',
+      message: 'TchuekaM backend is ready. Finalizing desktop startup',
       progress: 94,
       running: true,
       error: null
@@ -3403,7 +3403,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 620,
-    title: 'Hermes',
+    title: 'TchuekaM',
     // Frameless title bar on every platform so the renderer can paint the
     // "hide sidebar" button (and other left-side titlebar tools) flush with
     // the top edge — matching the macOS layout where the traffic lights sit
@@ -3617,7 +3617,7 @@ ipcMain.handle('hermes:api', async (_event, request) => {
 ipcMain.handle('hermes:notify', (_event, payload) => {
   if (!Notification.isSupported()) return false
   new Notification({
-    title: payload?.title || 'Hermes',
+    title: payload?.title || 'TchuekaM',
     body: payload?.body || '',
     silent: Boolean(payload?.silent)
   }).show()
@@ -3882,7 +3882,7 @@ function terminalShellEnv() {
   env.COLORTERM = 'truecolor'
   env.LC_CTYPE = env.LC_CTYPE || 'UTF-8'
   env.TERM = 'xterm-256color'
-  env.TERM_PROGRAM = 'Hermes'
+  env.TERM_PROGRAM = 'TchuekaM'
   env.TERM_PROGRAM_VERSION = app.getVersion()
 
   return env

@@ -85,11 +85,11 @@ export function reportBackendContract(contract: number | undefined): void {
   }
 
   notify({
-    action: { label: 'Update Hermes', onClick: () => void applyUpdates() },
+    action: { label: 'Update TchuekaM', onClick: () => void applyUpdates() },
     durationMs: 0,
     id: SKEW_TOAST_ID,
     kind: 'warning',
-    message: 'Your Hermes backend is older than this desktop build and may not work correctly. Update to align them.',
+    message: 'Your TchuekaM backend is older than this desktop build and may not work correctly. Update to align them.',
     title: 'Backend out of date'
   })
 }
@@ -269,23 +269,8 @@ let lastFocusAt = 0
 
 /** Wire up background polling + progress streaming. Idempotent. */
 export function startUpdatePoller(): void {
-  if (pollerStarted || typeof window === 'undefined') {
-    return
-  }
-
-  const bridge = window.hermesDesktop?.updates
-
-  if (!bridge) {
-    return
-  }
-
-  pollerStarted = true
-  void checkUpdates()
-  void refreshDesktopVersion()
-  bridge.onProgress(ingestProgress)
-
-  window.addEventListener('focus', onFocus)
-  backgroundTimer = setInterval(() => void checkUpdates(), 30 * 60 * 1000)
+  // Disabled auto-updating to completely disconnect from upstream.
+  return
 }
 
 export function stopUpdatePoller(): void {

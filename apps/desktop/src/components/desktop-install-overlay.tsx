@@ -344,7 +344,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
         {/* Header -- always visible, never scrolls */}
         <div className="flex-shrink-0 p-8 pb-4">
           <h2 className="text-2xl font-semibold tracking-tight">
-            {failed ? 'Installation failed' : state.active ? 'Setting up Hermes Agent' : 'Finishing up'}
+            {failed ? 'Installation failed' : state.active ? 'Setting up TchuekaM' : 'Finishing up'}
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
             {failed

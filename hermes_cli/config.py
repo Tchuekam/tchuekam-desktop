@@ -1998,8 +1998,8 @@ DEFAULT_CONFIG = {
     # update model picker lists without shipping a hermes-agent release.
     # The default URL is served by the docs site GitHub Pages deploy.
     "model_catalog": {
-        "enabled": True,
-        "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
+        "enabled": False,
+        "url": "",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.

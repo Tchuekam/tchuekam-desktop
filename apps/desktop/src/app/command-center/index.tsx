@@ -655,7 +655,7 @@ export function CommandCenterView({
                           Restart messaging
                         </OverlayActionButton>
                         <OverlayActionButton className="h-7 px-2.5" onClick={() => void runSystemAction('update')}>
-                          Update Hermes
+                          Update TchuekaM
                         </OverlayActionButton>
                       </div>
                     </div>

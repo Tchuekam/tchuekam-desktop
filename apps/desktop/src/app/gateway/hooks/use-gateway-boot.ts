@@ -92,13 +92,13 @@ export function useGatewayBoot({
 
     const offExit = desktop.onBackendExit(() => {
       if ($desktopBoot.get().running || $desktopBoot.get().visible) {
-        failDesktopBoot('Hermes background process exited during startup.')
+        failDesktopBoot('TchuekaM background process exited during startup.')
       }
 
       notify({
         kind: 'error',
         title: 'Backend stopped',
-        message: 'Hermes background process exited.',
+        message: 'TchuekaM background process exited.',
         durationMs: 0
       })
     })
