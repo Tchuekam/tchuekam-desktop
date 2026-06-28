@@ -26,6 +26,7 @@ const { execFileSync, spawn } = require('node:child_process')
 const { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } = require('./bootstrap-platform.cjs')
 const { runBootstrap } = require('./bootstrap-runner.cjs')
 const { canImportHermesCli, verifyHermesCli } = require('./backend-probes.cjs')
+const { initAutoUpdater, shutdownAutoUpdater } = require('./auto-updater.cjs')
 const {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
@@ -4177,6 +4178,8 @@ app.whenReady().then(() => {
   configureSpellChecker()
   createWindow()
 
+  initAutoUpdater()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -4206,6 +4209,8 @@ function configureSpellChecker() {
 }
 
 app.on('before-quit', () => {
+  shutdownAutoUpdater()
+
   // Quitting mid-install should stop the installer, not orphan it.
   if (bootstrapAbortController) {
     try {
