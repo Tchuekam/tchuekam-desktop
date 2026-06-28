@@ -42,7 +42,7 @@ jobs:
           cache: npm
 
       - name: Install root dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build + publish installers
         working-directory: apps/desktop
