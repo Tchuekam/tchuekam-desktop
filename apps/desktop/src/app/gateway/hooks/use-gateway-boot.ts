@@ -125,7 +125,7 @@ export function useGatewayBoot({
 
         setDesktopBootStep({
           phase: 'renderer.config',
-          message: 'Loading Hermes settings',
+          message: 'Loading TchuekaM settings',
           progress: 97
         })
         await callbacksRef.current.refreshHermesConfig()

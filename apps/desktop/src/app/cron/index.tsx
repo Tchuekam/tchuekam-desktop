@@ -457,7 +457,7 @@ export function CronView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...pro
           actionLabel={totalCount === 0 ? 'Create first cron' : undefined}
           description={
             totalCount === 0
-              ? 'Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.'
+              ? 'Schedule a prompt to run on a cron expression. TchuekaM will run it and deliver results to the destination you pick.'
               : 'Try a broader search query.'
           }
           onAction={totalCount === 0 ? () => setEditor({ mode: 'create' }) : undefined}

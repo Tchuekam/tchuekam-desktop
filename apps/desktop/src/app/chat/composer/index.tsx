@@ -156,7 +156,7 @@ export function ChatBar({
   const busyAction = busy && hasComposerPayload ? 'queue' : 'stop'
   const showHelpHint = draft === '?'
 
-  const placeholder = disabled ? 'Starting Hermes...' : 'Send follow-up'
+  const placeholder = disabled ? 'Starting TchuekaM...' : 'Send follow-up'
 
   const focusInput = useCallback(() => {
     focusComposerInput(editorRef.current)
