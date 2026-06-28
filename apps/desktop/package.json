@@ -5,6 +5,7 @@
   "version": "0.15.2",
   "description": "TchueKAM Agent — native desktop AI assistant.",
   "author": "TchueKAM",
+  "homepage": "https://tchuekam.com",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
