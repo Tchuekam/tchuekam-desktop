@@ -82,14 +82,22 @@ test('detectRemoteDisplay honors the HERMES_DESKTOP_DISABLE_GPU override both wa
 
 test('packaged electron entrypoints do not require unpackaged npm modules', () => {
   const electronDir = __dirname
-  const entrypoints = ['main.cjs', 'preload.cjs', 'bootstrap-platform.cjs']
+  // auto-updater.cjs is included because it runs in the main process at startup
+  // (main.cjs requires it). It was omitted here originally, which is how the
+  // bare require('electron-updater') shipped unpackaged and crashed launch with
+  // "Cannot find module 'electron-updater'".
+  const entrypoints = ['main.cjs', 'preload.cjs', 'bootstrap-platform.cjs', 'auto-updater.cjs']
   // - electron: provided by the electron runtime, always resolvable in packaged builds.
   // - node-pty: hoisted by workspace dedup AND shipped via extraResources to
   //   resources/native-deps/node-pty (see scripts/stage-native-deps.cjs). main.cjs
   //   has a try/catch fallback at line ~38 that resolves the staged copy when the
   //   bare require fails in the packaged asar, so the bare require itself is by
   //   design rather than an oversight.
-  const allowedBareRequires = new Set(['electron', 'node-pty'])
+  // - electron-updater: same treatment — staged into
+  //   resources/native-deps/node_modules/electron-updater and require()'d with a
+  //   try/catch fallback in auto-updater.cjs (loadAutoUpdater). The runtime side
+  //   is additionally guarded by scripts/verify-runtime-deps.cjs at build time.
+  const allowedBareRequires = new Set(['electron', 'node-pty', 'electron-updater'])
   const requirePattern = /require\(['"]([^'"]+)['"]\)/g
 
   for (const entrypoint of entrypoints) {

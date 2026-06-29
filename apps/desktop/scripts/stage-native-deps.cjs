@@ -66,6 +66,26 @@ const NATIVE_DEPS = [
   }
 ]
 
+// Pure-JS main-process runtime dependencies. Unlike node-pty (a native dep
+// staged file-by-file), these are required by the Electron MAIN process at
+// runtime and pull in a transitive dependency tree of their own. Because
+// before-build.cjs returns false (electron-builder's node_modules collector
+// is disabled) and the `files:` allowlist omits node_modules, NOTHING from
+// node_modules reaches the asar. So any main-process dependency must be staged
+// here and require()'d back from process.resourcesPath at runtime.
+//
+// We stage each root into a flat `node_modules/` directory that mirrors npm's
+// hoisted layout, then resolve its full production dependency closure from the
+// workspace root and copy each package in. main.cjs / auto-updater.cjs fall
+// back to require()-ing from `<resources>/native-deps/node_modules/<name>`
+// when the normal (dev / hoisted) require fails.
+//
+// electron-updater is the concrete case that motivated this: it was added to
+// dependencies but never staged, so packaged builds crashed at startup with
+// "Cannot find module 'electron-updater'".
+const JS_DEP_ROOTS = ['electron-updater']
+const JS_DEPS_STAGE = path.join(STAGE_ROOT, 'node_modules')
+
 function rmrf(target) {
   fs.rmSync(target, { recursive: true, force: true })
 }
@@ -148,12 +168,101 @@ function stageOne(spec) {
   console.log(`[stage-native-deps] ${path.relative(APP_ROOT, spec.to)}: ${copied} files`)
 }
 
+// Resolve a package directory by walking the node_modules chain upward from
+// `fromDir`, mirroring Node's own resolution. Returns the absolute package
+// directory, or null if not found.
+function resolvePackageDir(name, fromDir) {
+  let dir = fromDir
+  // Guard against symlink/loop pathologies with a depth cap.
+  for (let i = 0; i < 64; i++) {
+    const candidate = path.join(dir, 'node_modules', name)
+    if (fs.existsSync(path.join(candidate, 'package.json'))) {
+      return candidate
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
+}
+
+// Copy a whole package directory into the staged flat node_modules, excluding
+// its own nested node_modules (transitive deps are resolved and staged
+// separately so the flat layout stays npm-hoist-compatible).
+function copyPackage(srcDir, destDir) {
+  ensureDir(destDir)
+  const stack = [srcDir]
+  while (stack.length) {
+    const current = stack.pop()
+    let entries
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue
+      const abs = path.join(current, entry.name)
+      const rel = path.relative(srcDir, abs)
+      const dest = path.join(destDir, rel)
+      if (entry.isDirectory()) {
+        stack.push(abs)
+      } else if (entry.isFile()) {
+        ensureDir(path.dirname(dest))
+        fs.copyFileSync(abs, dest)
+      }
+    }
+  }
+}
+
+// Stage a pure-JS dependency and its full production dependency closure into
+// JS_DEPS_STAGE (a flat node_modules). `staged` tracks names already copied so
+// shared transitive deps aren't duplicated and cycles terminate.
+function stageJsTree(name, fromDir, staged) {
+  if (staged.has(name)) return
+  const pkgDir = resolvePackageDir(name, fromDir)
+  if (!pkgDir) {
+    throw new Error(
+      `stage-native-deps: runtime dependency '${name}' not found under any ` +
+        `node_modules from ${fromDir}. Run \`npm install\` at the workspace root.`
+    )
+  }
+  staged.add(name)
+  copyPackage(pkgDir, path.join(JS_DEPS_STAGE, name))
+
+  let pkgJson
+  try {
+    pkgJson = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'))
+  } catch {
+    return
+  }
+  const deps = Object.keys(pkgJson.dependencies || {})
+  for (const dep of deps) {
+    // Resolve transitive deps starting from this package's own location so a
+    // nested (non-hoisted) version is preferred when present.
+    stageJsTree(dep, pkgDir, staged)
+  }
+}
+
+function stageJsRoots() {
+  if (JS_DEP_ROOTS.length === 0) return
+  const staged = new Set()
+  for (const root of JS_DEP_ROOTS) {
+    stageJsTree(root, APP_ROOT, staged)
+  }
+  console.log(
+    `[stage-native-deps] node_modules: ${staged.size} packages ` +
+      `(${[...JS_DEP_ROOTS].join(', ')} + transitive)`
+  )
+}
+
 function main() {
   rmrf(STAGE_ROOT)
   ensureDir(STAGE_ROOT)
   for (const spec of NATIVE_DEPS) {
     stageOne(spec)
   }
+  stageJsRoots()
 }
 
 main()

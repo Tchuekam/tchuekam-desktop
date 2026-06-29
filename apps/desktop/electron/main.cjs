@@ -26,7 +26,7 @@ const { execFileSync, spawn } = require('node:child_process')
 const { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } = require('./bootstrap-platform.cjs')
 const { runBootstrap } = require('./bootstrap-runner.cjs')
 const { canImportHermesCli, verifyHermesCli } = require('./backend-probes.cjs')
-const { initAutoUpdater, shutdownAutoUpdater } = require('./auto-updater.cjs')
+const { initAutoUpdater, shutdownAutoUpdater, getUpdaterStatus } = require('./auto-updater.cjs')
 const {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
@@ -4178,12 +4178,39 @@ app.whenReady().then(() => {
   configureSpellChecker()
   createWindow()
 
-  initAutoUpdater()
+  // Auto-update is optional and must never block startup. initAutoUpdater is
+  // already internally fail-safe; the extra try/catch here is defense in depth
+  // so even an unexpected throw can't take down the app on launch.
+  try {
+    initAutoUpdater()
+  } catch (err) {
+    rememberLog(`[startup] auto-updater init failed (continuing): ${err && err.message || err}`)
+  }
+
+  logStartupDiagnostics()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+// Emit a single startup diagnostics line to the desktop log (HERMES_HOME/logs/
+// desktop.log) so first-launch issues are debuggable without a console. Covers
+// electron/node/app versions, platform, packaged flag, and updater status.
+function logStartupDiagnostics() {
+  try {
+    let updaterStatus = 'unknown'
+    try { updaterStatus = getUpdaterStatus() } catch {}
+    rememberLog(
+      `[startup] TchuekaM v${app.getVersion()} | electron ${process.versions.electron} | ` +
+        `node ${process.versions.node} | ${process.platform}/${process.arch} | ` +
+        `packaged=${app.isPackaged} | updater=${updaterStatus}`
+    )
+  } catch (err) {
+    // Diagnostics must never affect startup.
+    try { rememberLog(`[startup] diagnostics failed: ${err && err.message || err}`) } catch {}
+  }
+}
 
 // Seed Chromium's spellchecker with the system locale (falling back to en-US).
 // On macOS Electron uses the native spellchecker which ignores this list, but
