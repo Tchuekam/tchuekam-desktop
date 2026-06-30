@@ -786,11 +786,18 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
       flushPendingTools(index)
     }
 
+    // Free-form `system` messages are instructions/personas (e.g. a Project
+    // Assistant seed) and shouldn't render as conversation. The one exception
+    // is the `slash:/…` status echo, which the thread renders as a centered
+    // command notice — keep those visible.
+    const isHiddenSystem = message.role === 'system' && !/^slash:\//.test(displayContent.trimStart())
+
     result.push({
       id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
       role: message.role,
       parts,
-      timestamp: message.timestamp
+      timestamp: message.timestamp,
+      ...(isHiddenSystem && { hidden: true })
     })
 
     activeAssistantIndex = message.role === 'assistant' ? result.length - 1 : null

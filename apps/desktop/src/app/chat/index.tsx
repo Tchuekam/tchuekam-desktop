@@ -20,8 +20,10 @@ import type { ChatMessage } from '@/lib/chat-messages'
 import { quickModelOptions, sessionTitle, toRuntimeMessage } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { cn } from '@/lib/utils'
+import { colorFor } from '@/store/assistants'
 import type { ComposerAttachment } from '@/store/composer'
 import { $pinnedSessionIds } from '@/store/layout'
+import { $activeAssistant, type ActiveAssistant, clearPendingSession, setActiveAssistant } from '@/store/pending-session'
 import {
   $activeSessionId,
   $awaitingResponse,
@@ -50,6 +52,7 @@ import { droppedFileInlineRef } from './composer/inline-refs'
 import type { ChatBarState } from './composer/types'
 import type { DroppedFile } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
+import { usePendingComposerPrefill } from './hooks/use-pending-composer-prefill'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
 import { lastVisibleMessageIsUser, threadLoadingState } from './thread-loading'
 
@@ -96,13 +99,14 @@ function ChatHeader({
 }: ChatHeaderProps) {
   const sessions = useStore($sessions)
   const pinnedSessionIds = useStore($pinnedSessionIds)
+  const activeAssistant = useStore($activeAssistant)
   const activeStoredSession = sessions.find(session => session.id === selectedSessionId) || null
   const title = activeStoredSession ? sessionTitle(activeStoredSession) : 'New session'
   const selectedIsPinned = selectedSessionId ? pinnedSessionIds.includes(selectedSessionId) : false
 
   return (
     <header className={cn(titlebarHeaderBaseClass, isRoutedSessionView && titlebarHeaderShadowClass)}>
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <SessionActionsMenu
           align="start"
           onDelete={selectedSessionId ? onDeleteSelectedSession : undefined}
@@ -121,8 +125,41 @@ function ChatHeader({
             <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-down" size="0.8125rem" />
           </Button>
         </SessionActionsMenu>
+        {activeAssistant && <AssistantBadge assistant={activeAssistant} />}
       </div>
     </header>
+  )
+}
+
+function AssistantBadge({ assistant }: { assistant: ActiveAssistant }) {
+  const color = colorFor(assistant.color)
+
+  return (
+    <div
+      className={cn(
+        'pointer-events-auto flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-[0.7rem] font-medium ring-1 ring-inset [-webkit-app-region:no-drag]',
+        color.bg,
+        color.ring,
+        color.text
+      )}
+      title={`Project Assistant: ${assistant.name}`}
+    >
+      <span aria-hidden className="text-[0.8125rem] leading-none">
+        {assistant.icon}
+      </span>
+      <span className="max-w-[10rem] truncate leading-none">{assistant.name}</span>
+      <button
+        aria-label="Detach assistant"
+        className="-mr-0.5 ml-0.5 flex items-center rounded-sm opacity-60 transition-opacity hover:opacity-100"
+        onClick={() => {
+          clearPendingSession()
+          setActiveAssistant(null)
+        }}
+        type="button"
+      >
+        <Codicon name="close" size="0.6875rem" />
+      </button>
+    </div>
   )
 }
 
@@ -166,6 +203,10 @@ export function ChatView({
   const selectedSessionId = useStore($selectedStoredSessionId)
   const runtimeMessageCacheRef = useRef(new WeakMap<ChatMessage, ThreadMessage>())
   const isRoutedSessionView = Boolean(routeSessionId(location.pathname))
+
+  // Handed-off starter prompts (Model Comparison, Image Studio) land in the
+  // composer once the fresh draft is ready.
+  usePendingComposerPrefill(freshDraftReady)
 
   const showIntro =
     freshDraftReady && !isRoutedSessionView && !selectedSessionId && !activeSessionId && messages.length === 0
@@ -230,6 +271,12 @@ export function ChatView({
     let headId: string | null = null
 
     for (const message of messages) {
+      // Hidden persona/instruction seeds never enter the runtime repository:
+      // keeping them out avoids an orphan root branch on the first user turn.
+      if (message.role === 'system' && message.hidden) {
+        continue
+      }
+
       let parentId = visibleParentId
 
       if (message.role === 'assistant' && message.branchGroupId) {

@@ -11,6 +11,7 @@ import { clearQueuedPrompts } from '@/store/composer-queue'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
+import { clearPendingSession, consumePendingSession, setActiveAssistant } from '@/store/pending-session'
 import {
   $currentCwd,
   $messages,
@@ -310,9 +311,22 @@ export function useSessionActions({
 
     creatingSessionRef.current = true
 
+    // One-shot handoff from Project Assistants / Model Comparison / Image
+    // Studio: seed a persona, pin a model, and record attribution for this
+    // brand-new session. Consumed exactly once so a later plain "new chat"
+    // can't inherit a stale persona.
+    const pending = consumePendingSession()
+
     try {
       const cwd = $currentCwd.get().trim() || getRememberedWorkspaceCwd()
-      const created = await requestGateway<SessionCreateResponse>('session.create', { cols: 96, ...(cwd && { cwd }) })
+      const seedMessages = pending?.systemPrompt?.trim()
+        ? [{ role: 'system', content: pending.systemPrompt.trim() }]
+        : undefined
+      const created = await requestGateway<SessionCreateResponse>('session.create', {
+        cols: 96,
+        ...(cwd && { cwd }),
+        ...(seedMessages && { messages: seedMessages })
+      })
       const stored = created.stored_session_id ?? null
 
       if (
@@ -348,6 +362,23 @@ export function useSessionActions({
         updateSessionState(created.session_id, state => ({ ...state, ...runtimeInfo }), stored)
       }
 
+      // Pin the requested model to this session before the first prompt is
+      // submitted (the caller awaits us, then calls prompt.submit). Optimistic
+      // UI first, then the session-scoped /model switch — best-effort so a
+      // misconfigured provider degrades to the default rather than blocking.
+      if (pending?.model && pending?.provider) {
+        setCurrentModel(pending.model)
+        setCurrentProvider(pending.provider)
+        await requestGateway('slash.exec', {
+          session_id: created.session_id,
+          command: `/model ${pending.model} --provider ${pending.provider}`
+        }).catch(() => undefined)
+      }
+
+      // Attribution: this session is "owned" by the assistant for its lifetime,
+      // shown as a chip in the chat header. Non-assistant handoffs clear it.
+      setActiveAssistant(pending?.assistant ?? null)
+
       return created.session_id
     } finally {
       window.setTimeout(() => {
@@ -368,6 +399,9 @@ export function useSessionActions({
   const selectSidebarItem = useCallback(
     (item: SidebarNavItem) => {
       if (item.action === 'new-session') {
+        // Explicit "new chat" is a clean slate — drop any assistant persona.
+        clearPendingSession()
+        setActiveAssistant(null)
         startFreshSessionDraft()
 
         return
@@ -398,6 +432,11 @@ export function useSessionActions({
     async (storedSessionId: string, replaceRoute = false) => {
       const requestId = resumeRequestRef.current + 1
       resumeRequestRef.current = requestId
+
+      // Resuming an existing conversation leaves any pending handoff / active
+      // assistant behind — the resumed session carries its own context.
+      clearPendingSession()
+      setActiveAssistant(null)
 
       const isCurrentResume = () =>
         resumeRequestRef.current === requestId && selectedStoredSessionIdRef.current === storedSessionId

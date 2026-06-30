@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { closeComparison, $comparisonRequest } from '@/store/model-comparison'
+import { queuePendingSession } from '@/store/pending-session'
 import { $currentModel, $currentProvider } from '@/store/session'
 
 import { NEW_CHAT_ROUTE } from '../routes'
@@ -38,18 +39,19 @@ export function ComparisonOverlay() {
   function handleRunComparison() {
     if (!selectedModel || !request) return
 
-    try {
-      window.sessionStorage.setItem(
-        'tchuekam.pending-comparison',
-        JSON.stringify({
-          prompt: `[Comparison mode — model: ${selectedModel.label}]\n\nPlease answer the following as if you were providing an alternative perspective:\n\n${request.messageText}`,
-          comparisonModel: selectedModel.model,
-          comparisonProvider: selectedModel.provider
-        })
-      )
-    } catch {
-      // Best-effort
-    }
+    // Hand the original prompt to a fresh session pinned to the chosen model.
+    // The composer prefill drops the text in; the model switch happens at
+    // session.create. We re-run the *original question* (recovered from the
+    // response) rather than the answer text, so the new model produces a
+    // genuine alternative rather than paraphrasing the first one.
+    const original = request.sourcePrompt?.trim() || request.messageText
+
+    queuePendingSession({
+      kind: 'comparison',
+      prompt: original,
+      model: selectedModel.model,
+      provider: selectedModel.provider
+    })
 
     closeComparison()
     navigate(NEW_CHAT_ROUTE)

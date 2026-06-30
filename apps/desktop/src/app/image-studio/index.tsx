@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { getSessionMessages, listSessions } from '@/hermes'
 import { cn } from '@/lib/utils'
 import { notifyError } from '@/store/notifications'
+import { queuePendingSession } from '@/store/pending-session'
 import type { SessionInfo, SessionMessage } from '@/types/hermes'
 
 import { collectArtifactsForSession } from '../artifacts'
@@ -120,12 +121,12 @@ export function ImageStudioView({ setStatusbarItemGroup: _unused, ...props }: Im
     const fullPrompt = buildFullPrompt()
     if (!fullPrompt.trim()) return
 
-    // Pre-fill the new session with an image generation request
-    try {
-      window.sessionStorage.setItem('tchuekam.pending-prompt', `Generate an image: ${fullPrompt}`)
-    } catch {
-      // Best-effort
-    }
+    // Hand off to a fresh chat: the agent's image_generate tool (FLUX) turns
+    // this into an actual image, which then surfaces back in this gallery.
+    queuePendingSession({
+      kind: 'image',
+      prompt: `Generate an image with the image_generate tool: ${fullPrompt}`
+    })
     navigate(NEW_CHAT_ROUTE)
   }
 

@@ -26,6 +26,7 @@ import {
   type AssistantConfig,
   updateAssistant
 } from '@/store/assistants'
+import { queuePendingSession, setActiveAssistant } from '@/store/pending-session'
 
 import { PageSearchShell } from '../page-search-shell'
 import { NEW_CHAT_ROUTE } from '../routes'
@@ -124,15 +125,26 @@ export function AssistantsView({ setStatusbarItemGroup: _unused, ...props }: Ass
 
   const handleStartChat = useCallback(
     (assistant: AssistantConfig) => {
-      // Store the assistant context so the chat session can pick it up
-      try {
-        window.sessionStorage.setItem(
-          'tchuekam.pending-assistant',
-          JSON.stringify({ systemPrompt: assistant.systemPrompt, name: assistant.name, model: assistant.model, provider: assistant.provider })
-        )
-      } catch {
-        // Best-effort
+      const attribution = {
+        id: assistant.id,
+        name: assistant.name,
+        icon: assistant.icon,
+        color: assistant.color
       }
+
+      // The persona + preferred model are applied when the first message
+      // creates the backend session (see createBackendSessionForSend).
+      queuePendingSession({
+        kind: 'assistant',
+        systemPrompt: assistant.systemPrompt,
+        ...(assistant.model && assistant.provider
+          ? { model: assistant.model, provider: assistant.provider }
+          : {}),
+        assistant: attribution
+      })
+      // Surface the persona chip on the intro screen straight away, before
+      // the session exists.
+      setActiveAssistant(attribution)
       navigate(NEW_CHAT_ROUTE)
     },
     [navigate]
