@@ -8,13 +8,17 @@ export const ARTIFACTS_ROUTE = '/artifacts'
 export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
+export const ASSISTANTS_ROUTE = '/assistants'
+export const IMAGE_STUDIO_ROUTE = '/image-studio'
 
 export type AppView =
   | 'agents'
   | 'artifacts'
+  | 'assistants'
   | 'chat'
   | 'command-center'
   | 'cron'
+  | 'image-studio'
   | 'messaging'
   | 'profiles'
   | 'settings'
@@ -23,8 +27,10 @@ export type AppView =
 export type AppRouteId =
   | 'agents'
   | 'artifacts'
+  | 'assistants'
   | 'command-center'
   | 'cron'
+  | 'image-studio'
   | 'messaging'
   | 'new'
   | 'profiles'
@@ -46,7 +52,9 @@ export const APP_ROUTES = [
   { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
-  { id: 'agents', path: AGENTS_ROUTE, view: 'agents' }
+  { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
+  { id: 'assistants', path: ASSISTANTS_ROUTE, view: 'assistants' },
+  { id: 'image-studio', path: IMAGE_STUDIO_ROUTE, view: 'image-studio' }
 ] as const satisfies readonly AppRoute[]
 
 const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route.path, route.view]))

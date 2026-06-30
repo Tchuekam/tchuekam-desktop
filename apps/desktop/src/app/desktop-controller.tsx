@@ -50,6 +50,7 @@ import {
 import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store/updates'
 
 import { ChatView } from './chat'
+import { ComparisonOverlay } from './chat/comparison-overlay'
 import { useComposerActions } from './chat/hooks/use-composer-actions'
 import {
   ChatPreviewRail,
@@ -88,8 +89,10 @@ import { UpdatesOverlay } from './updates-overlay'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
+const AssistantsView = lazy(async () => ({ default: (await import('./assistants')).AssistantsView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
+const ImageStudioView = lazy(async () => ({ default: (await import('./image-studio')).ImageStudioView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
@@ -543,6 +546,7 @@ export function DesktopController() {
 
   const overlays = (
     <>
+      <ComparisonOverlay />
       <DesktopInstallOverlay />
       {/* One PTY-backed terminal mounted forever; <TerminalSlot /> placeholders
           decide where it shows. Toggling fullscreen never rebuilds the shell. */}
@@ -698,6 +702,22 @@ export function DesktopController() {
               </Suspense>
             }
             path="profiles"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <AssistantsView setStatusbarItemGroup={setStatusbarItemGroup} />
+              </Suspense>
+            }
+            path="assistants"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <ImageStudioView setStatusbarItemGroup={setStatusbarItemGroup} />
+              </Suspense>
+            }
+            path="image-studio"
           />
           <Route element={null} path="settings" />
           <Route element={null} path="command-center" />

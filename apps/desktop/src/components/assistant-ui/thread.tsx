@@ -82,6 +82,7 @@ import { extractPreviewTargets } from '@/lib/preview-targets'
 import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
+import { openComparison } from '@/store/model-comparison'
 import { notifyError } from '@/store/notifications'
 import { $voicePlayback } from '@/store/voice-playback'
 
@@ -548,6 +549,12 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, messageText, on
             <DropdownMenuItem onSelect={() => onBranchInNewChat?.(messageId)}>
               <GitBranchIcon />
               Branch in new chat
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => openComparison({ messageId, messageText })}
+            >
+              <Codicon name="diff" size="0.875rem" />
+              Compare with model…
             </DropdownMenuItem>
             <ReadAloudItem messageId={messageId} text={messageText} />
           </DropdownMenuContent>

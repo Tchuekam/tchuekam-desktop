@@ -58,7 +58,7 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { type AppView, ARTIFACTS_ROUTE, ASSISTANTS_ROUTE, IMAGE_STUDIO_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -79,6 +79,18 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     label: 'New session',
     icon: props => <Codicon name="robot" {...props} />,
     action: 'new-session'
+  },
+  {
+    id: 'assistants',
+    label: 'Project Assistants',
+    icon: props => <Codicon name="account" {...props} />,
+    route: ASSISTANTS_ROUTE
+  },
+  {
+    id: 'image-studio',
+    label: 'Image Studio',
+    icon: props => <Codicon name="file-media" {...props} />,
+    route: IMAGE_STUDIO_ROUTE
   },
   {
     id: 'skills',
@@ -422,7 +434,9 @@ export function ChatSidebar({
                 const active =
                   (item.id === 'skills' && currentView === 'skills') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
-                  (item.id === 'artifacts' && currentView === 'artifacts')
+                  (item.id === 'artifacts' && currentView === 'artifacts') ||
+                  (item.id === 'assistants' && currentView === 'assistants') ||
+                  (item.id === 'image-studio' && currentView === 'image-studio')
 
                 return (
                   <SidebarMenuItem key={item.id}>
