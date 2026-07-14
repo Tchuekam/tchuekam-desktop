@@ -58,7 +58,14 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../../routes'
+import {
+  type AppView,
+  ARTIFACTS_ROUTE,
+  BUSINESS_ROUTE,
+  MARKETING_ROUTE,
+  MESSAGING_ROUTE,
+  SKILLS_ROUTE
+} from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -79,6 +86,18 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     label: 'New session',
     icon: props => <Codicon name="robot" {...props} />,
     action: 'new-session'
+  },
+  {
+    id: 'business',
+    label: 'Business Hub',
+    icon: props => <Codicon name="briefcase" {...props} />,
+    route: BUSINESS_ROUTE
+  },
+  {
+    id: 'marketing',
+    label: 'Marketing Studio',
+    icon: props => <Codicon name="wand" {...props} />,
+    route: MARKETING_ROUTE
   },
   {
     id: 'skills',
@@ -420,6 +439,8 @@ export function ChatSidebar({
                 const isInteractive = Boolean(item.action) || Boolean(item.route)
 
                 const active =
+                  (item.id === 'business' && currentView === 'business') ||
+                  (item.id === 'marketing' && currentView === 'marketing') ||
                   (item.id === 'skills' && currentView === 'skills') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
                   (item.id === 'artifacts' && currentView === 'artifacts')
