@@ -3305,7 +3305,9 @@ async function startHermes() {
         ...backend.env,
         HERMES_DASHBOARD_SESSION_TOKEN: token,
         HERMES_DASHBOARD_TUI: '1',
-        HERMES_WEB_DIST: webDist
+        HERMES_WEB_DIST: webDist,
+        PYTHONUNBUFFERED: '1',
+        PYTHONUTF8: '1'
       },
       shell: backend.shell,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -3318,12 +3320,18 @@ async function startHermes() {
     const backendStartFailed = new Promise((_resolve, reject) => {
       rejectBackendStart = reject
     })
+    backendStartFailed.catch(() => {}) // Prevent UnhandledPromiseRejection if it rejects before Promise.race
     hermesProcess.once('error', error => {
-      rememberLog(`Hermes backend failed to start: ${error.message}`)
+      const isEnoent = error.message.includes('ENOENT')
+      let msg = `Hermes backend failed to start: ${error.message}`
+      if (isEnoent) {
+        msg = `Hermes backend failed to launch. Reason: spawn ENOENT. Executable not found at: ${backend.command}. Current working directory: ${backend.cwd || process.cwd()}`
+      }
+      rememberLog(msg)
       updateBootProgress(
         {
-          error: error.message,
-          message: `Hermes backend failed to start: ${error.message}`,
+          error: msg,
+          message: msg,
           phase: 'backend.error',
           running: false
         },

@@ -8240,6 +8240,6 @@ def start_server(
     # (Fly.io) and need X-Forwarded-Proto to decide cookie Secure flags, so
     # we flip proxy_headers on for that mode.
     uvicorn.run(
-        app, host=host, port=port, log_level="warning",
+        app, host=host, port=port, log_level="info",
         proxy_headers=bool(app.state.auth_required),
     )
