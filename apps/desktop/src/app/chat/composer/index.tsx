@@ -156,7 +156,9 @@ export function ChatBar({
   const busyAction = busy && hasComposerPayload ? 'queue' : 'stop'
   const showHelpHint = draft === '?'
 
-  const placeholder = disabled ? 'Starting TchuekaM...' : 'Send follow-up'
+  // An empty session opens on this line, so it has to invite rather than
+  // assume a conversation is already underway.
+  const placeholder = disabled ? 'Starting TchuekaM…' : 'Ask anything, or describe a task'
 
   const focusInput = useCallback(() => {
     focusComposerInput(editorRef.current)

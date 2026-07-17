@@ -53,9 +53,11 @@ export type CommandDispatchResponse =
   | SendCommandDispatchResponse
 
 export type SidebarNavId =
+  | 'agents'
   | 'artifacts'
   | 'business'
   | 'command-center'
+  | 'cron'
   | 'marketing'
   | 'messaging'
   | 'new-session'

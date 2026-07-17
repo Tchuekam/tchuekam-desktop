@@ -32,7 +32,9 @@ interface VirtualSessionListProps {
   workingSessionIdSet: Set<string>
 }
 
-const ROW_ESTIMATE_PX = 28
+// Must track the rendered row height (`min-h-8` in session-row.tsx) or the
+// virtualiser's scroll math drifts against the real list.
+const ROW_ESTIMATE_PX = 32
 const OVERSCAN_ROWS = 12
 
 export const VirtualSessionList: FC<VirtualSessionListProps> = ({

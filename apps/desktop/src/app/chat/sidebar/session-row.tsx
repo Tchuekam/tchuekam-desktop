@@ -73,7 +73,7 @@ export function SidebarSessionRow({
     >
       <div
         className={cn(
-          'group relative grid min-h-[1.625rem] cursor-pointer grid-cols-[minmax(0,1fr)_1.375rem] items-center rounded-md transition-colors duration-100 ease-out hover:bg-(--ui-row-hover-background) hover:transition-none',
+          'group relative grid min-h-8 cursor-pointer grid-cols-[minmax(0,1fr)_1.375rem] items-center rounded-md transition-colors duration-150 ease-out hover:bg-(--ui-row-hover-background)',
           isSelected && 'bg-(--ui-row-active-background)',
           isWorking && 'text-foreground',
           dragging && 'z-10 cursor-grabbing opacity-60 shadow-sm',
@@ -97,15 +97,9 @@ export function SidebarSessionRow({
               return
             }
 
-            if (event.metaKey || event.ctrlKey) {
-              event.preventDefault()
-              event.stopPropagation()
-              triggerHaptic('selection')
-              onArchive()
-
-              return
-            }
-
+            // No archive-on-modifier-click: it is undiscoverable, destructive,
+            // and one slipped Ctrl away from a resume. Archive lives in the row
+            // menu and the context menu, where it can be seen and undone.
             onResume()
           }}
           type="button"

@@ -50,8 +50,6 @@ export interface DesktopThemeColors {
 export interface DesktopThemeTypography {
   fontSans: string
   fontMono: string
-  /** Google/Bunny/self-hosted font stylesheet URL. */
-  fontUrl?: string
 }
 
 export interface DesktopTheme {

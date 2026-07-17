@@ -16,6 +16,16 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '@nanostores/react'
+import {
+  IconBolt,
+  IconBriefcase,
+  IconFiles,
+  IconMessageCircle,
+  IconPencilPlus,
+  IconRobot,
+  IconSparkles,
+  IconTools
+} from '@tabler/icons-react'
 import type * as React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -59,9 +69,11 @@ import {
 } from '@/store/session'
 
 import {
+  AGENTS_ROUTE,
   type AppView,
   ARTIFACTS_ROUTE,
   BUSINESS_ROUTE,
+  CRON_ROUTE,
   MARKETING_ROUTE,
   MESSAGING_ROUTE,
   SKILLS_ROUTE
@@ -80,33 +92,37 @@ const VIRTUALIZE_THRESHOLD = 25
 const NEW_SESSION_KBD: readonly string[] =
   typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac') ? ['⌘', 'N'] : ['Ctrl', 'N']
 
+// One icon family (Tabler, 16px / 1.5 stroke) across the nav. The previous
+// codicon set is VS Code's, and reads as developer tooling in a business OS.
+const navIcon =
+  (Icon: typeof IconRobot) =>
+  (props: { className?: string }) => <Icon stroke={1.5} {...props} />
+
 const SIDEBAR_NAV: SidebarNavItem[] = [
   {
     id: 'new-session',
     label: 'New session',
-    icon: props => <Codicon name="robot" {...props} />,
+    icon: navIcon(IconPencilPlus),
     action: 'new-session'
   },
   {
     id: 'business',
     label: 'Business Hub',
-    icon: props => <Codicon name="briefcase" {...props} />,
+    icon: navIcon(IconBriefcase),
     route: BUSINESS_ROUTE
   },
   {
     id: 'marketing',
     label: 'Marketing Studio',
-    icon: props => <Codicon name="wand" {...props} />,
+    icon: navIcon(IconSparkles),
     route: MARKETING_ROUTE
   },
-  {
-    id: 'skills',
-    label: 'Skills & Tools',
-    icon: props => <Codicon name="symbol-misc" {...props} />,
-    route: SKILLS_ROUTE
-  },
-  { id: 'messaging', label: 'Messaging', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
-  { id: 'artifacts', label: 'Artifacts', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE }
+  { id: 'messaging', label: 'Messaging', icon: navIcon(IconMessageCircle), route: MESSAGING_ROUTE },
+  { id: 'skills', label: 'Skills & Tools', icon: navIcon(IconTools), route: SKILLS_ROUTE },
+  // Agents and Automation are first-class modules, not statusbar chips.
+  { id: 'agents', label: 'AI Agents', icon: navIcon(IconRobot), route: AGENTS_ROUTE },
+  { id: 'cron', label: 'Automation', icon: navIcon(IconBolt), route: CRON_ROUTE },
+  { id: 'artifacts', label: 'Artifacts', icon: navIcon(IconFiles), route: ARTIFACTS_ROUTE }
 ]
 
 const WORKSPACE_PAGE = 5
@@ -434,27 +450,22 @@ export function ChatSidebar({
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
         <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
           <SidebarGroupContent>
-            <SidebarMenu className="gap-px">
+            <SidebarMenu className="gap-0.5">
               {SIDEBAR_NAV.map(item => {
                 const isInteractive = Boolean(item.action) || Boolean(item.route)
 
-                const active =
-                  (item.id === 'business' && currentView === 'business') ||
-                  (item.id === 'marketing' && currentView === 'marketing') ||
-                  (item.id === 'skills' && currentView === 'skills') ||
-                  (item.id === 'messaging' && currentView === 'messaging') ||
-                  (item.id === 'artifacts' && currentView === 'artifacts')
+                const active = item.id === currentView
 
                 return (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
                       aria-disabled={!isInteractive}
                       className={cn(
-                        'flex h-7 w-full cursor-pointer justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none',
-                        active &&
-                          'border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!',
-                        !isInteractive &&
-                          'cursor-default hover:border-transparent hover:bg-transparent hover:text-inherit'
+                        'flex h-8 w-full cursor-pointer justify-start gap-2.5 rounded-md px-2.5 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-150 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground',
+                        // Fill alone marks the active row — a border ring reads as
+                        // a control, not a selection.
+                        active && 'bg-(--ui-control-active-background) text-foreground shadow-none',
+                        !isInteractive && 'cursor-default hover:bg-transparent hover:text-inherit'
                       )}
                       onClick={() => onNavigate(item)}
                       tooltip={item.label}
@@ -630,8 +641,10 @@ function SidebarSectionHeader({ label, open, onToggle, action, meta }: SidebarSe
       >
         <SidebarPanelLabel>{label}</SidebarPanelLabel>
         {meta && <SidebarCount>{meta}</SidebarCount>}
+        {/* Visible at rest — a collapse control that only appears on hover is a
+            control most people never find. */}
         <DisclosureCaret
-          className="text-(--ui-text-tertiary) opacity-0 transition group-hover/section-label:opacity-100"
+          className="text-(--ui-text-quaternary) transition-colors duration-150 ease-out group-hover/section-label:text-(--ui-text-tertiary)"
           open={open}
         />
       </button>
