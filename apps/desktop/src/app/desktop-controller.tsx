@@ -89,7 +89,7 @@ import { UpdatesOverlay } from './updates-overlay'
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
 const BusinessView = lazy(async () => ({ default: (await import('./business')).BusinessView }))
-const MarketingView = lazy(async () => ({ default: (await import('./marketing')).MarketingView }))
+const ImageStudioView = lazy(async () => ({ default: (await import('./image-studio')).ImageStudioView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
@@ -693,10 +693,10 @@ export function DesktopController() {
           <Route
             element={
               <Suspense fallback={null}>
-                <MarketingView />
+                <ImageStudioView />
               </Suspense>
             }
-            path="marketing"
+            path="image-studio"
           />
           <Route
             element={

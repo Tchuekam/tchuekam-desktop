@@ -58,7 +58,7 @@ export type SidebarNavId =
   | 'business'
   | 'command-center'
   | 'cron'
-  | 'marketing'
+  | 'image-studio'
   | 'messaging'
   | 'new-session'
   | 'settings'

@@ -592,3 +592,114 @@ export function getElevenLabsVoices(): Promise<ElevenLabsVoicesResponse> {
     path: '/api/audio/elevenlabs/voices'
   })
 }
+
+export interface ImageGenStudioResponse {
+  success: boolean
+  images?: string[]
+  error?: string
+}
+
+export function generateStudioImages(payload: {
+  prompt: string
+  style: string
+  aspectRatio: string
+  quality: string
+  model: string
+  numImages: number
+}): Promise<ImageGenStudioResponse> {
+  return window.hermesDesktop.api<ImageGenStudioResponse>({
+    path: '/api/images/generate',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export function processImageEdit(payload: {
+  image: string
+  mask?: string
+  operation: string
+  prompt?: string
+  options?: Record<string, any>
+}): Promise<{ success: boolean; image?: string; error?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; image?: string; error?: string }>({
+    path: '/api/images/edit',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export function analyzeStudioImage(payload: {
+  image: string
+  mode: string
+  question?: string
+}): Promise<{ success: boolean; result?: string; colors?: string[]; error?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; result?: string; colors?: string[]; error?: string }>({
+    path: '/api/images/analyze',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export function performStudioOCR(payload: {
+  image: string
+}): Promise<{ success: boolean; text?: string; error?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; text?: string; error?: string }>({
+    path: '/api/images/ocr',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export interface LibraryItem {
+  id: string
+  name: string
+  url: string
+  tags: string[]
+  favorite: boolean
+  createdAt: number
+}
+
+export function getStudioLibrary(): Promise<{ success: boolean; items: LibraryItem[] }> {
+  return window.hermesDesktop.api<{ success: boolean; items: LibraryItem[] }>({
+    path: '/api/images/library',
+    method: 'GET'
+  })
+}
+
+export function saveToStudioLibrary(item: Omit<LibraryItem, 'createdAt'>): Promise<{ success: boolean; item?: LibraryItem }> {
+  return window.hermesDesktop.api<{ success: boolean; item?: LibraryItem }>({
+    path: '/api/images/library',
+    method: 'POST',
+    body: item
+  })
+}
+
+export function deleteFromStudioLibrary(id: string): Promise<{ success: boolean }> {
+  return window.hermesDesktop.api<{ success: boolean }>({
+    path: `/api/images/library/${encodeURIComponent(id)}`,
+    method: 'DELETE'
+  })
+}
+
+export interface SavedPrompt {
+  id: string
+  prompt: string
+  style: string
+  favorite: boolean
+  createdAt: number
+}
+
+export function getStudioPrompts(): Promise<{ success: boolean; prompts: SavedPrompt[] }> {
+  return window.hermesDesktop.api<{ success: boolean; prompts: SavedPrompt[] }>({
+    path: '/api/images/prompts',
+    method: 'GET'
+  })
+}
+
+export function saveStudioPrompt(prompt: Omit<SavedPrompt, 'createdAt'>): Promise<{ success: boolean; prompt?: SavedPrompt }> {
+  return window.hermesDesktop.api<{ success: boolean; prompt?: SavedPrompt }>({
+    path: '/api/images/prompts',
+    method: 'POST',
+    body: prompt
+  })
+}

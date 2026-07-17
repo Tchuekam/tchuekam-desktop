@@ -74,7 +74,7 @@ import {
   ARTIFACTS_ROUTE,
   BUSINESS_ROUTE,
   CRON_ROUTE,
-  MARKETING_ROUTE,
+  IMAGE_STUDIO_ROUTE,
   MESSAGING_ROUTE,
   SKILLS_ROUTE
 } from '../../routes'
@@ -112,10 +112,10 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     route: BUSINESS_ROUTE
   },
   {
-    id: 'marketing',
-    label: 'Marketing Studio',
+    id: 'image-studio',
+    label: 'Image Studio',
     icon: navIcon(IconSparkles),
-    route: MARKETING_ROUTE
+    route: IMAGE_STUDIO_ROUTE
   },
   { id: 'messaging', label: 'Messaging', icon: navIcon(IconMessageCircle), route: MESSAGING_ROUTE },
   { id: 'skills', label: 'Skills & Tools', icon: navIcon(IconTools), route: SKILLS_ROUTE },
