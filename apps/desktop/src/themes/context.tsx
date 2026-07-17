@@ -13,16 +13,17 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 
 import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query'
 
-import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
+import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, tchuekamTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 
-const SKIN_KEY = 'hermes-desktop-theme-v2'
-const MODE_KEY = 'hermes-desktop-mode-v1'
+// v3 — bumped for the neutral TchuekaM identity. Installs carrying a persisted
+// `nous` skin from v2 would otherwise keep painting the old blue-tinted theme,
+// so the bump lands everyone on the new default exactly once.
+const SKIN_KEY = 'tchuekam-desktop-skin-v3'
+const MODE_KEY = 'tchuekam-desktop-mode-v1'
 const RETIRED_SKINS = new Set(['nous-light', 'default', 'gold'])
 
 export type ThemeMode = 'light' | 'dark' | 'system'
-
-const INJECTED_FONT_URLS = new Set<string>()
 
 const resolveMode = (mode: ThemeMode, systemDark = matchesQuery('(prefers-color-scheme: dark)')): 'light' | 'dark' =>
   mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
@@ -108,7 +109,7 @@ function synthLightColors(seed: DesktopTheme): DesktopThemeColors {
 
 /** Returns the seed palette for a given skin + mode (no overrides applied). */
 export function getBaseColors(skinName: string, mode: 'light' | 'dark'): DesktopThemeColors {
-  const seed = BUILTIN_THEMES[skinName] ?? nousTheme
+  const seed = BUILTIN_THEMES[skinName] ?? tchuekamTheme
 
   if (mode === 'dark') {
     return seed.darkColors ?? seed.colors
@@ -118,7 +119,7 @@ export function getBaseColors(skinName: string, mode: 'light' | 'dark'): Desktop
 }
 
 function deriveTheme(skinName: string, mode: 'light' | 'dark'): DesktopTheme {
-  const seed = BUILTIN_THEMES[skinName] ?? nousTheme
+  const seed = BUILTIN_THEMES[skinName] ?? tchuekamTheme
 
   return {
     ...seed,
@@ -166,7 +167,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 
   const root = document.documentElement
   const c = theme.colors
-  const typo = { ...DEFAULT_TYPOGRAPHY, ...nousTheme.typography, ...theme.typography }
+  const typo = { ...DEFAULT_TYPOGRAPHY, ...theme.typography }
   const rendered = renderedModeFor(c, mode)
   const isDark = rendered === 'dark'
   const midground = c.midground ?? c.ring
@@ -220,15 +221,6 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
     background: c.background,
     foreground: c.foreground
   })
-
-  if (typo.fontUrl && !INJECTED_FONT_URLS.has(typo.fontUrl)) {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = typo.fontUrl
-    link.dataset.hermesThemeFont = 'true'
-    document.head.appendChild(link)
-    INJECTED_FONT_URLS.add(typo.fontUrl)
-  }
 }
 
 // Boot-time paint to avoid a flash before <ThemeProvider> mounts.
@@ -254,7 +246,7 @@ interface ThemeContextValue {
 const SKIN_LIST = BUILTIN_THEME_LIST.map(({ name, label, description }) => ({ name, label, description }))
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: nousTheme,
+  theme: tchuekamTheme,
   themeName: DEFAULT_SKIN_NAME,
   mode: 'light',
   resolvedMode: 'light',

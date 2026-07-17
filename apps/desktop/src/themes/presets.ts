@@ -20,6 +20,95 @@ const nousTint = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, #FFF
 const nousTintTransparent = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, transparent)`
 
 /**
+ * TchuekaM — the canonical identity. A strictly neutral grayscale ramp.
+ *
+ * `midground` is the tint driver: every glass fill, row hover, and stroke in
+ * styles.css is a `color-mix()` against `--ui-accent` (= `--theme-midground`).
+ * Keeping it neutral is what stops surfaces from carrying a hue, so the whole
+ * app reads as gray-on-white rather than tinted. Colour is spent only on the
+ * primary action and on destructive states — nowhere else.
+ */
+const NEUTRAL = {
+  0: '#FFFFFF',
+  50: '#FCFCFC',
+  100: '#F7F7F7',
+  150: '#F0F0F0',
+  200: '#E8E8E8',
+  300: '#D6D6D6',
+  400: '#A3A3A3',
+  500: '#8A8A8A',
+  600: '#6B6B6B',
+  700: '#4A4A4A',
+  800: '#2A2A2A',
+  900: '#171717',
+  950: '#0D0D0D'
+} as const
+
+export const tchuekamTheme: DesktopTheme = {
+  name: 'tchuekam',
+  label: 'TchuekaM',
+  description: 'Neutral grayscale — calm, minimal, enterprise',
+  colors: {
+    background: NEUTRAL[0],
+    foreground: NEUTRAL[950],
+    card: NEUTRAL[0],
+    cardForeground: NEUTRAL[950],
+    muted: NEUTRAL[100],
+    mutedForeground: NEUTRAL[500],
+    popover: NEUTRAL[0],
+    popoverForeground: NEUTRAL[950],
+    primary: NEUTRAL[950],
+    primaryForeground: NEUTRAL[0],
+    secondary: NEUTRAL[100],
+    secondaryForeground: NEUTRAL[800],
+    accent: NEUTRAL[150],
+    accentForeground: NEUTRAL[950],
+    border: NEUTRAL[200],
+    input: NEUTRAL[300],
+    ring: NEUTRAL[400],
+    midground: NEUTRAL[900],
+    midgroundForeground: NEUTRAL[0],
+    composerRing: NEUTRAL[400],
+    destructive: '#DC2626',
+    destructiveForeground: NEUTRAL[0],
+    sidebarBackground: NEUTRAL[50],
+    sidebarBorder: '#EBEBEB',
+    userBubble: NEUTRAL[100],
+    userBubbleBorder: NEUTRAL[200]
+  },
+  darkColors: {
+    background: '#0A0A0A',
+    foreground: '#EDEDED',
+    card: '#141414',
+    cardForeground: '#EDEDED',
+    muted: '#1F1F1F',
+    mutedForeground: NEUTRAL[500],
+    popover: '#161616',
+    popoverForeground: '#EDEDED',
+    primary: '#EDEDED',
+    primaryForeground: '#0A0A0A',
+    secondary: '#1F1F1F',
+    secondaryForeground: '#D4D4D4',
+    accent: '#1F1F1F',
+    accentForeground: '#EDEDED',
+    border: '#262626',
+    input: '#2E2E2E',
+    ring: NEUTRAL[600],
+    midground: '#EDEDED',
+    midgroundForeground: '#0A0A0A',
+    composerRing: NEUTRAL[600],
+    destructive: '#EF4444',
+    destructiveForeground: '#FFFFFF',
+    sidebarBackground: '#070707',
+    sidebarBorder: '#1F1F1F',
+    userBubble: '#161616',
+    userBubbleBorder: '#262626'
+  },
+  // No fontUrl: a desktop app should not block first paint on a webfont fetch.
+  typography: { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
+}
+
+/**
  * Nous — canonical Hermes desktop identity. The palette keeps the current
  * glass geometry neutral, then lets the old bb/gui blue and psyche cream
  * return as accent seeds.
@@ -84,8 +173,7 @@ export const nousTheme: DesktopTheme = {
   },
   typography: {
     fontSans: SYSTEM_SANS,
-    fontMono: `"Courier Prime", ${SYSTEM_MONO}`,
-    fontUrl: 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
+    fontMono: `"Courier Prime", ${SYSTEM_MONO}`
   }
 }
 
@@ -121,8 +209,7 @@ export const midnightTheme: DesktopTheme = {
     userBubbleBorder: '#242466'
   },
   typography: {
-    fontMono: `"JetBrains Mono", ${SYSTEM_MONO}`,
-    fontUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap'
+    fontMono: `"JetBrains Mono", ${SYSTEM_MONO}`
   }
 }
 
@@ -158,8 +245,7 @@ export const emberTheme: DesktopTheme = {
     userBubbleBorder: '#4a2010'
   },
   typography: {
-    fontMono: `"IBM Plex Mono", ${SYSTEM_MONO}`,
-    fontUrl: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap'
+    fontMono: `"IBM Plex Mono", ${SYSTEM_MONO}`
   }
 }
 
@@ -270,6 +356,7 @@ export const slateTheme: DesktopTheme = {
 }
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
+  tchuekam: tchuekamTheme,
   nous: nousTheme,
   midnight: midnightTheme,
   ember: emberTheme,
@@ -281,4 +368,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'nous'
+export const DEFAULT_SKIN_NAME = 'tchuekam'

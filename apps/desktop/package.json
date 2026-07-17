@@ -3,7 +3,7 @@
   "productName": "TchuekaM",
   "private": true,
   "version": "0.15.3",
-  "description": "TchueKAM Agent — native desktop AI assistant.",
+  "description": "TchuekaM — the AI operating system for business.",
   "author": "TchueKAM",
   "homepage": "https://tchuekam.com",
   "type": "module",
@@ -53,7 +53,6 @@
     "@hermes/shared": "file:../shared",
     "@icons-pack/react-simple-icons": "^13.13.0",
     "@nanostores/react": "^1.1.0",
-    "@nous-research/ui": "^0.13.0",
     "@radix-ui/react-slot": "^1.2.4",
     "@streamdown/code": "^1.1.1",
     "@supabase/supabase-js": "^2.107.0",
@@ -176,7 +175,7 @@
       "**/prebuilds/**"
     ],
     "mac": {
-      "category": "public.app-category.developer-tools",
+      "category": "public.app-category.productivity",
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
       "extendInfo": {
@@ -224,9 +223,9 @@
       "signAndEditExecutable": false
     },
     "linux": {
-      "category": "Development",
+      "category": "Office",
       "maintainer": "TchueKAM <support@tchuekam.com>",
-      "synopsis": "TchueKAM Agent — native desktop AI assistant.",
+      "synopsis": "TchuekaM — the AI operating system for business.",
       "target": [
         "AppImage",
         "deb",

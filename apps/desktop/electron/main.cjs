@@ -3424,7 +3424,9 @@ function createWindow() {
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
     vibrancy: IS_MAC ? 'sidebar' : undefined,
     icon,
-    backgroundColor: '#f7f7f7',
+    // Matches the light theme's canvas so launch doesn't flash a grey frame
+    // before the renderer paints.
+    backgroundColor: '#ffffff',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
