@@ -1,57 +1,51 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  IconSparkles,
-  IconEye,
-  IconFileText,
-  IconLayout,
-  IconDeviceLaptop,
-  IconFiles,
-  IconClipboardText,
-  IconPlus,
-  IconTrash,
-  IconCopy,
-  IconDownload,
+  IconAlertCircle,
   IconArrowBackUp,
   IconArrowForwardUp,
-  IconZoomIn,
-  IconZoomOut,
-  IconHandGrab,
   IconBrush,
-  IconEraser,
-  IconSquare,
-  IconFolder,
-  IconHeart,
-  IconTag,
-  IconRefresh,
   IconCheck,
-  IconAlertCircle,
-  IconPlayerPlay,
-  IconGridPattern,
+  IconCopy,
   IconCopyleft,
-  IconDotsVertical,
-  IconChevronDown,
-  IconTemplate
+  IconDeviceLaptop,
+  IconDownload,
+  IconEraser,
+  IconEye,
+  IconFiles,
+  IconFileText,
+  IconFolder,
+  IconGridPattern,
+  IconHandGrab,
+  IconHeart,
+  IconLayout,
+  IconPlayerPlay,
+  IconPlus,
+  IconRefresh,
+  IconSparkles,
+  IconSquare,
+  IconTemplate,
+  IconTrash,
+  IconZoomIn,
+  IconZoomOut
 } from '@tabler/icons-react'
-
-import {
-  generateStudioImages,
-  processImageEdit,
-  analyzeStudioImage,
-  performStudioOCR,
-  getStudioLibrary,
-  saveToStudioLibrary,
-  deleteFromStudioLibrary,
-  getStudioPrompts,
-  saveStudioPrompt,
-  type LibraryItem,
-  type SavedPrompt
-} from '../../hermes'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+
+import {
+  analyzeStudioImage,
+  generateStudioImages,
+  getStudioLibrary,
+  getStudioPrompts,
+  type LibraryItem,
+  performStudioOCR,
+  processImageEdit,
+  type SavedPrompt,
+  saveStudioPrompt,
+  saveToStudioLibrary
+} from '../../hermes'
 
 type StudioTab = 'canvas' | 'generate' | 'edit' | 'understand' | 'ocr' | 'design' | 'mockups' | 'library' | 'prompts'
 
@@ -80,10 +74,10 @@ export function ImageStudioView() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
   // Toast Helper
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
-  }
+  }, [])
 
   // --- 1. PROMPT MANAGEMENT STATE ---
   const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([])
@@ -92,6 +86,7 @@ export function ImageStudioView() {
   const [promptAspectRatio, setPromptAspectRatio] = useState('square')
   const [promptQuality, setPromptQuality] = useState('medium')
   const [promptModel, setPromptModel] = useState('gpt-image-2-medium')
+
   const [promptVars, setPromptVars] = useState<PromptVariable[]>([
     { name: 'subject', value: 'Ankara model' },
     { name: 'lighting', value: 'golden hour sunset' },
@@ -148,41 +143,36 @@ export function ImageStudioView() {
   const panStartRef = useRef({ x: 0, y: 0 })
   const isPanningRef = useRef(false)
 
-  // Fetch prompts and library items on mount
-  useEffect(() => {
-    loadLibraryData()
-    loadPromptData()
-    // Initialize base layer if empty
-    initBaseCanvas()
-  }, [])
-
-  const loadLibraryData = async () => {
+  const loadLibraryData = useCallback(async () => {
     try {
       const res = await getStudioLibrary()
+
       if (res.success) {
         setLibraryItems(res.items)
       }
     } catch {
       showToast('Failed to load asset library', 'error')
     }
-  }
+  }, [showToast])
 
-  const loadPromptData = async () => {
+  const loadPromptData = useCallback(async () => {
     try {
       const res = await getStudioPrompts()
+
       if (res.success) {
         setSavedPrompts(res.prompts)
       }
     } catch {
       showToast('Failed to load saved prompts', 'error')
     }
-  }
+  }, [showToast])
 
-  const initBaseCanvas = () => {
+  const initBaseCanvas = useCallback(() => {
     const baseCanvas = document.createElement('canvas')
     baseCanvas.width = 800
     baseCanvas.height = 600
     const ctx = baseCanvas.getContext('2d')
+
     if (ctx) {
       ctx.fillStyle = '#1e1e24'
       ctx.fillRect(0, 0, 800, 600)
@@ -201,25 +191,37 @@ export function ImageStudioView() {
 
     setLayers([baseLayer])
     setActiveLayerId('base-layer')
-  }
+  }, [])
+
+  // Fetch prompts and library items on mount
+  useEffect(() => {
+    loadLibraryData()
+    loadPromptData()
+    // Initialize base layer if empty
+    initBaseCanvas()
+  }, [loadLibraryData, loadPromptData, initBaseCanvas])
 
   // Draw layers onto the main visible canvas
   const drawMainCanvas = useCallback(() => {
     const mainCanvas = mainCanvasRef.current
-    if (!mainCanvas) return
+
+    if (!mainCanvas) {return}
     const ctx = mainCanvas.getContext('2d')
-    if (!ctx) return
+
+    if (!ctx) {return}
 
     ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height)
 
     // Render layers from bottom to top
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i]
+
       if (layer.visible && layer.opacity > 0) {
         ctx.globalAlpha = layer.opacity
         ctx.drawImage(layer.canvas, layer.x, layer.y)
       }
     }
+
     ctx.globalAlpha = 1.0
 
     // Render grid if enabled
@@ -227,12 +229,14 @@ export function ImageStudioView() {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)'
       ctx.lineWidth = 1
       const size = 40
+
       for (let x = 0; x < mainCanvas.width; x += size) {
         ctx.beginPath()
         ctx.moveTo(x, 0)
         ctx.lineTo(x, mainCanvas.height)
         ctx.stroke()
       }
+
       for (let y = 0; y < mainCanvas.height; y += size) {
         ctx.beginPath()
         ctx.moveTo(0, y)
@@ -259,6 +263,7 @@ export function ImageStudioView() {
         y: l.y
       }))
     )
+
     setUndoStack(prev => [...prev.slice(-30), state]) // limit history to 30 actions
     setRedoStack([])
   }
@@ -266,13 +271,16 @@ export function ImageStudioView() {
   // Draw operations on active layer canvas
   const drawOnActiveLayer = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const mainCanvas = mainCanvasRef.current
-    if (!mainCanvas || !activeLayerId || canvasTool === 'select' || canvasTool === 'pan') return
+
+    if (!mainCanvas || !activeLayerId || canvasTool === 'select' || canvasTool === 'pan') {return}
 
     const layer = layers.find(l => l.id === activeLayerId)
-    if (!layer || !layer.visible) return
+
+    if (!layer || !layer.visible) {return}
 
     const ctx = layer.canvas.getContext('2d')
-    if (!ctx) return
+
+    if (!ctx) {return}
 
     const rect = mainCanvas.getBoundingClientRect()
     // Calculate exact coordinates mapping to original canvas size accounting for zoom/pan
@@ -318,7 +326,7 @@ export function ImageStudioView() {
   }
 
   const handleUndo = () => {
-    if (undoStack.length === 0) return
+    if (undoStack.length === 0) {return}
     const nextUndo = [...undoStack]
     const stateStr = nextUndo.pop()!
     setUndoStack(nextUndo)
@@ -335,6 +343,7 @@ export function ImageStudioView() {
         y: l.y
       }))
     )
+
     setRedoStack(prev => [...prev, currentState])
 
     const parsed = JSON.parse(stateStr) as Array<{
@@ -355,10 +364,12 @@ export function ImageStudioView() {
       const ctx = canvas.getContext('2d')
       const img = new Image()
       img.src = layerData.data
+
       img.onload = () => {
         ctx?.drawImage(img, 0, 0)
         drawMainCanvas()
       }
+
       return {
         id: layerData.id,
         name: layerData.name,
@@ -375,7 +386,7 @@ export function ImageStudioView() {
   }
 
   const handleRedo = () => {
-    if (redoStack.length === 0) return
+    if (redoStack.length === 0) {return}
     const nextRedo = [...redoStack]
     const stateStr = nextRedo.pop()!
     setRedoStack(nextRedo)
@@ -392,6 +403,7 @@ export function ImageStudioView() {
         y: l.y
       }))
     )
+
     setUndoStack(prev => [...prev, currentState])
 
     const parsed = JSON.parse(stateStr) as Array<{
@@ -412,10 +424,12 @@ export function ImageStudioView() {
       const ctx = canvas.getContext('2d')
       const img = new Image()
       img.src = layerData.data
+
       img.onload = () => {
         ctx?.drawImage(img, 0, 0)
         drawMainCanvas()
       }
+
       return {
         id: layerData.id,
         name: layerData.name,
@@ -434,11 +448,14 @@ export function ImageStudioView() {
   // File Upload Helper to Canvas Layer
   const handleImageUploadToCanvas = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+
+    if (!file) {return}
 
     const reader = new FileReader()
+
     reader.onload = event => {
       const img = new Image()
+
       img.onload = () => {
         saveHistoryState()
         const newCanvas = document.createElement('canvas')
@@ -472,8 +489,10 @@ export function ImageStudioView() {
         setActiveLayerId(newLayer.id)
         showToast('Image added as a new layer')
       }
+
       img.src = event.target?.result as string
     }
+
     reader.readAsDataURL(file)
   }
 
@@ -494,6 +513,7 @@ export function ImageStudioView() {
       x: 0,
       y: 0
     }
+
     setLayers(prev => [newLayer, ...prev])
     setActiveLayerId(newLayer.id)
   }
@@ -501,10 +521,13 @@ export function ImageStudioView() {
   const handleDeleteLayer = (id: string) => {
     if (layers.length <= 1) {
       showToast('Cannot delete the last remaining layer', 'error')
+
       return
     }
+
     saveHistoryState()
     setLayers(prev => prev.filter(l => l.id !== id))
+
     if (activeLayerId === id) {
       setActiveLayerId(layers.find(l => l.id !== id)?.id || null)
     }
@@ -513,7 +536,8 @@ export function ImageStudioView() {
   const handleDuplicateLayer = (id: string) => {
     saveHistoryState()
     const original = layers.find(l => l.id === id)
-    if (!original) return
+
+    if (!original) {return}
 
     const newCanvas = document.createElement('canvas')
     newCanvas.width = 800
@@ -527,13 +551,15 @@ export function ImageStudioView() {
       name: `${original.name} Copy`,
       canvas: newCanvas
     }
+
     setLayers(prev => [copy, ...prev])
     setActiveLayerId(copy.id)
   }
 
   const handleReorderLayers = (index: number, direction: 'up' | 'down') => {
     const targetIdx = direction === 'up' ? index - 1 : index + 1
-    if (targetIdx < 0 || targetIdx >= layers.length) return
+
+    if (targetIdx < 0 || targetIdx >= layers.length) {return}
     saveHistoryState()
 
     const newLayers = [...layers]
@@ -548,6 +574,7 @@ export function ImageStudioView() {
         if (l.id === id) {
           return { ...l, opacity: val }
         }
+
         return l
       })
     )
@@ -559,6 +586,7 @@ export function ImageStudioView() {
         if (l.id === id) {
           return { ...l, visible: !l.visible }
         }
+
         return l
       })
     )
@@ -570,11 +598,13 @@ export function ImageStudioView() {
     tempCanvas.width = 800
     tempCanvas.height = 600
     const tempCtx = tempCanvas.getContext('2d')
-    if (!tempCtx) return
+
+    if (!tempCtx) {return}
 
     // Draw visible layers from bottom to top
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i]
+
       if (layer.visible && layer.opacity > 0) {
         tempCtx.globalAlpha = layer.opacity
         tempCtx.drawImage(layer.canvas, layer.x, layer.y)
@@ -597,17 +627,21 @@ export function ImageStudioView() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
-    if (!file) return
+
+    if (!file) {return}
 
     const reader = new FileReader()
+
     reader.onload = event => {
       const img = new Image()
+
       img.onload = () => {
         saveHistoryState()
         const newCanvas = document.createElement('canvas')
         newCanvas.width = 800
         newCanvas.height = 600
         const ctx = newCanvas.getContext('2d')
+
         if (ctx) {
           ctx.drawImage(img, 0, 0, 800, 600)
         }
@@ -623,12 +657,15 @@ export function ImageStudioView() {
           x: 0,
           y: 0
         }
+
         setLayers(prev => [newLayer, ...prev])
         setActiveLayerId(newLayer.id)
         showToast('Image imported as a new layer')
       }
+
       img.src = event.target?.result as string
     }
+
     reader.readAsDataURL(file)
   }
 
@@ -657,6 +694,7 @@ export function ImageStudioView() {
   const triggerGeneration = async () => {
     if (!promptText.trim()) {
       showToast('Please type a prompt first', 'error')
+
       return
     }
 
@@ -701,8 +739,10 @@ export function ImageStudioView() {
   // --- AI IMAGE EDITING ---
   const triggerAIEdit = async (operation: string) => {
     const activeLayer = layers.find(l => l.id === activeLayerId)
+
     if (!activeLayer) {
       showToast('Please select a layer to edit', 'error')
+
       return
     }
 
@@ -719,6 +759,7 @@ export function ImageStudioView() {
       if (res.success && res.image) {
         saveHistoryState()
         const img = new Image()
+
         img.onload = () => {
           const ctx = activeLayer.canvas.getContext('2d')
           ctx?.clearRect(0, 0, 800, 600)
@@ -726,6 +767,7 @@ export function ImageStudioView() {
           drawMainCanvas()
           showToast(`Successfully applied: ${operation}`)
         }
+
         img.src = res.image
       }
     } catch {
@@ -738,21 +780,26 @@ export function ImageStudioView() {
   // --- IMAGE UNDERSTANDING ---
   const handleUnderstandUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+
+    if (!file) {return}
     const reader = new FileReader()
+
     reader.onload = event => {
       setAnalysisImage(event.target?.result as string)
     }
+
     reader.readAsDataURL(file)
   }
 
   const triggerAnalysis = async () => {
     if (!analysisImage) {
       showToast('Please upload an image first', 'error')
+
       return
     }
 
     setIsAnalyzing(true)
+
     try {
       const res = await analyzeStudioImage({
         image: analysisImage,
@@ -762,7 +809,8 @@ export function ImageStudioView() {
 
       if (res.success) {
         setAnalysisResult(res.result || '')
-        if (res.colors) setAnalysisColors(res.colors)
+
+        if (res.colors) {setAnalysisColors(res.colors)}
         showToast('Image analyzed successfully!')
       }
     } catch {
@@ -775,21 +823,26 @@ export function ImageStudioView() {
   // --- OCR ---
   const handleOcrUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+
+    if (!file) {return}
     const reader = new FileReader()
+
     reader.onload = event => {
       setOcrImage(event.target?.result as string)
     }
+
     reader.readAsDataURL(file)
   }
 
   const triggerOCR = async () => {
     if (!ocrImage) {
       showToast('Please upload an image first', 'error')
+
       return
     }
 
     setIsOcring(true)
+
     try {
       const res = await performStudioOCR({
         image: ocrImage
@@ -807,7 +860,7 @@ export function ImageStudioView() {
   }
 
   const handleExportOCR = () => {
-    if (!ocrResult) return
+    if (!ocrResult) {return}
     let mime = 'text/plain'
     let ext = 'txt'
     let content = ocrResult
@@ -834,13 +887,16 @@ export function ImageStudioView() {
   // --- MOCKUP MAKER ---
   const triggerMockup = (product: string) => {
     const activeLayer = layers.find(l => l.id === activeLayerId)
+
     if (!activeLayer) {
       showToast('Select a layer to project onto mockup', 'error')
+
       return
     }
 
     // Compose onto mockup SVG dynamically
     const layerData = activeLayer.canvas.toDataURL()
+
     const mockupSvg = `
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
         <rect width="100%" height="100%" fill="#161824" />
@@ -850,6 +906,7 @@ export function ImageStudioView() {
         <text x="400" y="560" fill="white" font-family="system-ui, sans-serif" font-size="16" text-anchor="middle" font-weight="bold">${product.toUpperCase()} MOCKUP</text>
       </svg>
     `
+
     const b64 = base64Encode(mockupSvg)
     const mockupUrl = `data:image/svg+xml;base64,${b64}`
 
@@ -859,8 +916,10 @@ export function ImageStudioView() {
     newCanvas.height = 600
     const ctx = newCanvas.getContext('2d')
     const img = new Image()
+
     img.onload = () => {
       ctx?.drawImage(img, 0, 0)
+
       const mockLayer: CanvasLayer = {
         id: `mockup-${Date.now()}`,
         name: `${product} Mockup`,
@@ -872,11 +931,13 @@ export function ImageStudioView() {
         x: 0,
         y: 0
       }
+
       setLayers(prev => [mockLayer, ...prev])
       setActiveLayerId(mockLayer.id)
       drawMainCanvas()
       showToast('Mockup generated and loaded onto canvas')
     }
+
     img.src = mockupUrl
   }
 
@@ -887,7 +948,8 @@ export function ImageStudioView() {
     newCanvas.width = 800
     newCanvas.height = 600
     const ctx = newCanvas.getContext('2d')
-    if (!ctx) return
+
+    if (!ctx) {return}
 
     // Render design layout
     ctx.fillStyle = '#0f172a'
@@ -930,6 +992,7 @@ export function ImageStudioView() {
 
   const handleLibraryItemLoad = (item: LibraryItem) => {
     const img = new Image()
+
     img.onload = () => {
       saveHistoryState()
       const newCanvas = document.createElement('canvas')
@@ -949,11 +1012,13 @@ export function ImageStudioView() {
         x: 0,
         y: 0
       }
+
       setLayers(prev => [layer, ...prev])
       setActiveLayerId(layer.id)
       drawMainCanvas()
       showToast(`Loaded ${item.name} from library`)
     }
+
     img.src = item.url
   }
 
@@ -962,14 +1027,17 @@ export function ImageStudioView() {
     tempCanvas.width = 800
     tempCanvas.height = 600
     const tempCtx = tempCanvas.getContext('2d')
-    if (!tempCtx) return
+
+    if (!tempCtx) {return}
 
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i]
-      if (layer.visible) tempCtx.drawImage(layer.canvas, layer.x, layer.y)
+
+      if (layer.visible) {tempCtx.drawImage(layer.canvas, layer.x, layer.y)}
     }
 
     const dataUrl = tempCanvas.toDataURL()
+
     try {
       await saveToStudioLibrary({
         id: `lib-${Date.now()}`,
@@ -1196,7 +1264,7 @@ export function ImageStudioView() {
                 <span className="text-[0.6875rem] font-bold uppercase tracking-wider text-white/50">Layers</span>
                 <div className="flex gap-1.5">
                   <label className="grid size-7 place-items-center rounded-lg border border-white/8 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer">
-                    <input className="hidden" accept="image/*" onChange={handleImageUploadToCanvas} type="file" />
+                    <input accept="image/*" className="hidden" onChange={handleImageUploadToCanvas} type="file" />
                     <IconPlus size="0.95rem" />
                   </label>
                   <button
@@ -1230,7 +1298,7 @@ export function ImageStudioView() {
                             handleToggleLayerVisibility(layer.id)
                           }}
                         >
-                          <IconEye size="0.95rem" className={layer.visible ? 'text-[#8b46ff]' : 'text-white/20'} />
+                          <IconEye className={layer.visible ? 'text-[#8b46ff]' : 'text-white/20'} size="0.95rem" />
                         </button>
                         <span className="truncate text-xs font-bold">{layer.name}</span>
                         <div className="ml-auto flex items-center gap-1.5">
@@ -1279,8 +1347,8 @@ export function ImageStudioView() {
                           className="flex-1 accent-[#8b46ff]"
                           max="1"
                           min="0"
-                          step="0.05"
                           onChange={e => handleLayerOpacityChange(layer.id, parseFloat(e.target.value))}
+                          step="0.05"
                           type="range"
                           value={layer.opacity}
                         />
@@ -1389,7 +1457,7 @@ export function ImageStudioView() {
                 <div className="grid grid-cols-2 gap-4">
                   {generatedImages.map((img, i) => (
                     <div className="group relative overflow-hidden rounded-xl border border-white/8 bg-black/40 shadow-lg" key={i}>
-                      <img className="w-full object-cover" src={img} alt={`Variation ${i + 1}`} />
+                      <img alt={`Variation ${i + 1}`} className="w-full object-cover" src={img} />
                       <div className="absolute inset-0 bg-black/70 flex items-center justify-center gap-3 opacity-0 transition group-hover:opacity-100">
                         <Button
                           className="h-8 text-[0.6875rem]"
@@ -1400,8 +1468,10 @@ export function ImageStudioView() {
                             newCanvas.height = 600
                             const ctx = newCanvas.getContext('2d')
                             const image = new Image()
+
                             image.onload = () => {
                               ctx?.drawImage(image, 0, 0, 800, 600)
+
                               const layer: CanvasLayer = {
                                 id: `gen-${Date.now()}`,
                                 name: `Generation ${i + 1}`,
@@ -1413,12 +1483,14 @@ export function ImageStudioView() {
                                 x: 0,
                                 y: 0
                               }
+
                               setLayers([layer])
                               setActiveLayerId(layer.id)
                               drawMainCanvas()
                               setActiveTab('canvas')
                               showToast('Loaded onto Canvas Editor')
                             }
+
                             image.src = img
                           }}
                         >
@@ -1426,10 +1498,10 @@ export function ImageStudioView() {
                         </Button>
                         <Button
                           className="h-8 text-[0.6875rem]"
-                          variant="secondary"
                           onClick={() => {
                             setComparisonImage(img)
                           }}
+                          variant="secondary"
                         >
                           Compare
                         </Button>
@@ -1445,22 +1517,22 @@ export function ImageStudioView() {
                   <div className="relative w-full max-w-4xl bg-[#0D0E15] border border-white/8 rounded-2xl p-6 flex flex-col gap-4">
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-bold">Compare Generations</span>
-                      <Button className="h-8" variant="secondary" onClick={() => setComparisonImage(null)}>
+                      <Button className="h-8" onClick={() => setComparisonImage(null)} variant="secondary">
                         Close
                       </Button>
                     </div>
 
                     <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-white/8">
-                      <img className="absolute inset-0 size-full object-cover" src={generatedImages[0]} alt="Original" />
+                      <img alt="Original" className="absolute inset-0 size-full object-cover" src={generatedImages[0]} />
 
                       <div
                         className="absolute inset-y-0 right-0 overflow-hidden"
                         style={{ width: `${100 - comparisonSliderVal}%` }}
                       >
                         <img
+                          alt="Modified"
                           className="absolute right-0 top-0 h-full max-w-none object-cover"
                           src={comparisonImage}
-                          alt="Modified"
                           style={{ width: '800px', height: '100%' }}
                         />
                       </div>
@@ -1520,7 +1592,8 @@ export function ImageStudioView() {
                       const ctx = el.getContext('2d')
                       ctx?.clearRect(0, 0, 800, 600)
                       const activeLayer = layers.find(l => l.id === activeLayerId)
-                      if (activeLayer) ctx?.drawImage(activeLayer.canvas, 0, 0)
+
+                      if (activeLayer) {ctx?.drawImage(activeLayer.canvas, 0, 0)}
                     }
                   }}
                   width={800}
@@ -1539,11 +1612,11 @@ export function ImageStudioView() {
               <div className="flex flex-col gap-3">
                 <label className="text-xs font-semibold text-white/60">Upload Image:</label>
                 <div className="relative border border-dashed border-white/12 rounded-xl p-4 flex flex-col items-center justify-center bg-black/20 hover:bg-black/30 cursor-pointer">
-                  <input className="absolute inset-0 opacity-0 cursor-pointer" type="file" accept="image/*" onChange={handleUnderstandUpload} />
+                  <input accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleUnderstandUpload} type="file" />
                   <span className="text-[0.6875rem] text-white/40">Drag & drop or Click to upload</span>
                 </div>
                 {analysisImage && (
-                  <img className="h-32 object-contain rounded-lg border border-white/8" src={analysisImage} alt="Preview" />
+                  <img alt="Preview" className="h-32 object-contain rounded-lg border border-white/8" src={analysisImage} />
                 )}
               </div>
 
@@ -1631,11 +1704,11 @@ export function ImageStudioView() {
               <div className="flex flex-col gap-3">
                 <label className="text-xs font-semibold text-white/60">Upload Source:</label>
                 <div className="relative border border-dashed border-white/12 rounded-xl p-4 flex flex-col items-center justify-center bg-black/20 hover:bg-black/30 cursor-pointer">
-                  <input className="absolute inset-0 opacity-0 cursor-pointer" type="file" accept="image/*" onChange={handleOcrUpload} />
+                  <input accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleOcrUpload} type="file" />
                   <span className="text-[0.6875rem] text-white/40">Select receipts, business cards, documents</span>
                 </div>
                 {ocrImage && (
-                  <img className="h-32 object-contain rounded-lg border border-white/8" src={ocrImage} alt="Preview" />
+                  <img alt="Preview" className="h-32 object-contain rounded-lg border border-white/8" src={ocrImage} />
                 )}
               </div>
 
@@ -1666,7 +1739,7 @@ export function ImageStudioView() {
                       </button>
                     ))}
                   </div>
-                  <Button className="w-full h-9 rounded-xl mt-1.5" variant="secondary" onClick={handleExportOCR}>
+                  <Button className="w-full h-9 rounded-xl mt-1.5" onClick={handleExportOCR} variant="secondary">
                     Export File
                   </Button>
                 </div>
@@ -1679,11 +1752,11 @@ export function ImageStudioView() {
                 {ocrResult && (
                   <Button
                     className="h-8"
-                    variant="outline"
                     onClick={() => {
                       navigator.clipboard.writeText(ocrResult)
                       showToast('Copied to clipboard')
                     }}
+                    variant="outline"
                   >
                     <IconCopy className="mr-1.5" size="0.9rem" /> Copy
                   </Button>
@@ -1829,7 +1902,8 @@ export function ImageStudioView() {
                   <div className="grid grid-cols-4 gap-4">
                     {libraryItems
                       .filter(item => {
-                        if (libraryFilter === 'favorites') return item.favorite
+                        if (libraryFilter === 'favorites') {return item.favorite}
+
                         return true
                       })
                       .filter(item => item.name.toLowerCase().includes(librarySearch.toLowerCase()))
@@ -1839,7 +1913,7 @@ export function ImageStudioView() {
                           key={item.id}
                           onClick={() => handleLibraryItemLoad(item)}
                         >
-                          <img className="size-full object-cover" src={item.url} alt={item.name} />
+                          <img alt={item.name} className="size-full object-cover" src={item.url} />
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-end p-2 transition">
                             <span className="text-[0.625rem] font-bold text-white truncate w-full">{item.name}</span>
                           </div>

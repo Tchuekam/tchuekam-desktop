@@ -142,6 +142,7 @@ function armSessionWatchdog(sessionId: string) {
 
   const timer = setTimeout(() => {
     sessionWatchdogTimers.delete(sessionId)
+
     // Re-check the latest state at fire-time. If the user already navigated
     // away or the session genuinely finished, the timer is a no-op.
     if ($workingSessionIds.get().includes(sessionId)) {

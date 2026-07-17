@@ -49,6 +49,7 @@ const FEATURES: Feature[] = [
 
 function DocLines({ variant }: { variant: 'cv' | 'invoice' | 'deck' }) {
   const bar = 'block h-[3px] rounded-full bg-foreground/10'
+
   if (variant === 'deck') {
     return (
       <div className="absolute inset-x-4 top-3 -bottom-6 overflow-hidden rounded-t-md bg-white p-0 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.3)]">
@@ -61,7 +62,9 @@ function DocLines({ variant }: { variant: 'cv' | 'invoice' | 'deck' }) {
       </div>
     )
   }
+
   const head = variant === 'invoice' ? 'bg-[#C98A2B]' : 'bg-primary'
+
   return (
     <div className="absolute inset-x-4 top-3 -bottom-6 rounded-t-md bg-white p-3.5 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.3)]">
       <span className={cn('mb-2 block h-1.5 w-2/5 rounded-full', head)} />

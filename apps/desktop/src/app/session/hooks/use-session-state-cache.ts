@@ -140,6 +140,7 @@ export function useSessionStateCache({
       }
 
       setSessionWorking(next.storedSessionId, next.busy)
+
       // Every state update is effectively a "still alive" heartbeat for
       // streaming events. The session-store watchdog uses this to keep the
       // working flag alive during long-running turns and to clear it once
@@ -147,6 +148,7 @@ export function useSessionStateCache({
       if (next.busy) {
         noteSessionActivity(next.storedSessionId)
       }
+
       syncSessionStateToView(sessionId, next)
 
       return next
