@@ -42,7 +42,7 @@ cd /opt/data
 cd "$_hermes_orig_cwd"
 
 if [ $# -eq 0 ]; then
-    drop hermes
+    drop hermes dashboard --host 0.0.0.0 --port "${PORT:-9119}" --insecure --no-open
 fi
 
 if command -v "$1" >/dev/null 2>&1; then

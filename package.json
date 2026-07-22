@@ -10,7 +10,7 @@
     "web"
   ],
   "scripts": {
-    "start": "python -m hermes_cli.main web --host 0.0.0.0 --port $PORT",
+    "start": "python -m hermes_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure --no-open",
     "build": "python -m pip install -e .",
     "postinstall": "echo '✅ Browser tools ready. Run: python run_agent.py --help'"
   },
