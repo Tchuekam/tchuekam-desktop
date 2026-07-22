@@ -11783,11 +11783,12 @@ def cmd_dashboard(args):
     from hermes_cli.web_server import start_server
 
     embedded_chat = args.tui or os.environ.get("HERMES_DASHBOARD_TUI") == "1"
+    is_cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"))
     start_server(
-        host=args.host,
+        host="0.0.0.0" if is_cloud else args.host,
         port=args.port,
-        open_browser=not args.no_open,
-        allow_public=getattr(args, "insecure", False),
+        open_browser=not args.no_open and not is_cloud,
+        allow_public=getattr(args, "insecure", False) or is_cloud,
         embedded_chat=embedded_chat,
     )
 
@@ -15050,6 +15051,7 @@ Examples:
     # =========================================================================
     dashboard_parser = subparsers.add_parser(
         "dashboard",
+        aliases=["web"],
         help="Start the web UI dashboard",
         description="Launch the Hermes Agent web dashboard for managing config, API keys, and sessions",
     )
