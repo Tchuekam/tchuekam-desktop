@@ -11786,9 +11786,20 @@ def cmd_dashboard(args):
     is_cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"))
     if is_cloud:
         setattr(args, "insecure", True)
+    
+    port = args.port
+    if port is None or is_cloud:
+        if os.environ.get("PORT"):
+            try:
+                port = int(os.environ["PORT"])
+            except ValueError:
+                port = 9119
+        elif port is None:
+            port = 9119
+
     start_server(
         host="0.0.0.0" if is_cloud else args.host,
-        port=args.port,
+        port=port,
         open_browser=not args.no_open and not is_cloud,
         allow_public=getattr(args, "insecure", False) or is_cloud,
         embedded_chat=embedded_chat,
@@ -15057,8 +15068,28 @@ Examples:
         help="Start the web UI dashboard",
         description="Launch the Hermes Agent web dashboard for managing config, API keys, and sessions",
     )
+    def parse_port_arg(val):
+        if str(val).startswith("$"):
+            var_name = str(val).lstrip("$").strip("{}")
+            env_val = os.environ.get(var_name)
+            if env_val:
+                try:
+                    return int(env_val)
+                except ValueError:
+                    pass
+        try:
+            return int(val)
+        except ValueError:
+            env_port = os.environ.get("PORT")
+            if env_port:
+                try:
+                    return int(env_port)
+                except ValueError:
+                    pass
+            return 9119
+
     dashboard_parser.add_argument(
-        "--port", type=int, default=9119, help="Port (default 9119)"
+        "--port", type=parse_port_arg, default=None, help="Port (default 9119 or $PORT)"
     )
     dashboard_parser.add_argument(
         "--host", default="127.0.0.1", help="Host (default 127.0.0.1)"
