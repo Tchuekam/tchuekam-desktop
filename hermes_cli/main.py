@@ -11784,6 +11784,8 @@ def cmd_dashboard(args):
 
     embedded_chat = args.tui or os.environ.get("HERMES_DASHBOARD_TUI") == "1"
     is_cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"))
+    if is_cloud:
+        setattr(args, "insecure", True)
     start_server(
         host="0.0.0.0" if is_cloud else args.host,
         port=args.port,
