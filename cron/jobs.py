@@ -885,6 +885,13 @@ def trigger_job(job_id: str) -> Optional[Dict[str, Any]]:
     )
 
 
+def run_job_tick(verbose: bool = False) -> int:
+    """Run due jobs once (lazy import of scheduler.tick to avoid circular imports)."""
+    from cron.scheduler import tick
+    return tick(verbose=verbose)
+
+
+
 def remove_job(job_id: str) -> bool:
     """Remove a job by ID or name."""
     job = resolve_job_ref(job_id)

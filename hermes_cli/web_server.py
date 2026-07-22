@@ -4757,6 +4757,15 @@ async def trigger_cron_job(job_id: str, profile: Optional[str] = None):
     job = _call_cron_for_profile(selected, "trigger_job", job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    def _run_triggered_tick():
+        try:
+            _call_cron_for_profile(selected, "run_job_tick", False)
+        except Exception:
+            _log.exception("Triggered cron tick failed for job %s (profile %s)", job_id, selected)
+
+    threading.Thread(target=_run_triggered_tick, daemon=True, name=f"cron-trigger-{job_id}").start()
+
     return job
 
 
