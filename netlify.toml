@@ -4,7 +4,7 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "https://relay-gateway-production.up.railway.app/api/:splat"
+  to = "https://hermes-agent-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
