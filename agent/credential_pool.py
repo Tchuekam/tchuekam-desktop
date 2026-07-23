@@ -1980,13 +1980,14 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
         token: str,
         base_url: str,
         auth_type: str = AUTH_TYPE_API_KEY,
+        label: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "source": source,
             "auth_type": auth_type,
             "access_token": token,
             "base_url": base_url,
-            "label": env_var,
+            "label": label or env_var,
         }
         secret_source = _secret_source_for_env(env_var)
         if secret_source:
@@ -1994,24 +1995,32 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
         return payload
 
     if provider == "openrouter":
-        # Prefer ~/.hermes/.env over os.environ
-        token = _get_env_prefer_dotenv("OPENROUTER_API_KEY")
-        if token:
-            source = "env:OPENROUTER_API_KEY"
-            if _is_source_suppressed(provider, source):
-                return changed, active_sources
-            active_sources.add(source)
-            changed |= _upsert_entry(
-                entries,
-                provider,
-                source,
-                _env_payload(
-                    source=source,
-                    env_var="OPENROUTER_API_KEY",
-                    token=token,
-                    base_url=OPENROUTER_BASE_URL,
-                ),
-            )
+        openrouter_vars = ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"]
+        for env_var in openrouter_vars:
+            token = _get_env_prefer_dotenv(env_var)
+            if not token:
+                continue
+            sub_tokens = [k.strip() for k in re.split(r"[\n,;]+", token) if k.strip()]
+            for idx, sub_token in enumerate(sub_tokens):
+                if any(e.access_token == sub_token for e in entries):
+                    continue
+                source = f"env:{env_var}" if len(sub_tokens) == 1 else f"env:{env_var}:{idx+1}"
+                lbl = env_var if len(sub_tokens) == 1 else f"{env_var}#{idx+1}"
+                if _is_source_suppressed(provider, source):
+                    continue
+                active_sources.add(source)
+                changed |= _upsert_entry(
+                    entries,
+                    provider,
+                    source,
+                    _env_payload(
+                        source=source,
+                        env_var=env_var,
+                        label=lbl,
+                        token=sub_token,
+                        base_url=OPENROUTER_BASE_URL,
+                    ),
+                )
         return changed, active_sources
 
     pconfig = PROVIDER_REGISTRY.get(provider)
@@ -2028,35 +2037,47 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
             "ANTHROPIC_TOKEN",
             "CLAUDE_CODE_OAUTH_TOKEN",
             "ANTHROPIC_API_KEY",
+            "ANTHROPIC_API_KEYS",
         ]
+    else:
+        extra_vars = []
+        for v in env_vars:
+            if v.endswith("_KEY") and f"{v}S" not in env_vars:
+                extra_vars.append(f"{v}S")
+        env_vars.extend(extra_vars)
 
     for env_var in env_vars:
-        # Prefer ~/.hermes/.env over os.environ
         token = _get_env_prefer_dotenv(env_var)
         if not token:
             continue
-        source = f"env:{env_var}"
-        if _is_source_suppressed(provider, source):
-            continue
-        active_sources.add(source)
-        auth_type = AUTH_TYPE_OAUTH if provider == "anthropic" and not token.startswith("sk-ant-api") else AUTH_TYPE_API_KEY
-        base_url = env_url or pconfig.inference_base_url
-        if provider == "kimi-coding":
-            base_url = _resolve_kimi_base_url(token, pconfig.inference_base_url, env_url)
-        elif provider == "zai":
-            base_url = _resolve_zai_base_url(token, pconfig.inference_base_url, env_url)
-        changed |= _upsert_entry(
-            entries,
-            provider,
-            source,
-            _env_payload(
-                source=source,
-                env_var=env_var,
-                token=token,
-                base_url=base_url,
-                auth_type=auth_type,
-            ),
-        )
+        sub_tokens = [k.strip() for k in re.split(r"[\n,;]+", token) if k.strip()]
+        for idx, sub_token in enumerate(sub_tokens):
+            if any(e.access_token == sub_token for e in entries):
+                continue
+            source = f"env:{env_var}" if len(sub_tokens) == 1 else f"env:{env_var}:{idx+1}"
+            lbl = env_var if len(sub_tokens) == 1 else f"{env_var}#{idx+1}"
+            if _is_source_suppressed(provider, source):
+                continue
+            active_sources.add(source)
+            auth_type = AUTH_TYPE_OAUTH if provider == "anthropic" and not sub_token.startswith("sk-ant-api") else AUTH_TYPE_API_KEY
+            base_url = env_url or pconfig.inference_base_url
+            if provider == "kimi-coding":
+                base_url = _resolve_kimi_base_url(sub_token, pconfig.inference_base_url, env_url)
+            elif provider == "zai":
+                base_url = _resolve_zai_base_url(sub_token, pconfig.inference_base_url, env_url)
+            changed |= _upsert_entry(
+                entries,
+                provider,
+                source,
+                _env_payload(
+                    source=source,
+                    env_var=env_var,
+                    label=lbl,
+                    token=sub_token,
+                    base_url=base_url,
+                    auth_type=auth_type,
+                ),
+            )
     return changed, active_sources
 
 

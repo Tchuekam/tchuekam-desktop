@@ -2998,3 +2998,30 @@ def test_codex_oauth_nonterminal_refresh_does_not_quarantine(tmp_path, monkeypat
     tokens = auth_payload["providers"]["openai-codex"].get("tokens", {})
     assert tokens.get("access_token") == "old-access-token"
     assert tokens.get("refresh_token") == "old-refresh-token"
+
+
+def test_multi_key_seeding_and_auto_rotation(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    monkeypatch.setenv("GROQ_API_KEYS", "gsk_key1, gsk_key2, gsk_key3")
+
+    from agent.credential_pool import load_pool
+
+    pool = load_pool("groq")
+    entries = pool.entries()
+    assert len(entries) == 3
+    assert [e.access_token for e in entries] == ["gsk_key1", "gsk_key2", "gsk_key3"]
+
+    # Select initial key
+    current = pool.select()
+    assert current is not None
+    assert current.access_token == "gsk_key1"
+
+    # Simulate rate limit 429 on key 1 -> should rotate to key 2
+    rotated = pool.mark_exhausted_and_rotate(status_code=429, api_key_hint="gsk_key1")
+    assert rotated is not None
+    assert rotated.access_token == "gsk_key2"
+
+    # Simulate rate limit 429 on key 2 -> should rotate to key 3
+    rotated2 = pool.mark_exhausted_and_rotate(status_code=429, api_key_hint="gsk_key2")
+    assert rotated2 is not None
+    assert rotated2.access_token == "gsk_key3"

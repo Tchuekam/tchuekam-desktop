@@ -878,6 +878,44 @@ def init_agent(
         except Exception as e:
             raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
     
+    def _resolve_auto_fallback_chain(primary_provider: str) -> list:
+        """Automatically build an emergency fallback provider chain from configured env keys."""
+        try:
+            from hermes_cli.config import load_env
+            env = load_env()
+        except Exception:
+            env = {}
+
+        def _has_key(key_name: str) -> bool:
+            val = env.get(key_name) or os.environ.get(key_name) or ""
+            return bool(val.strip())
+
+        primary = (primary_provider or "").strip().lower()
+        chain = []
+
+        # 1. Groq (Fast & generous rate limits)
+        if primary != "groq" and (_has_key("GROQ_API_KEY") or _has_key("GROQ_API_KEYS")):
+            chain.append({"provider": "groq", "model": "llama-3.3-70b-versatile"})
+
+        # 2. OpenRouter
+        if primary != "openrouter" and (_has_key("OPENROUTER_API_KEY") or _has_key("OPENROUTER_API_KEYS")):
+            chain.append({"provider": "openrouter", "model": "google/gemini-2.0-flash-001"})
+
+        # 3. Google Gemini
+        if primary not in {"gemini", "google-gemini-cli"} and (_has_key("GOOGLE_API_KEY") or _has_key("GEMINI_API_KEY")):
+            chain.append({"provider": "gemini", "model": "gemini-2.0-flash"})
+
+        # 4. OpenAI
+        if primary != "openai-api" and _has_key("OPENAI_API_KEY"):
+            chain.append({"provider": "openai-api", "model": "gpt-4o-mini"})
+
+        # 5. DeepSeek
+        if primary != "deepseek" and _has_key("DEEPSEEK_API_KEY"):
+            chain.append({"provider": "deepseek", "model": "deepseek-chat"})
+
+        return chain
+
+
     # Provider fallback chain — ordered list of backup providers tried
     # when the primary is exhausted (rate-limit, overload, connection
     # failure).  Supports both legacy single-dict ``fallback_model`` and
@@ -891,6 +929,7 @@ def init_agent(
         agent._fallback_chain = [fallback_model]
     else:
         agent._fallback_chain = []
+
     agent._fallback_index = 0
     agent._fallback_activated = getattr(agent, "_fallback_activated", False)
     # Legacy attribute kept for backward compat (tests, external callers)

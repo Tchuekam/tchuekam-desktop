@@ -1267,10 +1267,22 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
 
 
 def _transcribe_groq(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using Groq Whisper API (free tier available)."""
-    api_key = get_env_value("GROQ_API_KEY")
-    if not api_key:
-        return {"success": False, "transcript": "", "error": "GROQ_API_KEY not set"}
+    """Transcribe using Groq Whisper API (free tier available with auto-rotation)."""
+    pool = None
+    try:
+        from agent.credential_pool import load_pool
+        pool = load_pool("groq")
+    except Exception:
+        pool = None
+
+    entry = pool.select() if pool else None
+    if entry and entry.runtime_api_key:
+        api_key = entry.runtime_api_key
+    else:
+        raw_key = get_env_value("GROQ_API_KEY") or get_env_value("GROQ_API_KEYS")
+        if not raw_key:
+            return {"success": False, "transcript": "", "error": "GROQ_API_KEY not set"}
+        api_key = [k.strip() for k in re.split(r"[\n,;]+", raw_key) if k.strip()][0]
 
     if not _HAS_OPENAI:
         return {"success": False, "transcript": "", "error": "openai package not installed"}
@@ -1280,38 +1292,53 @@ def _transcribe_groq(file_path: str, model_name: str) -> Dict[str, Any]:
         logger.info("Model %s not available on Groq, using %s", model_name, DEFAULT_GROQ_STT_MODEL)
         model_name = DEFAULT_GROQ_STT_MODEL
 
-    try:
-        from openai import OpenAI, APIError, APIConnectionError, APITimeoutError
-        client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL, timeout=30, max_retries=0)
+    attempt = 0
+    max_attempts = len(pool.entries()) if (pool and pool.has_credentials()) else 1
+    last_error = ""
+
+    while attempt < max_attempts:
+        attempt += 1
         try:
-            with open(file_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    model=model_name,
-                    file=audio_file,
-                    response_format="text",
-                )
+            from openai import OpenAI, APIError, APIConnectionError, APITimeoutError
+            client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL, timeout=30, max_retries=0)
+            try:
+                with open(file_path, "rb") as audio_file:
+                    transcription = client.audio.transcriptions.create(
+                        model=model_name,
+                        file=audio_file,
+                        response_format="text",
+                    )
 
-            transcript_text = str(transcription).strip()
-            logger.info("Transcribed %s via Groq API (%s, %d chars)",
-                         Path(file_path).name, model_name, len(transcript_text))
+                transcript_text = str(transcription).strip()
+                logger.info("Transcribed %s via Groq API (%s, %d chars)",
+                             Path(file_path).name, model_name, len(transcript_text))
 
-            return {"success": True, "transcript": transcript_text, "provider": "groq"}
-        finally:
-            close = getattr(client, "close", None)
-            if callable(close):
-                close()
+                return {"success": True, "transcript": transcript_text, "provider": "groq"}
+            finally:
+                close = getattr(client, "close", None)
+                if callable(close):
+                    close()
 
-    except PermissionError:
-        return {"success": False, "transcript": "", "error": f"Permission denied: {file_path}"}
-    except APIConnectionError as e:
-        return {"success": False, "transcript": "", "error": f"Connection error: {e}"}
-    except APITimeoutError as e:
-        return {"success": False, "transcript": "", "error": f"Request timeout: {e}"}
-    except APIError as e:
-        return {"success": False, "transcript": "", "error": f"API error: {e}"}
-    except Exception as e:
-        logger.error("Groq transcription failed: %s", e, exc_info=True)
-        return {"success": False, "transcript": "", "error": f"Transcription failed: {e}"}
+        except PermissionError:
+            return {"success": False, "transcript": "", "error": f"Permission denied: {file_path}"}
+        except APIConnectionError as e:
+            return {"success": False, "transcript": "", "error": f"Connection error: {e}"}
+        except APITimeoutError as e:
+            return {"success": False, "transcript": "", "error": f"Request timeout: {e}"}
+        except APIError as e:
+            last_error = f"API error: {e}"
+            status_code = getattr(e, "status_code", 429 if "429" in str(e) or "rate" in str(e).lower() else None)
+            if pool and status_code in {429, 401, 402}:
+                next_entry = pool.mark_exhausted_and_rotate(status_code=status_code, api_key_hint=api_key)
+                if next_entry and next_entry.runtime_api_key:
+                    logger.info("Groq transcription rate-limited/failed, rotated to next key (%s)", next_entry.label)
+                    api_key = next_entry.runtime_api_key
+                    continue
+            return {"success": False, "transcript": "", "error": last_error}
+        except Exception as e:
+            return {"success": False, "transcript": "", "error": f"Groq API error: {e}"}
+
+    return {"success": False, "transcript": "", "error": last_error or "All Groq API keys exhausted"}
 
 # ---------------------------------------------------------------------------
 # Provider: openai (Whisper API)

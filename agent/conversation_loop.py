@@ -2726,28 +2726,35 @@ def run_conversation(
                     FailoverReason.rate_limit,
                     FailoverReason.billing,
                 }
-                if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
-                    # Don't eagerly fallback if credential pool rotation may
-                    # still recover.  See _pool_may_recover_from_rate_limit
-                    # for the single-credential-pool and CloudCode-quota
-                    # exceptions.  Fixes #11314 and #13636.
-                    pool_may_recover = _ra()._pool_may_recover_from_rate_limit(
-                        agent._credential_pool,
-                        provider=agent.provider,
-                        base_url=getattr(agent, "base_url", None),
-                    )
-                    if not pool_may_recover:
-                        if classified.reason == FailoverReason.billing:
-                            agent._buffer_status(
-                                "⚠️ Billing or credits exhausted — switching to fallback provider..."
-                            )
-                        else:
-                            agent._buffer_status("⚠️ Rate limited — switching to fallback provider...")
-                        if agent._try_activate_fallback(reason=classified.reason):
-                            retry_count = 0
-                            compression_attempts = 0
-                            primary_recovery_attempted = False
-                            continue
+                if is_rate_limited:
+                    if not agent._fallback_chain and agent._fallback_index == 0:
+                        from agent.agent_init import _resolve_auto_fallback_chain
+                        auto_chain = _resolve_auto_fallback_chain(getattr(agent, "provider", "") or "")
+                        if auto_chain:
+                            agent._fallback_chain = auto_chain
+
+                    if agent._fallback_index < len(agent._fallback_chain):
+                        # Don't eagerly fallback if credential pool rotation may
+                        # still recover.  See _pool_may_recover_from_rate_limit
+                        # for the single-credential-pool and CloudCode-quota
+                        # exceptions.  Fixes #11314 and #13636.
+                        pool_may_recover = _ra()._pool_may_recover_from_rate_limit(
+                            agent._credential_pool,
+                            provider=agent.provider,
+                            base_url=getattr(agent, "base_url", None),
+                        )
+                        if not pool_may_recover:
+                            if classified.reason == FailoverReason.billing:
+                                agent._buffer_status(
+                                    "⚠️ Billing or credits exhausted — switching to fallback provider..."
+                                )
+                            else:
+                                agent._buffer_status("⚠️ Rate limited — switching to fallback provider...")
+                            if agent._try_activate_fallback(reason=classified.reason):
+                                retry_count = 0
+                                compression_attempts = 0
+                                primary_recovery_attempted = False
+                                continue
 
                 # ── Nous Portal: record rate limit & skip retries ─────
                 # When Nous returns a 429 that is a genuine account-
