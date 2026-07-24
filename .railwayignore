@@ -1,0 +1,12 @@
+.git
+.venv
+venv
+node_modules
+ui-tui/node_modules
+web/node_modules
+apps/*/node_modules
+hermes_cli/web_dist
+website
+docs
+.plans
+scratch

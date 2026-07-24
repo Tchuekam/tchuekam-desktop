@@ -150,7 +150,7 @@ _REVEAL_WINDOW_SECONDS = 30
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=r"^https?://(.*\.tchuekam\.com|tchuekam\.com|.*\.netlify\.app|.*\.up\.railway\.app|localhost|127\.0\.0\.1)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -321,7 +321,7 @@ async def auth_middleware(request: Request, call_next):
     # When the OAuth gate is active, cookie-based auth (gated_auth_middleware
     # above) is authoritative.  The legacy _SESSION_TOKEN path is loopback-only
     # and is skipped here so the gate's session attachment isn't overridden.
-    if getattr(request.app.state, "auth_required", False):
+    if getattr(request.app.state, "auth_required", False) or getattr(request.app.state, "allow_public", False) or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"):
         return await call_next(request)
     path = request.url.path
     if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
@@ -8451,6 +8451,7 @@ def start_server(
     # PTY child uses to publish events to the dashboard sidebar.
     app.state.bound_host = host
     app.state.bound_port = port
+    app.state.allow_public = allow_public
 
     if open_browser:
         import webbrowser
