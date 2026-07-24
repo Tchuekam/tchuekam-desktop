@@ -854,6 +854,90 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             className="hermes-chat-xterm-host min-h-0 min-w-0 flex-1"
           />
 
+          {/* Mobile Touch Bar for Quick Actions & Terminal Keys */}
+          {narrow && (
+            <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-1 bg-black/40 backdrop-blur-md border-t border-white/10 shrink-0 z-10 scrollbar-none">
+              <Button
+                ghost
+                size="sm"
+                className="text-[11px] px-2 py-0.5 h-7 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 shrink-0"
+                onClick={() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send("/goal ");
+                    termRef.current?.focus();
+                  }
+                }}
+              >
+                /goal
+              </Button>
+              <Button
+                ghost
+                size="sm"
+                className="text-[11px] px-2 py-0.5 h-7 bg-midground/10 hover:bg-midground/20 text-midground border border-white/10 shrink-0"
+                onClick={() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send("/schedule ");
+                    termRef.current?.focus();
+                  }
+                }}
+              >
+                /schedule
+              </Button>
+              <Button
+                ghost
+                size="sm"
+                className="text-[11px] px-2 py-0.5 h-7 bg-midground/10 hover:bg-midground/20 text-midground border border-white/10 shrink-0"
+                onClick={() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send("/status\r");
+                    termRef.current?.focus();
+                  }
+                }}
+              >
+                /status
+              </Button>
+              <Button
+                ghost
+                size="sm"
+                className="text-[11px] px-2 py-0.5 h-7 bg-midground/10 hover:bg-midground/20 text-midground border border-white/10 shrink-0"
+                onClick={() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send("/clear\r");
+                    termRef.current?.focus();
+                  }
+                }}
+              >
+                /clear
+              </Button>
+              <Button
+                ghost
+                size="sm"
+                className="text-[11px] px-2 py-0.5 h-7 bg-destructive/20 hover:bg-destructive/30 text-destructive border border-destructive/30 shrink-0 font-mono"
+                onClick={() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send("\x03");
+                    termRef.current?.focus();
+                  }
+                }}
+              >
+                Ctrl+C
+              </Button>
+              <Button
+                ghost
+                size="sm"
+                className="text-[11px] px-2 py-0.5 h-7 bg-midground/10 hover:bg-midground/20 text-midground border border-white/10 shrink-0 font-mono"
+                onClick={() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send("\t");
+                    termRef.current?.focus();
+                  }
+                }}
+              >
+                Tab
+              </Button>
+            </div>
+          )}
+
           <Button
             ghost
             onClick={handleCopyLast}
@@ -866,8 +950,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               "bg-black/20 backdrop-blur-sm",
               "opacity-70 hover:opacity-100 hover:border-current/60",
               "transition-opacity duration-150",
-              "bottom-2 right-2 px-2 py-1 text-xs sm:bottom-3 sm:right-3 sm:px-2.5 sm:py-1.5",
-              "lg:bottom-4 lg:right-4",
+              narrow ? "top-2 right-2 px-2 py-1 text-xs" : "bottom-2 right-2 px-2 py-1 text-xs sm:bottom-3 sm:right-3 sm:px-2.5 sm:py-1.5 lg:bottom-4 lg:right-4",
             )}
             style={{ color: TERMINAL_THEME_STATIC.foreground }}
           >
