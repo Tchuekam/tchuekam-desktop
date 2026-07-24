@@ -43,6 +43,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/multi-profile-gateways',
         'user-guide/git-worktrees',
         'user-guide/docker',
+        'user-guide/cloud-deployment',
         'user-guide/security',
         'user-guide/checkpoints-and-rollback',
       ],
@@ -780,6 +781,7 @@ const sidebars: SidebarsConfig = {
             'reference/cli-commands',
             'reference/slash-commands',
             'reference/profile-commands',
+            'reference/api-reference',
           ],
         },
         {
