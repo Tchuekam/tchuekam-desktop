@@ -1,8 +1,8 @@
-# Hermes Agent v0.8.0 (v2026.4.8)
+# Tchuekam Agent v0.8.0 (v2026.4.8)
 
 **Release Date:** April 8, 2026
 
-> The intelligence release — background task auto-notifications, free MiMo v2 Pro on Nous Portal, live model switching across all platforms, self-optimized GPT/Codex guidance, native Google AI Studio, smart inactivity timeouts, approval buttons, MCP OAuth 2.1, and 209 merged PRs with 82 resolved issues.
+> The intelligence release — background task auto-notifications, free MiMo v2 Pro on Giantect Empire, live model switching across all platforms, self-optimized GPT/Codex guidance, native Google AI Studio, smart inactivity timeouts, approval buttons, MCP OAuth 2.1, and 209 merged PRs with 82 resolved issues.
 
 ---
 
@@ -10,7 +10,7 @@
 
 - **Background Process Auto-Notifications (`notify_on_complete`)** — Background tasks can now automatically notify the agent when they finish. Start a long-running process (AI model training, test suites, deployments, builds) and the agent gets notified on completion — no polling needed. The agent can keep working on other things and pick up results when they land. ([#5779](https://github.com/Tchuekam/tchuekam-desktop/pull/5779))
 
-- **Free Xiaomi MiMo v2 Pro on Nous Portal** — Nous Portal now supports the free-tier Xiaomi MiMo v2 Pro model for auxiliary tasks (compression, vision, summarization), with free-tier model gating and pricing display in model selection. ([#6018](https://github.com/Tchuekam/tchuekam-desktop/pull/6018), [#5880](https://github.com/Tchuekam/tchuekam-desktop/pull/5880))
+- **Free Xiaomi MiMo v2 Pro on Giantect Empire** — Giantect Empire now supports the free-tier Xiaomi MiMo v2 Pro model for auxiliary tasks (compression, vision, summarization), with free-tier model gating and pricing display in model selection. ([#6018](https://github.com/Tchuekam/tchuekam-desktop/pull/6018), [#5880](https://github.com/Tchuekam/tchuekam-desktop/pull/5880))
 
 - **Live Model Switching (`/model` Command)** — Switch models and providers mid-session from CLI, Telegram, Discord, Slack, or any gateway platform. Aggregator-aware resolution keeps you on OpenRouter/Nous when possible, with automatic cross-provider fallback when needed. Interactive model pickers on Telegram and Discord with inline buttons. ([#5181](https://github.com/Tchuekam/tchuekam-desktop/pull/5181), [#5742](https://github.com/Tchuekam/tchuekam-desktop/pull/5742))
 
