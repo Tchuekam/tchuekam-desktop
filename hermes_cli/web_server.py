@@ -8403,17 +8403,9 @@ async def download_installer_file(target: str):
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
-    content = (
-        f"# TchueKAM Agent Desktop Installer ({filename})\n"
-        f"# Version: {__version__}\n"
-        f"# Self-hosted direct download package\n"
-    ).encode("utf-8")
+    cdn_url = "https://release-assets.githubusercontent.com/github-production-release-asset/1279862078/fec85fe0-b8e8-4fec-9852-9fa547cf7fd7?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-07-25T09%3A52%3A38Z&rscd=attachment%3B+filename%3DTchueKAM-Setup.exe&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-07-25T08%3A52%3A13Z&ske=2026-07-25T09%3A52%3A38Z&sks=b&skv=2018-11-09&sig=leGSO4wRvZMjJj7h752kpz%2BpFr0E8Y82M%2F4AMrZkTcE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc4NDk3NDQwMCwibmJmIjoxNzg0OTcwODAwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vKzv17rysnr6ISLs_jWZugnfD8gQLCpxVnYRbn6zPsA&response-content-disposition=attachment%3B%20filename%3DTchueKAM-Setup.exe&response-content-type=application%2Foctet-stream"
+    return RedirectResponse(url=cdn_url, status_code=302)
 
-    return Response(
-        content=content,
-        media_type="application/octet-stream" if filename.endswith(".exe") else media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 # Mount plugin API routes before the SPA catch-all.
