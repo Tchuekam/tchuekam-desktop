@@ -46,4 +46,10 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # Read-only theme + plugin manifests for the dashboard skin engine.
     "/api/dashboard/themes",
     "/api/dashboard/plugins",
+    # Application installer direct download endpoints.
+    "/api/download/windows",
+    "/api/download/mac-arm64",
+    "/api/download/mac-x64",
+    "/api/download/linux",
+    "/api/download/latest",
 })

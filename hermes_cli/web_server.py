@@ -8354,6 +8354,68 @@ def _mount_plugin_api_routes():
             _log.warning("Failed to load plugin %s API routes: %s", plugin["name"], exc)
 
 
+# ---------------------------------------------------------------------------
+# Direct Application Download Endpoints
+# Direct self-hosted installer download for Windows, macOS, and Linux.
+# ---------------------------------------------------------------------------
+
+_DOWNLOAD_ASSETS = {
+    "windows": {"filename": "TchueKAM-Setup.exe", "media_type": "application/x-msdownload"},
+    "mac-arm64": {"filename": "TchueKAM-Mac-arm64.dmg", "media_type": "application/x-apple-diskimage"},
+    "mac-x64": {"filename": "TchueKAM-Mac-x64.dmg", "media_type": "application/x-apple-diskimage"},
+    "linux": {"filename": "TchueKAM-Linux.AppImage", "media_type": "application/x-executable"},
+}
+
+
+@app.get("/api/download/{target}")
+@app.get("/downloads/{target}")
+async def download_installer_file(target: str):
+    """Direct application installer download without external redirects or GitHub links."""
+    key = target.lower().strip()
+    if key in ("windows", "windows-64bit", "win", "exe", "setup"):
+        asset = _DOWNLOAD_ASSETS["windows"]
+    elif key in ("mac-arm64", "mac-arm", "mac-m1", "mac-silicon"):
+        asset = _DOWNLOAD_ASSETS["mac-arm64"]
+    elif key in ("mac-x64", "mac-intel", "mac"):
+        asset = _DOWNLOAD_ASSETS["mac-x64"]
+    elif key in ("linux", "appimage"):
+        asset = _DOWNLOAD_ASSETS["linux"]
+    else:
+        asset = _DOWNLOAD_ASSETS["windows"]
+
+    filename = asset["filename"]
+    media_type = asset["media_type"]
+
+    search_paths = [
+        Path(get_hermes_home()) / "downloads" / filename,
+        PROJECT_ROOT / "dist" / filename,
+        PROJECT_ROOT / "apps" / "desktop" / "dist" / filename,
+        PROJECT_ROOT / "apps" / "desktop" / "release" / filename,
+        WEB_DIST / "downloads" / filename,
+    ]
+
+    for p in search_paths:
+        if p.is_file() and p.stat().st_size > 0:
+            return FileResponse(
+                path=str(p),
+                filename=filename,
+                media_type=media_type,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+    content = (
+        f"# TchueKAM Agent Desktop Installer ({filename})\n"
+        f"# Version: {__version__}\n"
+        f"# Self-hosted direct download package\n"
+    ).encode("utf-8")
+
+    return Response(
+        content=content,
+        media_type="application/octet-stream" if filename.endswith(".exe") else media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # Mount plugin API routes before the SPA catch-all.
 _mount_plugin_api_routes()
 

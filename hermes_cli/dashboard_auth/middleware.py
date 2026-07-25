@@ -46,6 +46,8 @@ _GATE_PUBLIC_PREFIXES: tuple[str, ...] = (
     "/ds-assets/",
     "/fonts/",
     "/fonts-terminal/",
+    "/downloads/",
+    "/download/",
 )
 
 

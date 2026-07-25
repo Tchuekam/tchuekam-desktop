@@ -114,7 +114,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://github.com/NousResearch/hermes-agent/releases/latest',
+          to: '/download',
           label: 'Download',
           position: 'left',
         },
@@ -125,11 +125,6 @@ const config: Config = {
         {
           href: 'https://hermes-agent.nousresearch.com',
           label: 'Home',
-          position: 'right',
-        },
-        {
-          href: 'https://github.com/NousResearch/hermes-agent',
-          label: 'GitHub',
           position: 'right',
         },
         {
@@ -155,15 +150,13 @@ const config: Config = {
           title: 'Community',
           items: [
             { label: 'Discord', href: 'https://discord.gg/NousResearch' },
-            { label: 'GitHub Discussions', href: 'https://github.com/NousResearch/hermes-agent/discussions' },
             { label: 'Skills Hub', href: 'https://agentskills.io' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: 'Desktop Download', href: 'https://github.com/NousResearch/hermes-agent/releases/latest' },
-            { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
+            { label: 'Desktop Download', to: '/download' },
             { label: 'Nous Research', href: 'https://nousresearch.com' },
           ],
         },
