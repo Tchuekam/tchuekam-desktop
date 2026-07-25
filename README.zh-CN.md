@@ -2,7 +2,7 @@
   <img src="assets/banner.png" alt="Hermes Agent" width="100%">
 </p>
 
-# Hermes Agent ☤
+# Tchuekam Agent ☤
 
 <p align="center">
   <a href="https://docs.tchuekam.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.tchuekam.com-FFD700?style=for-the-badge" alt="Documentation"></a>
