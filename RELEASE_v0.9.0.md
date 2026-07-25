@@ -1,9 +1,9 @@
-# Hermes Agent v0.9.0 (v2026.4.13)
+# Tchuekam Agent v0.9.0 (v2026.4.13)
 
 **Release Date:** April 13, 2026
 **Since v0.8.0:** 487 commits · 269 merged PRs · 167 resolved issues · 493 files changed · 63,281 insertions · 24 contributors
 
-> The everywhere release — Hermes goes mobile with Termux/Android, adds iMessage and WeChat, ships Fast Mode for OpenAI and Anthropic, introduces background process monitoring, launches a local web dashboard for managing your agent, and delivers the deepest security hardening pass yet across 16 supported platforms.
+> The everywhere release — Tchuekam goes mobile with Termux/Android, adds iMessage and WeChat, ships Fast Mode for OpenAI and Anthropic, introduces background process monitoring, launches a local web dashboard for managing your agent, and delivers the deepest security hardening pass yet across 16 supported platforms.
 
 ---
 
