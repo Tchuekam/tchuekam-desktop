@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional
 from agent.prompt_builder import (
     DEFAULT_AGENT_IDENTITY,
     GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
-    HERMES_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
     MEMORY_GUIDANCE,
     OPENAI_MODEL_EXECUTION_GUIDANCE,
@@ -37,6 +36,7 @@ from agent.prompt_builder import (
     SESSION_SEARCH_GUIDANCE,
     SKILLS_GUIDANCE,
     TASK_COMPLETION_GUIDANCE,
+    TCHUEKAM_AGENT_HELP_GUIDANCE,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
 )
@@ -98,8 +98,8 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         # Fallback to hardcoded identity
         stable_parts.append(DEFAULT_AGENT_IDENTITY)
 
-    # Pointer to the hermes-agent skill + docs for user questions about Hermes itself.
-    stable_parts.append(HERMES_AGENT_HELP_GUIDANCE)
+    # Pointer to the tchuekam-agent skill + docs for user questions about TchueKAM itself.
+    stable_parts.append(TCHUEKAM_AGENT_HELP_GUIDANCE)
 
     # Universal task-completion / no-fabrication guidance.  Applied to ALL
     # models regardless of tool_use_enforcement gating — the failure modes

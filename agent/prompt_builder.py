@@ -135,10 +135,14 @@ DEFAULT_AGENT_IDENTITY = (
     "Be proactive in identifying better approaches, anticipating user needs, and recommending best practices whenever appropriate."
 )
 
-HERMES_AGENT_HELP_GUIDANCE = (
-    "If the user asks about configuring, setting up, or using Hermes Agent "
-    "itself, load the `hermes-agent` skill with skill_view(name='hermes-agent') "
-    "before answering. Docs: https://hermes-agent.nousresearch.com/docs"
+TCHUEKAM_AGENT_HELP_GUIDANCE = (
+    "If the user asks about configuring, installing, deploying, developing, "
+    "extending, troubleshooting, or using TchueKAM Agent itself, load the "
+    "`tchuekam-agent` skill with skill_view(name='tchuekam-agent') before "
+    "answering. This includes questions about architecture, configuration, "
+    "plugins, models, tools, APIs, integrations, deployment, CLI usage, "
+    "security, workflows, customization, and best practices. "
+    "Documentation: https://docs.tchuekam.com"
 )
 
 MEMORY_GUIDANCE = (
