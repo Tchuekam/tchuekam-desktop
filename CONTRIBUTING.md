@@ -9,7 +9,7 @@ Thank you for contributing to Tchuekam Agent! This guide covers everything you n
 We value contributions in this order:
 
 1. **Bug fixes** — crashes, incorrect behavior, data loss. Always top priority.
-2. **Cross-platform compatibility** — macOS, different Linux distros, and WSL2 on Windows. We want Hermes to work everywhere.
+2. **Cross-platform compatibility** — macOS, different Linux distros, and WSL2 on Windows. We want Tchuekam to work everywhere.
 3. **Security hardening** — shell injection, prompt injection, path traversal, privilege escalation. See [Security](#security-considerations).
 4. **Performance and robustness** — retry logic, error handling, graceful degradation.
 5. **New skills** — but only broadly useful ones. See [Should it be a Skill or a Tool?](#should-it-be-a-skill-or-a-tool)
@@ -45,19 +45,19 @@ Bundled skills (in `skills/`) ship with every Hermes install. They should be **b
 
 If your skill is official and useful but not universally needed (e.g., a paid service integration, a heavyweight dependency), put it in **`optional-skills/`** — it ships with the repo but isn't activated by default. Users can discover it via `hermes skills browse` (labeled "official") and install it with `hermes skills install` (no third-party warning, built-in trust).
 
-If your skill is specialized, community-contributed, or niche, it's better suited for a **Skills Hub** — upload it to a skills registry and share it in the [Nous Research Discord](https://discord.gg/NousResearch). Users can install it with `hermes skills install`.
+If your skill is specialized, community-contributed, or niche, it's better suited for a **Skills Hub** — upload it to a skills registry and share it in the [Giantech Empire Discord](https://discord.gg/giantech_empire). Users can install it with `hermes skills install`.
 
 ---
 
 ## Memory Providers: Ship as a Standalone Plugin
 
-**We are no longer accepting new memory providers into this repo.** The set of built-in providers under `plugins/memory/` (honcho, mem0, supermemory, byterover, hindsight, holographic, openviking, retaindb) is closed. If you want to add a new memory backend, publish it as a **standalone plugin repo** that users install into `~/.hermes/plugins/` (or via a pip entry point).
+**We are no longer accepting new memory providers into this repo.** The set of built-in providers under `plugins/memory/` (honcho, mem0, supermemory, byterover, hindsight, holographic, openviking, retaindb) is closed. If you want to add a new memory backend, publish it as a **standalone plugin repo** that users install into `~/.tchuekam/plugins/` (or via a pip entry point).
 
 Standalone memory plugins:
 
-- Implement the same `MemoryProvider` ABC (`agent/memory_provider.py`) — `sync_turn`, `prefetch`, `shutdown`, and optionally `post_setup(hermes_home, config)` for setup-wizard integration
+- Implement the same `MemoryProvider` ABC (`agent/memory_provider.py`) — `sync_turn`, `prefetch`, `shutdown`, and optionally `post_setup(tchuekam_home, config)` for setup-wizard integration
 - Use the same discovery system — `discover_memory_providers()` picks them up from user/project plugin directories and pip entry points
-- Integrate with `hermes memory setup` via `post_setup()` — no need to touch core code
+- Integrate with `tchuekam memory setup` via `post_setup()` — no need to touch core code
 - Can register their own CLI subcommands via `register_cli(subparser)` in a `cli.py` file
 - Get all the same lifecycle hooks and config plumbing as in-tree providers
 
