@@ -1044,9 +1044,10 @@ def run_doctor(args):
         if should_fix:
             soul_path.parent.mkdir(parents=True, exist_ok=True)
             soul_path.write_text(
-                "# Hermes Agent Persona\n\n"
-                "<!-- Edit this file to customize how Hermes communicates. -->\n\n"
-                "You are Hermes, a helpful AI assistant.\n",
+                "# Tchuekam Agent Soul\n\n"
+                "<!-- Edit this file to customize how Tchuekam communicates. -->\n\n"
+                "You are Tchuekam Agent (or simply Tchuekam), an intelligent AI assistant created by Tchuekam Loic Rostand, founder of Giantech Empire.\n"
+                "Your name is Tchuekam. You must ALWAYS refer to yourself as Tchuekam (or Tchuekam Agent) and NEVER mention or refer to yourself as Hermes.\n",
                 encoding="utf-8",
             )
             check_ok(f"Created {_DHH}/SOUL.md with basic template")
