@@ -1,8 +1,10 @@
-// TchueKAM auto-updater — checks GitHub Releases for new versions and
-// installs them on quit. Publishes update lifecycle events to the renderer
-// for in-app UI, and to PostHog for analytics.
+let autoUpdater = null
+try {
+  autoUpdater = require('electron-updater').autoUpdater
+} catch (err) {
+  // electron-updater is not present or optional in this environment
+}
 
-const { autoUpdater } = require('electron-updater')
 const { app, dialog, BrowserWindow } = require('electron')
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4 hours
@@ -18,9 +20,11 @@ function broadcast(channel, payload) {
 }
 
 function setupListeners() {
+  if (!autoUpdater) return
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowPrerelease = false
+
 
   autoUpdater.on('checking-for-update', () => {
     broadcast('tchuekam:update:checking', { ts: Date.now() })
@@ -74,18 +78,16 @@ function setupListeners() {
 }
 
 function checkNow() {
-  // Skip updates in dev mode (no packaged app to update)
-  if (!app.isPackaged) return
+  if (!app.isPackaged || !autoUpdater) return
   try {
     autoUpdater.checkForUpdates().catch(() => {})
   } catch {}
 }
 
 function initAutoUpdater() {
-  if (initialized) return
+  if (initialized || !autoUpdater || !app.isPackaged) return
   initialized = true
 
-  if (!app.isPackaged) return // dev mode: no-op
 
   setupListeners()
 

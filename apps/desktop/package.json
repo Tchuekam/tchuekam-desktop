@@ -150,6 +150,8 @@
       "assets/**",
       "electron/**",
       "public/**",
+      "node_modules/electron-updater/**",
+      "node_modules/builder-util-runtime/**",
       "package.json"
     ],
     "beforeBuild": "scripts/before-build.cjs",

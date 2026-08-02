@@ -120,6 +120,23 @@ For the full command lists, see the [CLI guide](https://docs.tchuekam.com/docs/u
 
 ---
 
+## TchueKAM Enterprise Backend Architecture (tchuekam.com)
+
+The **[TchueKAM](https://tchuekam.com)** platform features a high-performance, multi-tenant enterprise backend built with **FastAPI**, **SQLAlchemy 2.0**, and **Pydantic V2**, following **Clean Architecture** principles.
+
+- 🔒 **Authentication & JWT**: Sign-up, sign-in, email verification, password reset, token rotation, and JTI blacklist revocation.
+- 🌐 **Extensible OAuth2**: Google, GitHub, Apple, Microsoft, and Facebook integration.
+- 🛡️ **Dynamic RBAC**: Fine-grained `(module, resource, action)` database-driven permissions with pre-seeded enterprise roles.
+- 🏢 **Multi-Tenant Isolation**: Enterprise data separation via `X-Organization-Id` & `X-Workspace-Id`.
+- 👥 **Workspaces & Teams**: Workspaces, team hierarchies (`parent_team_id`), team leaders, and invitation onboarding flows.
+- 🔑 **API Keys & Security Audit**: SHA256 hashed API keys with `tk_live_...` prefix, rate-limiting, and JSON audit logging.
+- ⚡ **WebSockets**: Real-time notification gateway.
+- 🧪 **100% Automated Test Coverage**: 18 unit, integration, and end-to-end tests passing (`pytest tchuekam_backend/tests -v`).
+
+See the complete **[TchueKAM Backend Documentation](tchuekam_backend/README.md)** for ERD diagrams, architecture specs, and deployment guides.
+
+---
+
 ## Documentation
 
 All documentation lives at **[docs.tchuekam.com/docs](https://docs.tchuekam.com/docs/)**:
