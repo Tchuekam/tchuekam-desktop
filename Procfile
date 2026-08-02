@@ -1,1 +1,1 @@
-web: python -m hermes_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure --no-open
+web: uvicorn tchuekam_backend.main:app --host 0.0.0.0 --port $PORT
