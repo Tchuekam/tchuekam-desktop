@@ -2,7 +2,8 @@
 Dépôt de données pour les Organisations et leurs paramètres Multi-Tenant.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from tchuekam_backend.domain.models import Organization, OrganizationMembership
 
@@ -42,6 +43,47 @@ class OrganizationRepository:
             )
             .all()
         )
+
+    def list_paginated_for_user(
+        self,
+        user_id: str,
+        page: int = 1,
+        per_page: int = 20,
+        search: Optional[str] = None,
+        sort_by: Optional[str] = "created_at",
+        sort_order: Optional[str] = "desc",
+    ) -> Tuple[List[Organization], int]:
+        """Returns paginated organizations accessible to a user."""
+        query = (
+            self.db.query(Organization)
+            .join(OrganizationMembership, OrganizationMembership.org_id == Organization.id)
+            .filter(
+                OrganizationMembership.user_id == user_id,
+                OrganizationMembership.status == "ACTIVE",
+                Organization.is_archived == False,
+            )
+        )
+
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Organization.name.ilike(search_pattern),
+                    Organization.slug.ilike(search_pattern),
+                )
+            )
+
+        total = query.count()
+
+        sort_attr = getattr(Organization, sort_by, Organization.created_at) if hasattr(Organization, sort_by or "") else Organization.created_at
+        if sort_order == "desc":
+            query = query.order_by(sort_attr.desc())
+        else:
+            query = query.order_by(sort_attr.asc())
+
+        offset = (page - 1) * per_page
+        items = query.offset(offset).limit(per_page).all()
+        return items, total
 
     def update(
         self,

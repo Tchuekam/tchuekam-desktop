@@ -19,17 +19,35 @@ from tchuekam_backend.core.config import settings
 # In-memory revocation blacklist for instant JWT invalidation
 _REVOKED_JTI_BLACKLIST: Set[str] = set()
 
+# Try importing argon2 or bcrypt for primary enterprise hashing
+try:
+    from argon2 import PasswordHasher
+    _ARGON2_HASHER = PasswordHasher()
+except ImportError:
+    _ARGON2_HASHER = None
+
 
 def hash_password(password: str) -> str:
-    """Hache un mot de passe de manière sécurisée en utilisant PBKDF2-HMAC-SHA256 avec un sel unique."""
+    """Hache un mot de passe de manière sécurisée (Argon2id si disponible, ou PBKDF2-HMAC-SHA256)."""
+    if _ARGON2_HASHER:
+        try:
+            return f"argon2id${_ARGON2_HASHER.hash(password)}"
+        except Exception:
+            pass
+
     salt = os.urandom(16)
-    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
-    return f"pbkdf2_sha256$100000${base64.b64encode(salt).decode('ascii')}${base64.b64encode(key).decode('ascii')}"
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 120_000)
+    return f"pbkdf2_sha256$120000${base64.b64encode(salt).decode('ascii')}${base64.b64encode(key).decode('ascii')}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Vérifie qu'un mot de passe en clair correspond au hash PBKDF2 enregistré."""
+    """Vérifie qu'un mot de passe en clair correspond au hash enregistré (Argon2id ou PBKDF2)."""
     try:
+        if hashed_password.startswith("argon2id$"):
+            if _ARGON2_HASHER:
+                raw_hash = hashed_password[len("argon2id$"):]
+                return _ARGON2_HASHER.verify(raw_hash, plain_password)
+
         parts = hashed_password.split('$')
         if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
             return False
@@ -63,7 +81,7 @@ def generate_secure_token() -> str:
 
 
 def hash_token(token: str) -> str:
-    """Hache un jeton temporaire (ex: reset password token, email verification token) avec SHA256."""
+    """Hache un jeton temporaire avec SHA256."""
     return hashlib.sha256(token.encode('utf-8')).hexdigest()
 
 

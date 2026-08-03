@@ -3,8 +3,65 @@ Schémas Pydantic pour la validation stricte des entrées et sorties d'API (Modu
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Generic, List, Optional, TypeVar
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+T = TypeVar("T")
+
+
+# --- General Envelope & Pagination Schemas ---
+
+class ErrorDetail(BaseModel):
+    field: Optional[str] = None
+    issue: str
+    type: Optional[str] = None
+
+
+class ErrorPayload(BaseModel):
+    code: str
+    message: str
+    details: List[Any] = []
+
+
+class APIResponse(BaseModel, Generic[T]):
+    success: bool = True
+    message: str = "Opération effectuée avec succès."
+    data: Optional[T] = None
+
+
+class PaginatedMeta(BaseModel):
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+
+
+class PaginatedData(BaseModel, Generic[T]):
+    items: List[T]
+    pagination: PaginatedMeta
+
+
+class PaginationParams(BaseModel):
+    page: int = Field(default=1, ge=1, description="Page number starting at 1")
+    per_page: int = Field(default=20, ge=1, le=100, description="Items per page (max 100)")
+    search: Optional[str] = Field(default=None, description="Global text search query")
+    sort_by: Optional[str] = Field(default=None, description="Field name to sort by")
+    sort_order: Optional[str] = Field(default="asc", pattern="^(asc|desc)$", description="Sort direction")
+
+
+# --- File Upload Schemas ---
+
+class FileRecordResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    filename: str
+    original_filename: str
+    mime_type: str
+    file_size_bytes: int
+    storage_path: str
+    uploaded_by_id: Optional[str]
+    created_at: datetime
 
 
 # --- Module 1 : Authentification & Utilisateurs ---

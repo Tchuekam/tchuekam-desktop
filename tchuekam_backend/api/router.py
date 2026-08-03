@@ -1,5 +1,5 @@
 """
-Agrégateur complet des routes API REST v1 et WebSocket (Module 1 + Module 2).
+Agrégateur complet des routes API REST v1 et WebSocket (Module 1 + Module 2 + Files).
 """
 
 from fastapi import APIRouter
@@ -14,6 +14,7 @@ from tchuekam_backend.api.v1.teams import router as teams_router
 from tchuekam_backend.api.v1.invitations import router as invitations_router
 from tchuekam_backend.api.v1.profiles import router as profiles_router
 from tchuekam_backend.api.v1.api_keys import router as api_keys_router
+from tchuekam_backend.api.v1.files import router as files_router
 from tchuekam_backend.api.ws.notifications import router as ws_router
 
 api_router = APIRouter()
@@ -32,6 +33,7 @@ api_router.include_router(teams_router)
 api_router.include_router(invitations_router)
 api_router.include_router(profiles_router)
 api_router.include_router(api_keys_router)
+api_router.include_router(files_router)
 
 # WebSockets
 api_router.include_router(ws_router)

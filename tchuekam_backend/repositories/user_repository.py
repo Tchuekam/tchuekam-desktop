@@ -1,9 +1,10 @@
 """
-Dépôt de données pour les Utilisateurs et leurs Profils.
+Dépôt de données pour les Utilisateurs et leurs Profils avec optimisation des requêtes et pagination.
 """
 
-from typing import List, Optional
-from sqlalchemy.orm import Session
+from typing import List, Optional, Tuple
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, selectinload
 from tchuekam_backend.domain.models import User, UserProfile, UserRole, Role
 
 
@@ -12,10 +13,26 @@ class UserRepository:
         self.db = db
 
     def get_by_id(self, user_id: str) -> Optional[User]:
-        return self.db.query(User).filter(User.id == user_id).first()
+        return (
+            self.db.query(User)
+            .options(
+                selectinload(User.profile),
+                selectinload(User.user_roles).selectinload(UserRole.role),
+            )
+            .filter(User.id == user_id)
+            .first()
+        )
 
     def get_by_email(self, email: str) -> Optional[User]:
-        return self.db.query(User).filter(User.email == email.lower().strip()).first()
+        return (
+            self.db.query(User)
+            .options(
+                selectinload(User.profile),
+                selectinload(User.user_roles).selectinload(UserRole.role),
+            )
+            .filter(User.email == email.lower().strip())
+            .first()
+        )
 
     def create(self, email: str, password_hash: Optional[str] = None, is_verified: bool = False) -> User:
         user = User(
@@ -32,6 +49,43 @@ class UserRepository:
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def list_paginated(
+        self,
+        page: int = 1,
+        per_page: int = 20,
+        search: Optional[str] = None,
+        sort_by: Optional[str] = "created_at",
+        sort_order: Optional[str] = "desc",
+    ) -> Tuple[List[User], int]:
+        """Returns paginated users with Eager-Loaded relationships to eliminate N+1 queries."""
+        query = self.db.query(User).options(
+            selectinload(User.profile),
+            selectinload(User.user_roles).selectinload(UserRole.role),
+        )
+
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.outerjoin(UserProfile).filter(
+                or_(
+                    User.email.ilike(search_pattern),
+                    UserProfile.full_name.ilike(search_pattern),
+                    UserProfile.username.ilike(search_pattern),
+                )
+            )
+
+        total = query.count()
+
+        # Sorting
+        sort_attr = getattr(User, sort_by, User.created_at) if hasattr(User, sort_by or "") else User.created_at
+        if sort_order == "desc":
+            query = query.order_by(sort_attr.desc())
+        else:
+            query = query.order_by(sort_attr.asc())
+
+        offset = (page - 1) * per_page
+        items = query.offset(offset).limit(per_page).all()
+        return items, total
 
     def update_password(self, user_id: str, new_password_hash: str) -> bool:
         user = self.get_by_id(user_id)

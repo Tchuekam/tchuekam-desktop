@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://tchuekam.com")
     BACKEND_URL: str = os.getenv("BACKEND_URL", "https://api.tchuekam.com")
     
+    # Environment
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    
     # Base de données
     DATABASE_URL: str = os.getenv(
         "TCHUEKAM_DATABASE_URL",
@@ -45,6 +48,29 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = 300
     RATE_LIMIT_GLOBAL_PER_MINUTE: int = 120
     
+    # File Upload Security
+    MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB limit
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")
+    ALLOWED_MIME_TYPES: List[str] = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "text/csv",
+    ]
+    DISALLOWED_EXTENSIONS: List[str] = [
+        ".exe", ".bat", ".sh", ".php", ".py", ".js", ".vbs", ".cmd", ".msi", ".dll", ".so", ".dylib", ".html", ".htm", ".svg"
+    ]
+
+    # Pagination Defaults
+    DEFAULT_PAGE: int = 1
+    DEFAULT_PER_PAGE: int = 20
+    MAX_PER_PAGE: int = 100
+
     # OAuth Providers
     GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID", None)
     GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET", None)
@@ -68,4 +94,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

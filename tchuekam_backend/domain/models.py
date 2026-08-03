@@ -344,3 +344,19 @@ class ApiKey(Base):
 
     organization = relationship("Organization", back_populates="api_keys")
     user = relationship("User", back_populates="api_keys")
+
+
+class FileRecord(Base):
+    __tablename__ = "file_records"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    file_size_bytes = Column(Integer, nullable=False)
+    storage_path = Column(String(512), nullable=False)
+    uploaded_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    uploaded_by = relationship("User")
+

@@ -31,7 +31,9 @@ def test_multi_tenant_strict_data_isolation(db_session):
     malicious_headers = {**headers_b, "X-Organization-Id": org_a_id}
     res_attack = client.get("/api/v1/organizations/current", headers=malicious_headers)
     assert res_attack.status_code == 403
-    assert "Accès refusé" in res_attack.json()["detail"]
+    json_data = res_attack.json()
+    err_msg = json_data.get("error", {}).get("message") or json_data.get("detail", "")
+    assert "Accès refusé" in err_msg
 
     # 2. Tentative de Tenant B de lister les membres de Org A -> BLOQUÉ (403 Forbidden)
     res_attack_members = client.get("/api/v1/organizations/current/members", headers=malicious_headers)

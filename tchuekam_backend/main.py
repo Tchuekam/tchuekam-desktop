@@ -1,16 +1,27 @@
 """
-Point d'entrée principal de l'application FastAPI backend TchueKAM.
+Point d'entrée principal de l'application FastAPI backend TchueKAM avec sécurité, middlewares et gestionnaire d'erreurs centralisé.
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from tchuekam_backend.api.router import api_router
 from tchuekam_backend.core.config import settings
 from tchuekam_backend.core.database import SessionLocal, init_db
+from tchuekam_backend.core.exception_handlers import (
+    app_exception_handler,
+    global_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
+from tchuekam_backend.core.exceptions import AppException
+from tchuekam_backend.core.logging_middleware import StructuredLoggingAndSecurityHeadersMiddleware
+from tchuekam_backend.domain.schemas import APIResponse
 from tchuekam_backend.services.rbac_service import RbacService
-from tchuekam_backend.api.router import api_router
 
 
 @asynccontextmanager
@@ -30,6 +41,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    description="Backend API REST Enterprise pour TchueKAM SaaS Multi-Tenant.",
     version=settings.VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url="/docs",
@@ -37,7 +49,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuration CORS
+# 1. GZip Compression Middleware (Minimum response size 1000 bytes)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# 2. Structured Logging & Security HTTP Headers Middleware
+app.add_middleware(StructuredLoggingAndSecurityHeadersMiddleware)
+
+# 3. Configuration CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -46,26 +64,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Inclusion des routes API
+# Exception Handlers Centralisés
+app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
+
+# Inclusion des routes API REST v1
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
-@app.get("/health", tags=["Health"])
+@app.get("/health", tags=["Health"], response_model=APIResponse[dict])
 def health_check():
     """Endpoint de contrôle de santé (Health Check)."""
-    return {
-        "status": "healthy",
-        "service": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-    }
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Gestionnaire centralisé des erreurs non gérées."""
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "Une erreur interne du serveur est survenue.", "error": str(exc)},
+    return APIResponse(
+        message="Service opérationnel.",
+        data={
+            "status": "healthy",
+            "service": settings.PROJECT_NAME,
+            "version": settings.VERSION,
+            "environment": settings.ENVIRONMENT,
+        },
     )
 
 
