@@ -21,5 +21,6 @@
     }
   },
   "include": ["src", "../shared/src"],
+  "exclude": ["src/app/image-studio/open-generative-ai"],
   "references": []
 }
