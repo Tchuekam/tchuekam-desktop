@@ -43,6 +43,14 @@ export default function DesignAgentStudio({
     }
 
     const fetchUser = async () => {
+      if (!apiKey || apiKey === 'genimage_free_key') {
+        setUserData({
+          username: 'Studio User',
+          email: null,
+          balance: 0,
+        });
+        return;
+      }
       try {
         const data = await getUserBalance(apiKey);
         setUserData({
@@ -51,7 +59,14 @@ export default function DesignAgentStudio({
           balance: data.balance || 0
         });
       } catch (err) {
-        console.error('Failed to fetch user data for Design Agent:', err);
+        setUserData({
+          username: 'Studio User',
+          email: null,
+          balance: 0,
+        });
+        if (!err.message?.includes('401') && !err.message?.includes('403')) {
+          console.error('Failed to fetch user data for Design Agent:', err);
+        }
       }
     };
 

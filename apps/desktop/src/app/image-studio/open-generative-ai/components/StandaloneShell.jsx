@@ -269,8 +269,14 @@ const persistNotifications = (notifications) => {
 };
 
 export default function StandaloneShell() {
-  const params = useParams();
-  const router = useRouter();
+  let params = {};
+  let router = { push: () => {}, replace: () => {} };
+  try {
+    params = useParams() || {};
+    router = useRouter() || { push: () => {}, replace: () => {} };
+  } catch (_err) {
+    // Non-Next.js standalone environment fallback
+  }
   const slug = params?.slug || []; 
   const idFromParams = params?.id;
   const tabFromParams = params?.tab;
@@ -514,11 +520,19 @@ export default function StandaloneShell() {
   }, [activeTab]);
 
   const fetchBalance = useCallback(async (key) => {
+    if (!key || key === 'genimage_free_key') {
+      setBalance(null);
+      return;
+    }
     try {
       const data = await getUserBalance(key);
       setBalance(data.balance);
     } catch (err) {
-      console.error('Balance fetch failed:', err);
+      setBalance(null);
+      // Suppress console error output for expected 401/403 missing or invalid key errors
+      if (!err.message?.includes('401') && !err.message?.includes('403')) {
+        console.error('Balance fetch failed:', err);
+      }
     }
   }, []);
 
@@ -569,9 +583,9 @@ export default function StandaloneShell() {
     };
   }, [apiKey]);
 
-  // Poll for balance every 30 seconds if key is present
+  // Poll for balance every 30 seconds if key is present and valid
   useEffect(() => {
-    if (!apiKey) return;
+    if (!apiKey || apiKey === 'genimage_free_key') return;
     const interval = setInterval(() => fetchBalance(apiKey), 30000);
     return () => clearInterval(interval);
   }, [apiKey, fetchBalance]);
@@ -674,70 +688,44 @@ export default function StandaloneShell() {
 
       {/* Header */}
       {isHeaderVisible && (
-        <header className="flex-shrink-0 h-14 border-b border-white/[0.05] flex items-center justify-between px-4 bg-[#0a0a0b]/80 backdrop-blur-md z-50 gap-4">
-          {/* Left: Mobile menu toggle + Logo + Desktop Sidebar Toggle */}
-          <div className="flex items-center gap-3">
-            {/* Mobile drawer toggle */}
-            <button
-              onClick={() => setIsMobileOpen(!isMobileOpen)}
-              className="md:hidden p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-              aria-label="Toggle Navigation Menu"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-
-            {/* Desktop Sidebar Toggle Button (Single Toggle Button) */}
-            <div className="hidden md:block relative group">
-              <button
-                onClick={toggleSidebar}
-                className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors border border-white/5"
-                aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className={`transition-transform duration-300 ${isSidebarCollapsed ? 'rotate-180' : ''}`}
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M9 3v18" />
-                  <path d="M14 9l-3 3 3 3" />
-                </svg>
-              </button>
-              {/* Custom Tooltip */}
-              <div className="absolute left-0 top-full mt-2 px-2.5 py-1 bg-[#121215]/95 backdrop-blur-md text-white text-[11px] font-medium rounded-md shadow-2xl border border-white/15 opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
-                {isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              </div>
-            </div>
-
-            {/* Logo & Title */}
-            <div className="flex items-center gap-2.5">
-              <img src="/logo.png" alt="Genimage Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
-              <span className="text-sm font-bold tracking-tight hidden sm:block text-white">
-                Genimage
-              </span>
-            </div>
-          </div>
-
-          {/* Active Tab Breadcrumb Badge */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.05] text-xs text-white/60">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#22d3ee]" />
-            <span className="font-medium text-white/80">
-              {TABS.find(t => t.id === activeTab)?.label || 'Studio'}
+        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-3 select-none">
+          {/* Left: Logo */}
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <img src="/logo.png" alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
+            <span className="text-sm font-bold tracking-tight hidden xl:block text-white">
+              TchuekaM Studio
             </span>
           </div>
 
+          {/* Center: Horizontal Scrollable Tabs */}
+          <nav aria-label="Studio modules" className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto scrollbar-none py-1 px-1">
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={(e) => handleTabClick(e, tab.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`
+                    group relative flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-all duration-150 whitespace-nowrap flex-shrink-0 cursor-pointer
+                    ${isActive
+                      ? 'bg-white/10 text-white border border-white/15 shadow-sm'
+                      : 'text-white/60 hover:text-white hover:bg-white/[0.05] border border-transparent'
+                    }
+                  `}
+                >
+                  <span className={`flex-shrink-0 transition-colors ${isActive ? 'text-[#22d3ee]' : 'text-white/40 group-hover:text-white/80'}`}>
+                    {tab.icon}
+                  </span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
           {/* Right: Actions */}
-          <div className="flex-shrink-0 flex items-center gap-3">
-
-
+          <div className="flex-shrink-0 flex items-center gap-2">
             <button
               onClick={() => setShowSettings(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-[13px] font-bold text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors"
@@ -753,162 +741,8 @@ export default function StandaloneShell() {
         </header>
       )}
 
-      {/* Main Body Layout: Left Sidebar + Studio Content Area */}
-      <div className="flex-1 min-h-0 flex relative overflow-hidden">
-        {/* Mobile Backdrop Overlay */}
-        {isMobileOpen && (
-          <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 md:hidden animate-fade-in"
-            onClick={() => setIsMobileOpen(false)}
-          />
-        )}
-
-        {/* Left Sidebar Navigation */}
-        {isHeaderVisible && (
-          <aside
-            className={`
-              fixed top-14 bottom-0 left-0 md:static md:h-full z-30 bg-[#0a0a0b]/95 backdrop-blur-md border-r border-white/[0.06] flex flex-col transition-all duration-300 ease-in-out flex-shrink-0 select-none
-              ${isMobileOpen ? 'translate-x-0 w-60 z-50' : '-translate-x-full md:translate-x-0'}
-              ${isSidebarCollapsed ? 'md:w-16' : 'md:w-52'}
-            `}
-          >
-            <nav aria-label="Studio navigation" className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-none py-2 px-2">
-              <div className="space-y-1">
-                {NAVIGATION_CATEGORIES.map((category) => {
-                  const isCategoryActive = activeCategory?.id === category.id;
-                  const isCollapsed = isSidebarCollapsed && !isMobileOpen;
-                  const isCategoryOpen = !isCollapsed && expandedCategoryId === category.id;
-                  const categoryPanelId = `navigation-category-${category.id}`;
-
-                  return (
-                    <div key={category.id} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => handleCategoryToggle(category.id)}
-                        aria-label={category.label}
-                        aria-expanded={isCategoryOpen}
-                        aria-controls={isCollapsed ? undefined : categoryPanelId}
-                        title={isCollapsed ? category.label : undefined}
-                        className={`
-                          group relative flex items-center rounded-xl transition-all duration-150 font-semibold
-                          ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2.5 w-full gap-3 text-left'}
-                          ${isCategoryActive
-                            ? 'bg-gradient-to-r from-[#22d3ee]/15 to-purple-500/10 text-[#22d3ee] border border-[#22d3ee]/20 shadow-[0_0_15px_rgba(34,211,238,0.08)]'
-                            : isCategoryOpen
-                              ? 'bg-white/[0.06] text-white border border-white/[0.08]'
-                              : 'text-white/60 hover:text-white hover:bg-white/[0.04] border border-transparent'
-                          }
-                        `}
-                      >
-                        {isCategoryActive && (
-                          <span className="absolute left-0 top-2 bottom-2 w-1 bg-gradient-to-b from-[#22d3ee] to-[#a855f7] rounded-r-full shadow-[0_0_8px_rgba(34,211,238,0.6)]" />
-                        )}
-
-                        <span className={`flex-shrink-0 transition-colors ${isCategoryActive ? 'text-[#22d3ee]' : 'text-white/55 group-hover:text-white'}`}>
-                          {category.icon}
-                        </span>
-
-                        {!isCollapsed && (
-                          <>
-                            <span className="flex-1 min-w-0 text-[12px] leading-4 tracking-tight">
-                              {category.label}
-                            </span>
-                            <svg
-                              width="15"
-                              height="15"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className={`flex-shrink-0 transition-transform duration-200 ${isCategoryOpen ? 'rotate-180' : ''}`}
-                              aria-hidden="true"
-                            >
-                              <path d="M6 9l6 6 6-6"/>
-                            </svg>
-                          </>
-                        )}
-                      </button>
-
-                      {!isCollapsed && isCategoryOpen && (
-                        <div
-                          id={categoryPanelId}
-                          role="group"
-                          aria-label={`${category.label} tools`}
-                          className="mt-1 ml-2 pl-2 border-l border-white/[0.08] space-y-1 max-h-64 overflow-y-auto scrollbar-none"
-                        >
-                          {category.tabIds.map((tabId) => {
-                            const tab = TABS.find((item) => item.id === tabId);
-                            if (!tab) return null;
-                            const isActive = activeTab === tab.id;
-
-                            return (
-                              <a
-                                key={tab.id}
-                                href={`/studio/${tab.id}`}
-                                onClick={(event) => handleNavigationItemClick(event, tab.id)}
-                                aria-current={isActive ? 'page' : undefined}
-                                className={`
-                                  group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[12px] font-medium transition-all duration-150
-                                  ${isActive
-                                    ? 'bg-[#22d3ee]/12 text-[#22d3ee] border border-[#22d3ee]/20'
-                                    : 'text-white/55 hover:text-white hover:bg-white/[0.04] border border-transparent'
-                                  }
-                                `}
-                              >
-                                {isActive && (
-                                  <span className="absolute -left-[11px] top-2 bottom-2 w-0.5 rounded-full bg-[#22d3ee] shadow-[0_0_7px_rgba(34,211,238,0.7)]" />
-                                )}
-                                <span className={`flex-shrink-0 ${isActive ? 'text-[#22d3ee]' : 'text-white/45 group-hover:text-white/80'}`}>
-                                  {tab.icon}
-                                </span>
-                                <span className="truncate">{tab.label}</span>
-                              </a>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {EXPLORE_APPS_TAB && (
-                <div className="mt-3 pt-3 border-t border-white/[0.07]">
-                  <a
-                    href={`/studio/${EXPLORE_APPS_TAB.id}`}
-                    onClick={(event) => handleNavigationItemClick(event, EXPLORE_APPS_TAB.id)}
-                    aria-current={activeTab === EXPLORE_APPS_TAB.id ? 'page' : undefined}
-                    aria-label={EXPLORE_APPS_TAB.label}
-                    title={isSidebarCollapsed && !isMobileOpen ? EXPLORE_APPS_TAB.label : undefined}
-                    className={`
-                      group relative flex items-center rounded-xl transition-all duration-150 text-[13px] font-semibold
-                      ${isSidebarCollapsed && !isMobileOpen ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2.5 w-full gap-3'}
-                      ${activeTab === EXPLORE_APPS_TAB.id
-                        ? 'bg-gradient-to-r from-[#22d3ee]/15 to-purple-500/10 text-[#22d3ee] border border-[#22d3ee]/20'
-                        : 'text-white/60 hover:text-white hover:bg-white/[0.04] border border-transparent'
-                      }
-                    `}
-                  >
-                    {activeTab === EXPLORE_APPS_TAB.id && (
-                      <span className="absolute left-0 top-2 bottom-2 w-1 bg-gradient-to-b from-[#22d3ee] to-[#a855f7] rounded-r-full" />
-                    )}
-                    <span className={`flex-shrink-0 ${activeTab === EXPLORE_APPS_TAB.id ? 'text-[#22d3ee]' : 'text-white/50 group-hover:text-white'}`}>
-                      {EXPLORE_APPS_TAB.icon}
-                    </span>
-                    {(!isSidebarCollapsed || isMobileOpen) && (
-                      <span className="truncate">{EXPLORE_APPS_TAB.label}</span>
-                    )}
-                  </a>
-                </div>
-              )}
-            </nav>
-          </aside>
-        )}
-
-        {/* Studio Content */}
-        <div className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]">
+      {/* Main Body Layout: Studio Content Area */}
+      <div className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]">
         <div className={activeTab === 'image' ? "h-full w-full" : "hidden"}>
           <ImageStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('image')} onGenerationEnd={makeGenerationEndCallback('image')} onGenerationComplete={makeSuccessCallback('image')} onGenerationError={makeErrorCallback('image')} />
         </div>
@@ -976,7 +810,6 @@ export default function StandaloneShell() {
           />
         </div>
       </div>
-    </div>
 
       {/* Global generation activity and notification stack */}
       {(activeGenerations.length > 0 || notifications.length > 0) && (

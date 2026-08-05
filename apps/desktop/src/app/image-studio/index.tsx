@@ -1,10 +1,22 @@
-/**
- * TchueKAM Image Studio v2 Module Entry Point
- */
+import { Suspense, lazy } from 'react'
 
-export { ImageStudioView } from './components/ImageStudioLayout'
-export type { StudioProjectData, CanvasLayerState, LibraryAssetItem, SavedPromptItem } from './core/types'
-export { projectService } from './application/services/ProjectService'
-export { providerRegistry } from './providers/registry'
-export { commandBus } from './application/commands/CommandBus'
-export { eventBus } from './application/events/EventBus'
+const StandaloneShellComponent = lazy(
+  // @ts-expect-error JS/JSX module without TypeScript declaration file
+  () => import('./open-generative-ai/components/StandaloneShell.jsx')
+)
+
+export function ImageStudioView() {
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-background">
+      <Suspense
+        fallback={
+          <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+            Loading Tchuekam Studio...
+          </div>
+        }
+      >
+        <StandaloneShellComponent />
+      </Suspense>
+    </div>
+  )
+}

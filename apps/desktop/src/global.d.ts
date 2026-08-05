@@ -26,6 +26,7 @@ declare global {
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
+      openImageStudioWindow: () => Promise<{ ok: boolean; windowId?: number }>
       fetchLinkTitle: (url: string) => Promise<string>
       settings: {
         getDefaultProjectDir: () => Promise<{ defaultLabel: string; dir: null | string }>

@@ -7,6 +7,7 @@ import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
+import { Codicon } from '@/components/ui/codicon'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -631,11 +632,31 @@ export function DesktopController() {
     </div>
   )
 
+  const isImageStudioView = currentView === 'image-studio'
+
+  const activeLeftTitlebarTools = useMemo(() => {
+    if (!isImageStudioView) {
+      return titlebarToolGroups.flat.left
+    }
+
+    return [
+      {
+        id: 'back-to-chat',
+        label: 'Back to Chat',
+        icon: <Codicon name="arrow-left" />,
+        onSelect: () => navigate(NEW_CHAT_ROUTE),
+        title: 'Return to main chat'
+      },
+      ...titlebarToolGroups.flat.left
+    ]
+  }, [isImageStudioView, navigate, titlebarToolGroups.flat.left])
+
   return (
     <AppShell
       commandCenterOpen={commandCenterOpen}
+      hideStatusbar={isImageStudioView}
       leftStatusbarItems={leftStatusbarItems}
-      leftTitlebarTools={titlebarToolGroups.flat.left}
+      leftTitlebarTools={activeLeftTitlebarTools}
       onOpenSearch={() => openCommandCenterSection('sessions')}
       onOpenSettings={openSettings}
       overlays={overlays}
@@ -643,7 +664,7 @@ export function DesktopController() {
       titlebarTools={titlebarToolGroups.flat.right}
     >
       <Pane
-        disabled={terminalTakeoverActive}
+        disabled={terminalTakeoverActive || isImageStudioView}
         id="chat-sidebar"
         maxWidth={SIDEBAR_MAX_WIDTH}
         minWidth={SIDEBAR_DEFAULT_WIDTH}

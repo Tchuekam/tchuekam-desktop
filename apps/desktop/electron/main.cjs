@@ -448,6 +448,7 @@ function registerMediaProtocol() {
 }
 
 let mainWindow = null
+let imageStudioWindow = null
 let hermesProcess = null
 let connectionPromise = null
 // Auto-reload budget for renderer crashes. A deterministic startup crash would
@@ -3530,6 +3531,69 @@ function createWindow() {
     startHermes().catch(error => rememberLog(error.stack || error.message))
   })
 }
+
+function createImageStudioWindow() {
+  if (imageStudioWindow && !imageStudioWindow.isDestroyed()) {
+    if (imageStudioWindow.isMinimized()) {
+      imageStudioWindow.restore()
+    }
+    imageStudioWindow.focus()
+    return imageStudioWindow
+  }
+
+  const icon = getAppIconPath()
+  imageStudioWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 700,
+    title: 'TchuekaM — Image Studio',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: getTitleBarOverlayOptions(),
+    trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
+    vibrancy: IS_MAC ? 'sidebar' : undefined,
+    icon,
+    backgroundColor: '#090d16',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      webviewTag: true,
+      sandbox: true,
+      nodeIntegration: false,
+      devTools: true
+    }
+  })
+
+  if (IS_MAC) {
+    imageStudioWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+  }
+
+  installDevToolsShortcut(imageStudioWindow)
+  installZoomShortcuts(imageStudioWindow)
+  installContextMenu(imageStudioWindow)
+
+  imageStudioWindow.webContents.setWindowOpenHandler(details => {
+    openExternalUrl(details.url)
+    return { action: 'deny' }
+  })
+
+  const targetUrl = DEV_SERVER
+    ? `${DEV_SERVER}/#/image-studio`
+    : `${pathToFileURL(resolveRendererIndex()).toString()}#/image-studio`
+
+  imageStudioWindow.loadURL(targetUrl)
+
+  imageStudioWindow.on('closed', () => {
+    imageStudioWindow = null
+  })
+
+  return imageStudioWindow
+}
+
+ipcMain.handle('hermes:open-image-studio', async () => {
+  const win = createImageStudioWindow()
+  return { ok: true, windowId: win?.id }
+})
 
 ipcMain.handle('hermes:connection', async () => startHermes())
 ipcMain.handle('hermes:bootstrap:reset', async () => {

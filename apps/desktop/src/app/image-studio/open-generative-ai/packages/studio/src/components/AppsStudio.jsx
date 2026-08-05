@@ -135,10 +135,14 @@ export default function AppsStudio({ apiKey }) {
   const [requestedApps, setRequestedApps] = useState([]);
 
   useEffect(() => {
-    if (apiKey) {
+    if (apiKey && apiKey !== 'genimage_free_key') {
       getAppInterests(apiKey)
         .then(setRequestedApps)
-        .catch(err => console.error("Error fetching interests:", err));
+        .catch(err => {
+          if (!err.message?.includes('401') && !err.message?.includes('403')) {
+            console.error("Error fetching interests:", err);
+          }
+        });
     }
   }, [apiKey]);
 

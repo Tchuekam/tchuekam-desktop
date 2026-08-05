@@ -21,6 +21,7 @@ import { TitlebarControls, type TitlebarTool } from './titlebar-controls'
 interface AppShellProps {
   children: ReactNode
   commandCenterOpen?: boolean
+  hideStatusbar?: boolean
   leftStatusbarItems?: readonly StatusbarItem[]
   leftTitlebarTools?: readonly TitlebarTool[]
   onOpenSettings: () => void
@@ -48,6 +49,7 @@ const viewportIsFullscreen = () =>
 export function AppShell({
   children,
   commandCenterOpen = false,
+  hideStatusbar = false,
   leftStatusbarItems,
   leftTitlebarTools,
   onOpenSettings,
@@ -152,7 +154,7 @@ export function AppShell({
           {children}
         </PaneShell>
 
-        <StatusbarControls items={statusbarItems} leftItems={leftStatusbarItems} />
+        {!hideStatusbar && <StatusbarControls items={statusbarItems} leftItems={leftStatusbarItems} />}
       </main>
 
       {overlays}

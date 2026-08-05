@@ -373,6 +373,14 @@ export function useSessionActions({
         return
       }
 
+      if (item.id === 'image-studio') {
+        if (window.hermesDesktop?.openImageStudioWindow) {
+          void window.hermesDesktop.openImageStudioWindow()
+
+          return
+        }
+      }
+
       if (item.route) {
         navigate(item.route)
       }

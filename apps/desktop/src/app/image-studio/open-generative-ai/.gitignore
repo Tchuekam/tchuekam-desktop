@@ -30,6 +30,13 @@ release/
 # Next.js
 .next/
 out/
+*-manifest.json
+cache/
+server/
+static/
+trace
+types/
+
 
 # Misc
 *.pem
