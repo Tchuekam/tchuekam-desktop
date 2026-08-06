@@ -450,6 +450,21 @@ def apply_ipv4_preference(force: bool = False) -> None:
     _ipv4_getaddrinfo._hermes_ipv4_patched = True  # type: ignore[attr-defined]
     socket.getaddrinfo = _ipv4_getaddrinfo  # type: ignore[assignment]
 
+    # Expose restore function for testing and clean teardown
+    apply_ipv4_preference._original_getaddrinfo = _original_getaddrinfo  # type: ignore[attr-defined]
+
+
+def restore_getaddrinfo() -> None:
+    """Undo the IPv4 preference monkey-patch applied by :func:`apply_ipv4_preference`.
+    
+    Safe to call even if the patch was never applied.
+    """
+    import socket
+    original = getattr(apply_ipv4_preference, '_original_getaddrinfo', None)
+    if original is not None:
+        socket.getaddrinfo = original  # type: ignore[assignment]
+        apply_ipv4_preference._original_getaddrinfo = None  # type: ignore[attr-defined]
+
 
 # ─── Streaming Response Constants ────────────────────────────────────────────
 

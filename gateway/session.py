@@ -204,6 +204,10 @@ that requires raw IDs).  Discord is excluded because mentions use ``<@user_id>``
 and the LLM needs the real ID to tag users."""
 
 
+# TODO(L-03): Discord-specific logic is hardcoded here but Discord is a plugin
+# platform (plugins/platforms/discord/). This should be moved to a platform
+# registry hook (e.g. PlatformEntry.build_context_prompt_fn) so that
+# plugin platforms can inject context without touching core gateway code.
 def _discord_tools_loaded() -> bool:
     """True iff the agent will actually have Discord tools this session.
 
@@ -326,6 +330,7 @@ def build_session_context_prompt(
             "current message's Slack block/attachment payload when available, but "
             "you still cannot call Slack APIs yourself."
         )
+    # TODO(L-03): Move Discord context prompt to plugin via platform registry hook.
     elif context.source.platform == Platform.DISCORD:
         # Inject the Discord IDs block only when the agent actually has
         # Discord tools loaded this session — i.e. the user opted into

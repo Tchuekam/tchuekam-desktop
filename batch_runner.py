@@ -62,7 +62,18 @@ _WORKER_CONFIG = {}
 # This stays in sync automatically when new tools are added to TOOL_TO_TOOLSET_MAP.
 # Used for consistent schema in Arrow/Parquet (HuggingFace datasets) and for
 # filtering corrupted entries during trajectory combination.
-ALL_POSSIBLE_TOOLS = set(TOOL_TO_TOOLSET_MAP.keys())
+def _get_all_possible_tools() -> set:
+    """Dynamically retrieve all currently registered tool names.
+    
+    Evaluated lazily at call time so that MCP tools, plugins, and tools
+    registered after import are included.
+    """
+    return set(TOOL_TO_TOOLSET_MAP.keys())
+
+def __getattr__(name: str):
+    if name == "ALL_POSSIBLE_TOOLS":
+        return _get_all_possible_tools()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Default stats for tools that weren't used
 DEFAULT_TOOL_STATS = {'count': 0, 'success': 0, 'failure': 0}
@@ -84,7 +95,7 @@ def _normalize_tool_stats(tool_stats: Dict[str, Dict[str, int]]) -> Dict[str, Di
     normalized = {}
     
     # Add all possible tools with defaults
-    for tool in ALL_POSSIBLE_TOOLS:
+    for tool in _get_all_possible_tools():
         if tool in tool_stats:
             normalized[tool] = tool_stats[tool].copy()
         else:
@@ -111,7 +122,7 @@ def _normalize_tool_error_counts(tool_error_counts: Dict[str, int]) -> Dict[str,
     normalized = {}
     
     # Add all possible tools with zero defaults
-    for tool in ALL_POSSIBLE_TOOLS:
+    for tool in _get_all_possible_tools():
         normalized[tool] = tool_error_counts.get(tool, 0)
     
     # Also include any unexpected tools
@@ -1038,7 +1049,7 @@ class BatchRunner:
         print(f"\n📦 Combining ALL batch files into {combined_file.name}...")
         
         # Valid tools auto-derived from model_tools.py — no manual updates needed
-        VALID_TOOLS = ALL_POSSIBLE_TOOLS
+        VALID_TOOLS = _get_all_possible_tools()
         
         total_entries = 0
         filtered_entries = 0

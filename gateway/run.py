@@ -1840,6 +1840,7 @@ class GatewayRunner:
         self.adapters: Dict[Platform, BasePlatformAdapter] = {}
         self._warn_if_docker_media_delivery_is_risky()
         _gateway_runner_ref = _weakref.ref(self)
+        self._queue_lock = asyncio.Lock()
 
         # Load ephemeral config from config.yaml / env vars.
         # Both are injected at API-call time only and never persisted.
@@ -2833,6 +2834,11 @@ class GatewayRunner:
         else:
             pending_slot[session_key] = queued_event
 
+    async def _enqueue_fifo_safe(self, session_key: str, queued_event: "MessageEvent", adapter: Any) -> None:
+        """Thread-safe wrapper around :meth:`_enqueue_fifo`."""
+        async with self._queue_lock:
+            self._enqueue_fifo(session_key, queued_event, adapter)
+
     def _promote_queued_event(
         self,
         session_key: str,
@@ -2867,6 +2873,16 @@ class GatewayRunner:
             # No adapter — push back so we don't silently drop the item.
             queued_events.setdefault(session_key, []).insert(0, next_queued)
         return pending_event
+
+    async def _promote_queued_event_safe(
+        self,
+        session_key: str,
+        adapter: Any,
+        pending_event: Optional["MessageEvent"],
+    ) -> Optional["MessageEvent"]:
+        """Thread-safe wrapper around :meth:`_promote_queued_event`."""
+        async with self._queue_lock:
+            return self._promote_queued_event(session_key, adapter, pending_event)
 
     def _queue_depth(self, session_key: str, *, adapter: Any = None) -> int:
         """Total pending /queue items for a session — slot + overflow."""
