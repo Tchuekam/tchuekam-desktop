@@ -114,10 +114,10 @@ WORKDIR /opt/hermes
 # because it is referenced as a `file:` workspace dependency from
 # ui-tui/package.json.  Copying the tree up front lets npm resolve the
 # workspace to real content instead of stopping at a bare package.json.
-COPY package.json package-lock.json ./
-COPY web/package.json web/
-COPY ui-tui/package.json ui-tui/
-COPY ui-tui/packages/hermes-ink/ ui-tui/packages/hermes-ink/
+COPY --chown=hermes:hermes package.json package-lock.json ./
+COPY --chown=hermes:hermes web/package.json web/
+COPY --chown=hermes:hermes ui-tui/package.json ui-tui/
+COPY --chown=hermes:hermes ui-tui/packages/hermes-ink/ ui-tui/packages/hermes-ink/
 
 # `npm_config_install_links=false` forces npm to install `file:` deps as
 # symlinks instead of copies.  This is the default since npm 10+, which is
@@ -133,7 +133,8 @@ ENV npm_config_install_links=false
 
 RUN npm install --prefer-offline --no-audit && \
     npx playwright install --with-deps chromium --only-shell && \
-    npm cache clean --force
+    npm cache clean --force && \
+    chown -R hermes:hermes node_modules ui-tui
 
 # ---------- Layer-cached Python dependency install ----------
 # Copy only pyproject.toml + uv.lock so the Python dep resolve + wheel
@@ -160,9 +161,10 @@ RUN npm install --prefer-offline --no-audit && \
 # lazy-install access to PyPI (often blocked in containerized envs).
 #
 # The editable link is created after the source copy below.
-COPY pyproject.toml uv.lock ./
-RUN touch ./README.md
-RUN uv sync --frozen --no-install-project --extra all --extra messaging --extra anthropic --extra bedrock --extra azure-identity
+COPY --chown=hermes:hermes pyproject.toml uv.lock ./
+RUN touch ./README.md && \
+    uv sync --frozen --no-install-project --extra all --extra messaging --extra anthropic --extra bedrock --extra azure-identity && \
+    chown -R hermes:hermes .venv ./README.md
 
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
@@ -185,8 +187,7 @@ RUN cd web && npm run build && \
 # Without this, `uv pip install` fails with EACCES and adapters silently
 # fail to load.  See tools/lazy_deps.py.
 USER root
-RUN chmod -R a+rX /opt/hermes && \
-    chown -R hermes:hermes /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/node_modules
+RUN chmod -R a+rX /opt/hermes
 # Start as root so the s6-overlay stage2 hook can usermod/groupmod and chown
 # the data volume. Each supervised service then drops to the hermes user via
 # `s6-setuidgid hermes` in its run script. If HERMES_UID is unset, services
