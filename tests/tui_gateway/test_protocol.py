@@ -438,6 +438,44 @@ def test_config_roundtrip(server, tmp_path):
     assert server._load_cfg()["model"] == "test/model"
 
 
+def test_config_concurrent_thread_safety(server, tmp_path):
+    """Concurrent calls to _load_cfg and _save_cfg must be thread-safe without race conditions."""
+    server._hermes_home = tmp_path
+    server._cfg_cache = None
+    server._cfg_mtime = None
+    server._cfg_path = None
+
+    errors = []
+
+    def writer():
+        for i in range(20):
+            try:
+                server._save_cfg({"model": f"model_{i}"})
+            except Exception as e:
+                errors.append(e)
+
+    def reader():
+        for _ in range(20):
+            try:
+                cfg = server._load_cfg()
+                assert isinstance(cfg, dict)
+            except Exception as e:
+                errors.append(e)
+
+    threads = [
+        threading.Thread(target=writer),
+        threading.Thread(target=reader),
+        threading.Thread(target=reader),
+    ]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+
+
 # ── _cli_exec_blocked ────────────────────────────────────────────────
 
 
@@ -891,6 +929,21 @@ def test_dispatch_long_handler_exception_produces_error_response(capture):
     assert "kaboom" in written["error"]["message"]
 
 
+def test_dispatch_long_handler_broken_pipe_handled(server):
+    """BrokenPipeError inside a pool worker write is caught gracefully."""
+    mock_transport = MagicMock()
+    mock_transport.write.side_effect = BrokenPipeError("Pipe broken")
+
+    def ok_handler(rid, params):
+        return server._ok(rid, {"status": "ok"})
+
+    server._methods["slash.exec"] = ok_handler
+
+    server.dispatch({"id": "r4", "method": "slash.exec", "params": {}}, transport=mock_transport)
+    time.sleep(0.1)
+    assert mock_transport.write.called
+
+
 def test_dispatch_unknown_long_method_still_goes_inline(server):
     """Method name not in _LONG_HANDLERS takes the sync path even if handler is slow."""
     server._methods["some.method"] = lambda rid, params: server._ok(rid, {"ok": True})
@@ -898,3 +951,30 @@ def test_dispatch_unknown_long_method_still_goes_inline(server):
     resp = server.dispatch({"id": "r4", "method": "some.method", "params": {}})
 
     assert resp["result"] == {"ok": True}
+
+
+def test_missing_rpc_handlers_registered(server):
+    """Verify slash.exec, shell.exec, model.options, and skills.manage are registered and callable."""
+    assert "slash.exec" in server._methods
+    assert "shell.exec" in server._methods
+    assert "model.options" in server._methods
+    assert "skills.manage" in server._methods
+
+    # shell.exec
+    res = server.handle_request({"id": "sh1", "method": "shell.exec", "params": {"command": "echo hello"}})
+    assert res["result"]["code"] == 0
+    assert "hello" in res["result"]["stdout"]
+
+    # model.options
+    res_m = server.handle_request({"id": "m1", "method": "model.options", "params": {}})
+    assert "providers" in res_m["result"]
+
+    # skills.manage list
+    res_s = server.handle_request({"id": "sk1", "method": "skills.manage", "params": {"action": "list"}})
+    assert "skills" in res_s["result"]
+
+    # slash.exec
+    session = {"slash_worker": MagicMock(run=MagicMock(return_value="mocked output"))}
+    server._sessions["s1"] = session
+    res_sl = server.handle_request({"id": "sl1", "method": "slash.exec", "params": {"command": "/help", "session_id": "s1"}})
+    assert res_sl["result"]["output"] == "mocked output"

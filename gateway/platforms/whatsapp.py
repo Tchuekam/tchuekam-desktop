@@ -907,6 +907,53 @@ class WhatsAppAdapter(BasePlatformAdapter):
 
         return result
 
+    async def _post_bridge_with_retry(
+        self,
+        endpoint: str,
+        payload: Dict[str, Any],
+        timeout_seconds: float = 30.0,
+        max_retries: int = 3,
+    ) -> tuple[int, Any, Optional[str]]:
+        """POST to local bridge with exponential backoff retry for transient network & HTTP errors."""
+        import aiohttp
+
+        url = f"http://127.0.0.1:{self._bridge_port}/{endpoint.lstrip('/')}"
+        last_error = ""
+        backoff = 0.5
+
+        for attempt in range(1, max_retries + 1):
+            if not self._running or not self._http_session:
+                return 0, None, "Not connected"
+            try:
+                async with self._http_session.post(
+                    url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                ) as resp:
+                    if resp.status == 200:
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            data = await resp.text()
+                        return resp.status, data, None
+
+                    error_text = await resp.text()
+                    last_error = f"HTTP {resp.status}: {error_text}"
+                    if resp.status not in (429, 500, 502, 503, 504):
+                        return resp.status, None, last_error
+            except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError) as e:
+                last_error = f"Connection error ({type(e).__name__}): {e}"
+
+            if attempt < max_retries:
+                logger.warning(
+                    "[WhatsApp] %s failed (attempt %d/%d), retrying in %.1fs: %s",
+                    endpoint, attempt, max_retries, backoff, last_error
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2.0, 4.0)
+
+        return 0, None, last_error
+
     async def send(
         self,
         chat_id: str,
@@ -929,9 +976,6 @@ class WhatsAppAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
 
         try:
-            import aiohttp
-
-            # Format and chunk the message
             formatted = self.format_message(content)
             chunks = self.truncate_message(formatted, self._outgoing_chunk_limit())
 
@@ -942,22 +986,14 @@ class WhatsAppAdapter(BasePlatformAdapter):
                     "message": chunk,
                 }
                 if reply_to and last_message_id is None:
-                    # Only reply-to on the first chunk
                     payload["replyTo"] = reply_to
 
-                async with self._http_session.post(
-                    f"http://127.0.0.1:{self._bridge_port}/send",
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        last_message_id = data.get("messageId")
-                    else:
-                        error = await resp.text()
-                        return SendResult(success=False, error=error)
+                status, data, err = await self._post_bridge_with_retry("send", payload, timeout_seconds=30.0)
+                if status == 200 and isinstance(data, dict):
+                    last_message_id = data.get("messageId")
+                else:
+                    return SendResult(success=False, error=err or "Unknown bridge send error", retryable=True)
 
-                # Small delay between chunks to avoid rate limiting
                 if len(chunks) > 1:
                     await asyncio.sleep(0.3)
 
@@ -966,7 +1002,7 @@ class WhatsAppAdapter(BasePlatformAdapter):
                 message_id=last_message_id,
             )
         except Exception as e:
-            return SendResult(success=False, error=str(e))
+            return SendResult(success=False, error=str(e), retryable=True)
 
     async def edit_message(
         self,
@@ -983,23 +1019,21 @@ class WhatsAppAdapter(BasePlatformAdapter):
         if bridge_exit:
             return SendResult(success=False, error=bridge_exit)
         try:
-            import aiohttp
-            async with self._http_session.post(
-                f"http://127.0.0.1:{self._bridge_port}/edit",
-                json={
+            status, data, err = await self._post_bridge_with_retry(
+                "edit",
+                {
                     "chatId": chat_id,
                     "messageId": message_id,
                     "message": content,
                 },
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                if resp.status == 200:
-                    return SendResult(success=True, message_id=message_id)
-                else:
-                    error = await resp.text()
-                    return SendResult(success=False, error=error)
+                timeout_seconds=15.0,
+            )
+            if status == 200:
+                return SendResult(success=True, message_id=message_id)
+            else:
+                return SendResult(success=False, error=err or "Unknown bridge edit error", retryable=True)
         except Exception as e:
-            return SendResult(success=False, error=str(e))
+            return SendResult(success=False, error=str(e), retryable=True)
 
     async def _send_media_to_bridge(
         self,
@@ -1016,8 +1050,6 @@ class WhatsAppAdapter(BasePlatformAdapter):
         if bridge_exit:
             return SendResult(success=False, error=bridge_exit)
         try:
-            import aiohttp
-
             if not os.path.exists(file_path):
                 return SendResult(success=False, error=f"File not found: {file_path}")
 
@@ -1031,24 +1063,20 @@ class WhatsAppAdapter(BasePlatformAdapter):
             if file_name:
                 payload["fileName"] = file_name
 
-            async with self._http_session.post(
-                f"http://127.0.0.1:{self._bridge_port}/send-media",
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=120),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return SendResult(
-                        success=True,
-                        message_id=data.get("messageId"),
-                        raw_response=data,
-                    )
-                else:
-                    error = await resp.text()
-                    return SendResult(success=False, error=error)
+            status, data, err = await self._post_bridge_with_retry(
+                "send-media", payload, timeout_seconds=120.0
+            )
+            if status == 200 and isinstance(data, dict):
+                return SendResult(
+                    success=True,
+                    message_id=data.get("messageId"),
+                    raw_response=data,
+                )
+            else:
+                return SendResult(success=False, error=err or "Unknown bridge media error", retryable=True)
 
         except Exception as e:
-            return SendResult(success=False, error=str(e))
+            return SendResult(success=False, error=str(e), retryable=True)
 
     async def send_image(
         self,

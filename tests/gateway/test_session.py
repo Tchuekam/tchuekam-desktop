@@ -1238,3 +1238,18 @@ class TestRewriteTranscriptPreservesReasoning:
             "before user",
             "before assistant",
         ]
+
+
+class TestSessionSaveAsyncOffloading:
+    @pytest.mark.asyncio
+    async def test_save_uses_executor_in_event_loop(self, tmp_path):
+        """Calling _save inside a running asyncio event loop offloads to an executor."""
+        config = GatewayConfig()
+        store = SessionStore(sessions_dir=tmp_path, config=config)
+        store._loaded = True
+
+        with patch.object(store, "_save_sync", wraps=store._save_sync) as mock_sync:
+            store._save()
+            import asyncio
+            await asyncio.sleep(0.1)
+            assert mock_sync.called

@@ -39,14 +39,13 @@ class TestFlushDeduplication:
         agent._ensure_db_session()
         return agent
 
-    def test_flush_writes_only_new_messages(self):
+    def test_flush_writes_only_new_messages(self, tmp_path):
         """First flush writes all new messages, second flush writes none."""
         from hermes_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            db = SessionDB(db_path=db_path)
-
+        db_path = tmp_path / "test.db"
+        db = SessionDB(db_path=db_path)
+        try:
             agent = self._make_agent(db)
 
             conversation_history = [
@@ -68,15 +67,16 @@ class TestFlushDeduplication:
 
             rows = db.get_messages(agent.session_id)
             assert len(rows) == 2, f"Expected still 2 messages after second flush, got {len(rows)}"
+        finally:
+            db.close()
 
-    def test_flush_writes_incrementally(self):
+    def test_flush_writes_incrementally(self, tmp_path):
         """Messages added between flushes are written exactly once."""
         from hermes_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            db = SessionDB(db_path=db_path)
-
+        db_path = tmp_path / "test_inc.db"
+        db = SessionDB(db_path=db_path)
+        try:
             agent = self._make_agent(db)
 
             conversation_history = []
@@ -97,15 +97,16 @@ class TestFlushDeduplication:
             agent._flush_messages_to_session_db(messages, conversation_history)
             rows = db.get_messages(agent.session_id)
             assert len(rows) == 3, f"Expected 3 total messages, got {len(rows)}"
+        finally:
+            db.close()
 
-    def test_persist_session_multiple_calls_no_duplication(self):
+    def test_persist_session_multiple_calls_no_duplication(self, tmp_path):
         """Multiple _persist_session calls don't duplicate DB entries."""
         from hermes_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            db = SessionDB(db_path=db_path)
-
+        db_path = tmp_path / "test_persist.db"
+        db = SessionDB(db_path=db_path)
+        try:
             agent = self._make_agent(db)
 
             conversation_history = [{"role": "user", "content": "old"}]
@@ -122,15 +123,16 @@ class TestFlushDeduplication:
 
             rows = db.get_messages(agent.session_id)
             assert len(rows) == 4, f"Expected 4 messages, got {len(rows)} (duplication bug!)"
+        finally:
+            db.close()
 
-    def test_flush_reset_after_compression(self):
+    def test_flush_reset_after_compression(self, tmp_path):
         """After compression creates a new session, flush index resets."""
         from hermes_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            db = SessionDB(db_path=db_path)
-
+        db_path = tmp_path / "test_comp.db"
+        db = SessionDB(db_path=db_path)
+        try:
             agent = self._make_agent(db)
 
             # Write some messages
@@ -160,6 +162,57 @@ class TestFlushDeduplication:
             # Old session should still have its 2 messages
             old_rows = db.get_messages(old_session)
             assert len(old_rows) == 2
+        finally:
+            db.close()
+
+    def test_flush_handles_mid_loop_exception_without_duplication(self, tmp_path):
+        """If append_message fails on message 2, message 1 is flushed, _last_flushed_db_idx is 1, and retry doesn't duplicate msg 1."""
+        from hermes_state import SessionDB
+
+        db_path = tmp_path / "test_error.db"
+        db = SessionDB(db_path=db_path)
+        try:
+            agent = self._make_agent(db)
+
+            messages = [
+                {"role": "user", "content": "msg 1 - succeeds"},
+                {"role": "assistant", "content": "msg 2 - fails"},
+                {"role": "user", "content": "msg 3 - pending"},
+            ]
+
+            original_append = db.append_message
+            call_count = 0
+
+            def throwing_append(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 2:
+                    raise RuntimeError("Transient DB lock/error on 2nd message")
+                return original_append(*args, **kwargs)
+
+            db.append_message = throwing_append
+
+            # First flush attempt — msg 1 succeeds, msg 2 throws exception
+            agent._flush_messages_to_session_db(messages, [])
+
+            # Cursor must be 1 (msg 1 recorded), NOT 0
+            assert agent._last_flushed_db_idx == 1
+
+            rows = db.get_messages(agent.session_id)
+            assert len(rows) == 1
+            assert rows[0]["content"] == "msg 1 - succeeds"
+
+            # Restore original append_message and flush again
+            db.append_message = original_append
+            agent._flush_messages_to_session_db(messages, [])
+
+            # Now all 3 messages are in DB, without duplicating msg 1
+            assert agent._last_flushed_db_idx == 3
+            rows = db.get_messages(agent.session_id)
+            assert len(rows) == 3
+            assert [r["content"] for r in rows] == ["msg 1 - succeeds", "msg 2 - fails", "msg 3 - pending"]
+        finally:
+            db.close()
 
 
 # ---------------------------------------------------------------------------

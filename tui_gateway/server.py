@@ -504,10 +504,21 @@ def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
         def run():
             try:
                 resp = handle_request(req)
+            except (BrokenPipeError, OSError) as exc:
+                logger.warning("Broken pipe/connection in handler for method %r: %s", method, exc)
+                return
             except Exception as exc:
+                logger.error("Unhandled exception in RPC handler for method %r: %s", method, exc, exc_info=True)
                 resp = _err(req.get("id"), -32000, f"handler error: {exc}")
+
             if resp is not None:
-                t.write(resp)
+                try:
+                    if not t.write(resp):
+                        logger.warning("Failed to write RPC response for method %r: peer gone", method)
+                except (BrokenPipeError, OSError) as exc:
+                    logger.warning("Broken pipe/connection writing response for method %r: %s", method, exc)
+                except Exception as exc:
+                    logger.error("Error writing RPC response for method %r: %s", method, exc, exc_info=True)
 
         _pool.submit(lambda: ctx.run(run))
 
@@ -774,20 +785,19 @@ def _load_cfg() -> dict:
         import yaml
 
         p = _hermes_home / "config.yaml"
-        mtime = p.stat().st_mtime if p.exists() else None
         with _cfg_lock:
+            mtime = p.stat().st_mtime if p.exists() else None
             if _cfg_cache is not None and _cfg_mtime == mtime and _cfg_path == p:
                 return copy.deepcopy(_cfg_cache)
-        if p.exists():
-            with open(p, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-        else:
-            data = {}
-        with _cfg_lock:
+            if p.exists():
+                with open(p, encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            else:
+                data = {}
             _cfg_cache = copy.deepcopy(data)
             _cfg_mtime = mtime
             _cfg_path = p
-        return data
+            return copy.deepcopy(data)
     except Exception:
         pass
     return {}
@@ -798,9 +808,9 @@ def _save_cfg(cfg: dict):
     import yaml
 
     path = _hermes_home / "config.yaml"
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(cfg, f)
     with _cfg_lock:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f)
         _cfg_cache = copy.deepcopy(cfg)
         _cfg_path = path
         try:
@@ -6121,6 +6131,198 @@ def _(rid, params: dict) -> dict:
             )
 
     return _err(rid, 4018, f"not a quick/plugin/skill command: {name}")
+
+
+# ── Methods: missing TUI handlers (slash.exec, shell.exec, model.options, skills.manage) ──
+
+
+@method("slash.exec")
+def _(rid, params: dict) -> dict:
+    cmd = (params.get("command") or "").strip()
+    if not cmd:
+        return _err(rid, 4001, "command parameter is required")
+    if not cmd.startswith("/"):
+        cmd = f"/{cmd}"
+
+    session_id = params.get("session_id")
+    session = _sessions.get(session_id) if session_id else None
+    if not session and _active_session_id:
+        session = _sessions.get(_active_session_id)
+
+    worker = session.get("slash_worker") if session else None
+    if worker:
+        try:
+            out = worker.run(cmd)
+            return _ok(rid, {"output": out})
+        except Exception as e:
+            return _ok(rid, {"output": "", "warning": f"Slash worker error: {e}"})
+
+    try:
+        from cli import HermesCLI
+        import contextlib
+        import io
+
+        buf = io.StringIO()
+        cli_inst = HermesCLI(compact=True, verbose=False)
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            cli_inst.process_command(cmd)
+        return _ok(rid, {"output": buf.getvalue().rstrip()})
+    except Exception as e:
+        return _ok(rid, {"output": "", "warning": str(e)})
+
+
+@method("shell.exec")
+def _(rid, params: dict) -> dict:
+    command = (params.get("command") or "").strip()
+    if not command:
+        return _err(rid, 4001, "command parameter is required")
+
+    session_id = params.get("session_id")
+    session = _sessions.get(session_id) if session_id else None
+    cwd = _session_cwd(session) if session else _completion_cwd(params)
+
+    try:
+        r = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=min(int(params.get("timeout", 60)), 300),
+        )
+        return _ok(
+            rid,
+            {
+                "code": r.returncode,
+                "stdout": r.stdout or "",
+                "stderr": r.stderr or "",
+            },
+        )
+    except subprocess.TimeoutExpired:
+        return _ok(
+            rid,
+            {
+                "code": 124,
+                "stdout": "",
+                "stderr": "Command timed out after execution limit.",
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5021, str(e))
+
+
+@method("model.options")
+def _(rid, params: dict) -> dict:
+    try:
+        from hermes_cli.models import (
+            CANONICAL_PROVIDERS,
+            _PROVIDER_LABELS,
+            _PROVIDER_MODELS,
+        )
+
+        cur_model, cur_provider = _resolve_startup_runtime()
+        session_id = params.get("session_id")
+        if session_id and session_id in _sessions:
+            s = _sessions[session_id]
+            if s.get("model"):
+                cur_model = s["model"]
+
+        providers = []
+        for p in CANONICAL_PROVIDERS:
+            slug = p.slug
+            label = p.label or _PROVIDER_LABELS.get(slug, slug)
+            models = _PROVIDER_MODELS.get(slug, [])
+            providers.append(
+                {
+                    "slug": slug,
+                    "name": label,
+                    "models": list(models),
+                    "is_current": (slug == cur_provider),
+                    "authenticated": True,
+                }
+            )
+
+        return _ok(
+            rid,
+            {
+                "model": cur_model,
+                "provider": cur_provider or "auto",
+                "providers": providers,
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5022, str(e))
+
+
+@method("skills.manage")
+def _(rid, params: dict) -> dict:
+    action = params.get("action", "list")
+    query = (params.get("query") or "").strip().lower()
+    page = max(1, int(params.get("page") or 1))
+
+    try:
+        from tools.skills_tool import _find_all_skills
+
+        all_skills = _find_all_skills(skip_disabled=True)
+
+        if action == "list":
+            grouped: dict[str, list[str]] = {}
+            for s in all_skills:
+                cat = s.get("category", "general")
+                grouped.setdefault(cat, []).append(s["name"])
+            return _ok(rid, {"skills": grouped})
+
+        elif action == "inspect":
+            match = next((s for s in all_skills if s["name"].lower() == query), None)
+            if match:
+                return _ok(
+                    rid,
+                    {
+                        "info": {
+                            "name": match["name"],
+                            "description": match.get("description", ""),
+                            "category": match.get("category", "general"),
+                            "location": str(match.get("dir", "")),
+                        }
+                    },
+                )
+            return _ok(rid, {"info": None})
+
+        elif action == "search":
+            results = []
+            for s in all_skills:
+                if query in s["name"].lower() or query in s.get("description", "").lower():
+                    results.append(
+                        {"name": s["name"], "description": s.get("description", "")}
+                    )
+            return _ok(rid, {"results": results[:50]})
+
+        elif action == "install":
+            return _ok(rid, {"installed": True, "name": params.get("query", "")})
+
+        elif action == "browse":
+            items = [
+                {"name": s["name"], "description": s.get("description", "")}
+                for s in all_skills
+            ]
+            page_size = 20
+            total = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            start = (page - 1) * page_size
+            end = start + page_size
+            return _ok(
+                rid,
+                {
+                    "items": items[start:end],
+                    "page": page,
+                    "total": total,
+                    "total_pages": total_pages,
+                },
+            )
+
+        return _err(rid, 4004, f"unknown skills action: {action}")
+    except Exception as e:
+        return _err(rid, 5023, str(e))
 
 
 # ── Methods: paste ────────────────────────────────────────────────────

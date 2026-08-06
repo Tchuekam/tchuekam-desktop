@@ -8,6 +8,7 @@ Handles:
 - Dynamic system prompt injection (agent knows its context)
 """
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -718,8 +719,8 @@ class SessionStore:
 
         self._loaded = True
     
-    def _save(self) -> None:
-        """Save sessions index to disk (kept for session key -> ID mapping)."""
+    def _save_sync(self) -> None:
+        """Synchronously save sessions index to disk with atomic replacement."""
         import tempfile
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         sessions_file = self.sessions_dir / "sessions.json"
@@ -740,6 +741,27 @@ class SessionStore:
             except OSError as e:
                 logger.debug("Could not remove temp file %s: %s", tmp_path, e)
             raise
+
+    def _save(self) -> None:
+        """Save sessions index to disk.
+
+        When called from within a running asyncio event loop, schedules the blocking
+        fsync disk write on an executor thread to avoid stalling the event loop.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            loop.run_in_executor(None, self._save_sync)
+        else:
+            self._save_sync()
+
+    async def _save_async(self) -> None:
+        """Async variant for direct non-blocking await calls in gateway code."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._save_sync)
     
     def _generate_session_key(self, source: SessionSource) -> str:
         """Generate a session key from a source."""

@@ -183,14 +183,24 @@ def apply_wal_with_fallback(
     # Skipping the set-pragma prevents WAL-init from unlinking files other connections hold open.
     try:
         current_mode = conn.execute("PRAGMA journal_mode").fetchone()
-        if current_mode and current_mode[0] == "wal":
+        if current_mode and str(current_mode[0]).lower() == "wal":
+            try:
+                conn.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.OperationalError:
+                pass
             return "wal"
     except sqlite3.OperationalError:
         pass
 
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        return "wal"
+        res = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        mode = str(res[0]).lower() if res else "wal"
+        if mode == "wal":
+            try:
+                conn.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.OperationalError:
+                pass
+        return mode
     except sqlite3.OperationalError as exc:
         msg = str(exc).lower()
         if not any(marker in msg for marker in _WAL_INCOMPAT_MARKERS):

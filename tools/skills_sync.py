@@ -575,7 +575,7 @@ def sync_skills(quiet: bool = False) -> dict:
                         manifest[skill_name] = bundled_hash
                         updated.append(skill_name)
                         if not quiet:
-                            print(f"  ↑ {skill_name} (updated)")
+                            print(f"  ^ {skill_name} (updated)")
                         # Remove backup after successful copy
                         try:
                             _rmtree_writable(backup)

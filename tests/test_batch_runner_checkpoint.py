@@ -248,3 +248,53 @@ class TestFinalCheckpointNoDuplicates:
             buggy.extend(br.get("completed_prompts", []))
         # Every index appears twice
         assert len(buggy) == 2 * len(set(buggy))
+
+
+class TestRunNameBatchIsolation:
+    """Verify batch output files are isolated by run_name."""
+
+    def test_worker_embeds_run_name_in_batch_filename(self, tmp_path, monkeypatch):
+        prompt_result = {
+            "success": True,
+            "trajectory": [{"role": "assistant", "content": "x"}],
+            "reasoning_stats": {"has_any_reasoning": True},
+            "tool_stats": {},
+            "metadata": {},
+            "completed": True,
+            "api_calls": 1,
+            "toolsets_used": [],
+        }
+
+        monkeypatch.setattr("batch_runner._process_single_prompt", lambda *args, **kwargs: prompt_result)
+
+        _process_batch_worker((
+            1,
+            [(0, {"prompt": "hi"})],
+            tmp_path,
+            set(),
+            {"verbose": False, "run_name": "my_test_run"},
+        ))
+
+        expected_file = tmp_path / "batch_my_test_run_1.jsonl"
+        assert expected_file.exists()
+
+    def test_load_completed_prompts_filters_by_run_name(self, tmp_path):
+        runner = BatchRunner.__new__(BatchRunner)
+        runner.run_name = "run_a"
+        runner.output_dir = tmp_path
+
+        # Create batch file for run_a and batch file for run_b
+        batch_a = tmp_path / "batch_run_a_0.jsonl"
+        batch_b = tmp_path / "batch_run_b_0.jsonl"
+
+        batch_a.write_text(json.dumps({
+            "conversations": [{"from": "human", "value": "prompt from run A"}]
+        }) + "\n")
+        batch_b.write_text(json.dumps({
+            "conversations": [{"from": "human", "value": "prompt from run B"}]
+        }) + "\n")
+
+        completed = runner._scan_completed_prompts_by_content()
+        assert "prompt from run A" in completed
+        assert "prompt from run B" not in completed
+

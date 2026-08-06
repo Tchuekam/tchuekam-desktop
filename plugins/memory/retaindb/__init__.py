@@ -350,6 +350,9 @@ class _WriteQueue:
         if conn is None:
             conn = sqlite3.connect(str(self._db_path), timeout=30)
             conn.row_factory = sqlite3.Row
+            from hermes_state import apply_wal_with_fallback
+
+            apply_wal_with_fallback(conn, db_label="retaindb")
             self._local.conn = conn
         return conn
 

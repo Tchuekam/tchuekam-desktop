@@ -413,7 +413,11 @@ def _process_batch_worker(args: Tuple) -> Dict[str, Any]:
     print(f"\n🔄 Batch {batch_num}: Starting ({len(batch_data)} prompts)")
     
     # Output file for this batch
-    batch_output_file = output_dir / f"batch_{batch_num}.jsonl"
+    run_name = config.get("run_name") if isinstance(config, dict) else None
+    if run_name:
+        batch_output_file = output_dir / f"batch_{run_name}_{batch_num}.jsonl"
+    else:
+        batch_output_file = output_dir / f"batch_{batch_num}.jsonl"
     
     # Filter out already completed prompts
     prompts_to_process = [
@@ -740,7 +744,10 @@ class BatchRunner:
             set: Set of prompt texts that have been successfully processed
         """
         completed_prompts = set()
-        batch_files = sorted(self.output_dir.glob("batch_*.jsonl"))
+        pattern = f"batch_{self.run_name}_*.jsonl" if getattr(self, "run_name", None) else "batch_*.jsonl"
+        batch_files = sorted(self.output_dir.glob(pattern))
+        if not batch_files and getattr(self, "run_name", None):
+            batch_files = sorted(self.output_dir.glob("batch_*.jsonl"))
         
         if not batch_files:
             return completed_prompts
@@ -883,6 +890,7 @@ class BatchRunner:
             worker_api_key = self.api_key
 
         config = {
+            "run_name": self.run_name,
             "distribution": self.distribution,
             "model": self.model,
             "max_iterations": self.max_iterations,
@@ -1036,13 +1044,16 @@ class BatchRunner:
         filtered_entries = 0
         batch_files_found = 0
         
-        # Find ALL batch files in the output directory (handles resume merging old + new)
-        all_batch_files = sorted(self.output_dir.glob("batch_*.jsonl"))
+        # Find batch files matching run_name in the output directory
+        pattern = f"batch_{self.run_name}_*.jsonl" if getattr(self, "run_name", None) else "batch_*.jsonl"
+        all_batch_files = sorted(self.output_dir.glob(pattern))
+        if not all_batch_files and getattr(self, "run_name", None):
+            all_batch_files = sorted(self.output_dir.glob("batch_*.jsonl"))
         
         with open(combined_file, 'w', encoding='utf-8') as outfile:
             for batch_file in all_batch_files:
                 batch_files_found += 1
-                batch_num = batch_file.stem.split("_")[1]  # Extract batch number for logging
+                batch_num = batch_file.stem.rsplit("_", 1)[-1]  # Extract batch number for logging
                 
                 with open(batch_file, 'r', encoding='utf-8') as infile:
                     for line in infile:
