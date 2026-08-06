@@ -87,17 +87,17 @@ else
         # full, etc.) instead of "✗ Failed to install uv" with zero
         # diagnostic.  Two-stage to avoid `curl | sh` masking curl
         # failures (sh exits 0 on empty stdin under no pipefail).
-        _uv_log="$(mktemp 2>/dev/null || echo "/tmp/hermes-uv-install.$$.log")"
-        _uv_installer="$(mktemp 2>/dev/null || echo "/tmp/hermes-uv-installer.$$.sh")"
+        _uv_tmpdir="$(mktemp -d 2>/dev/null || { _d="${TMPDIR:-/tmp}/hermes-uv-$$"; mkdir -p -m 700 "$_d" 2>/dev/null && echo "$_d"; })"
+        _uv_log="${_uv_tmpdir}/install.log"
+        _uv_installer="${_uv_tmpdir}/installer.sh"
         if ! curl -LsSf https://astral.sh/uv/install.sh -o "$_uv_installer" 2>"$_uv_log"; then
             echo -e "${RED}✗${NC} Failed to download uv installer."
             sed 's/^/    /' "$_uv_log" >&2
             echo -e "${CYAN}→${NC} Install manually: https://docs.astral.sh/uv/"
-            rm -f "$_uv_log" "$_uv_installer"
+            rm -rf "$_uv_tmpdir"
             exit 1
         fi
         if sh "$_uv_installer" >>"$_uv_log" 2>&1; then
-            rm -f "$_uv_installer"
             if [ -x "$HOME/.local/bin/uv" ]; then
                 UV_CMD="$HOME/.local/bin/uv"
             elif [ -x "$HOME/.cargo/bin/uv" ]; then
@@ -105,14 +105,14 @@ else
             fi
 
             if [ -n "$UV_CMD" ]; then
-                rm -f "$_uv_log"
+                rm -rf "$_uv_tmpdir"
                 UV_VERSION=$($UV_CMD --version 2>/dev/null)
                 echo -e "${GREEN}✓${NC} uv installed ($UV_VERSION)"
             else
                 echo -e "${RED}✗${NC} uv installer reported success but binary not found. Add ~/.local/bin to PATH and retry."
                 echo -e "${CYAN}→${NC} Installer output:"
                 sed 's/^/    /' "$_uv_log" >&2
-                rm -f "$_uv_log"
+                rm -rf "$_uv_tmpdir"
                 exit 1
             fi
         else
@@ -120,7 +120,7 @@ else
             echo -e "${CYAN}→${NC} Installer output:"
             sed 's/^/    /' "$_uv_log" >&2
             echo -e "${CYAN}→${NC} Install manually: https://docs.astral.sh/uv/"
-            rm -f "$_uv_log" "$_uv_installer"
+            rm -rf "$_uv_tmpdir"
             exit 1
         fi
     fi
@@ -168,9 +168,9 @@ fi
 
 echo -e "${CYAN}→${NC} Setting up virtual environment..."
 
-if [ -d "venv" ]; then
+if [ -d "$SCRIPT_DIR/venv" ]; then
     echo -e "${CYAN}→${NC} Removing old venv..."
-    rm -rf venv
+    rm -rf "$SCRIPT_DIR/venv"
 fi
 
 if is_termux; then

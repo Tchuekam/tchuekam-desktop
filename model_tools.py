@@ -210,7 +210,7 @@ TOOLSET_REQUIREMENTS: Dict[str, dict] = registry.get_toolset_requirements()
 
 # Resolved tool names from the last get_tool_definitions() call.
 # Used by code_execution_tool to know which tools are available in this session.
-_last_resolved_tool_names: List[str] = []
+_last_resolved_tool_names = threading.local()
 
 
 # =============================================================================
@@ -314,7 +314,7 @@ def get_tool_definitions(
             # Update _last_resolved_tool_names so downstream callers see
             # consistent state even on a cache hit.
             global _last_resolved_tool_names
-            _last_resolved_tool_names = [t["function"]["name"] for t in cached]
+            _last_resolved_tool_names.names = [t["function"]["name"] for t in cached]
             # Return a shallow copy of the list but share the dict references —
             # schemas are treated as read-only by all known callers.
             return list(cached)
@@ -476,7 +476,7 @@ def _compute_tool_definitions(
             print("🛠️  No tools selected (all filtered out or unavailable)")
 
     global _last_resolved_tool_names
-    _last_resolved_tool_names = [t["function"]["name"] for t in filtered_tools]
+    _last_resolved_tool_names.names = [t["function"]["name"] for t in filtered_tools]
 
     # Sanitize schemas for broad backend compatibility. llama.cpp's
     # json-schema-to-grammar converter (used by its OAI server to build
@@ -821,8 +821,7 @@ def handle_function_call(
         user_task: The user's original task (for browser_snapshot context).
         enabled_tools: Tool names enabled for this session.  When provided,
                        execute_code uses this list to determine which sandbox
-                       tools to generate.  Falls back to the process-global
-                       ``_last_resolved_tool_names`` for backward compat.
+                       tools to generate.
         enabled_toolsets: The session's enabled toolsets.  Used to scope the
                        Tool Search bridge catalog so ``tool_search`` /
                        ``tool_describe`` / ``tool_call`` only see and invoke
@@ -862,8 +861,8 @@ def handle_function_call(
             # the entire process registry via the bridge. Passing the same
             # enabled/disabled toolsets the session was assembled with keeps
             # the deferred catalog identical to the deferrable subset of the
-            # session's own tool list, and avoids polluting the process-global
-            # _last_resolved_tool_names with out-of-scope tools.
+            # session's own tool list, and avoids polluting local thread
+            # storage with out-of-scope tools.
             current_defs = get_tool_definitions(
                 enabled_toolsets=enabled_toolsets,
                 disabled_toolsets=disabled_toolsets,
@@ -976,7 +975,7 @@ def handle_function_call(
         if function_name == "execute_code":
             # Prefer the caller-provided list so subagents can't overwrite
             # the parent's tool set via the process-global.
-            sandbox_enabled = enabled_tools if enabled_tools is not None else _last_resolved_tool_names
+            sandbox_enabled = enabled_tools if enabled_tools is not None else getattr(_last_resolved_tool_names, "names", [])
             result = registry.dispatch(
                 function_name, function_args,
                 task_id=task_id,

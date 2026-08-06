@@ -149,9 +149,9 @@ class UserSessionSchema(BaseModel):
 
 class OrganizationCreateSchema(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)
-    slug: Optional[str] = None
-    logo_url: Optional[str] = None
-    custom_domain: Optional[str] = None
+    slug: Optional[str] = Field(None, max_length=255)
+    logo_url: Optional[str] = Field(None, max_length=1024)
+    custom_domain: Optional[str] = Field(None, max_length=255)
 
 
 class OrganizationUpdateSchema(BaseModel):

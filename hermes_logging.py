@@ -30,6 +30,7 @@ Session context:
 import logging
 import os
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional, Sequence
@@ -352,6 +353,7 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
         # detect external rotation without an extra fstat per write.
         self._stat_dev: Optional[int] = None
         self._stat_ino: Optional[int] = None
+        self._last_stat_time = 0.0
         self._record_stream_stat()
 
     def _chmod_if_managed(self):
@@ -419,10 +421,11 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
                 pass
 
     def emit(self, record: logging.LogRecord) -> None:
-        # Cheap-ish stat-per-record check; the kernel caches inode metadata
-        # so the syscall is sub-microsecond on a hot file.
-        if self.stream is not None or os.path.exists(self.baseFilename):
-            self._reopen_if_externally_rotated()
+        now = time.monotonic()
+        if now - self._last_stat_time >= 1.0:
+            if self.stream is not None or os.path.exists(self.baseFilename):
+                self._reopen_if_externally_rotated()
+            self._last_stat_time = now
         super().emit(record)
 
     def _open(self):

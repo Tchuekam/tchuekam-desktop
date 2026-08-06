@@ -1413,13 +1413,13 @@ class AIAgent:
 
         Ensures conversations are never lost, even on errors or early returns.
         """
-        self._drop_trailing_empty_response_scaffolding(messages)
+        messages = self._drop_trailing_empty_response_scaffolding(messages)
         self._apply_persist_user_message_override(messages)
         self._session_messages = messages
         self._save_session_log(messages)
         self._flush_messages_to_session_db(messages, conversation_history)
 
-    def _drop_trailing_empty_response_scaffolding(self, messages: List[Dict]) -> None:
+    def _drop_trailing_empty_response_scaffolding(self, messages: List[Dict]) -> List[Dict]:
         """Remove private empty-response retry/failure scaffolding from transcript tails.
 
         Also rewinds past any trailing tool-result / assistant(tool_calls) pair
@@ -1429,6 +1429,7 @@ class AIAgent:
         providers silently reject (returns empty content), causing the
         empty-retry loop to fire forever. See #<TBD>.
         """
+        messages = list(messages)
         # Pass 1: strip the flagged scaffolding messages themselves.
         dropped_scaffolding = False
         while (
@@ -1449,7 +1450,7 @@ class AIAgent:
         # result. Only runs when scaffolding was actually present — normal
         # conversation tails (real tool loops mid-progress) are untouched.
         if not dropped_scaffolding:
-            return
+            return messages
 
         # Drop any trailing tool-result messages
         while (
@@ -1471,6 +1472,8 @@ class AIAgent:
             and messages[-1].get("tool_calls")
         ):
             messages.pop()
+
+        return messages
 
     def _repair_message_sequence(self, messages: List[Dict]) -> int:
         """Forwarder — see ``agent.agent_runtime_helpers.repair_message_sequence``."""

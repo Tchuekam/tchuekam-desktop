@@ -663,6 +663,9 @@ def build_session_key(
     if isolate_user and participant_id:
         key_parts.append(str(participant_id))
 
+    if len(key_parts) == 3:
+        key_parts.append(str(uuid.uuid4()))
+
     return ":".join(key_parts)
 
 

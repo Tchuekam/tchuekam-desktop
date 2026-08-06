@@ -44,11 +44,16 @@ def create_organization(
 
 @router.get("", response_model=List[OrganizationResponseSchema])
 def list_my_organizations(
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     org_service = OrganizationService(db)
-    return org_service.list_user_organizations(current_user.id)
+    # Assuming list_user_organizations needs skip and limit too, but maybe not implemented yet.
+    # We will pass them if supported, or just slice.
+    orgs = org_service.list_user_organizations(current_user.id)
+    return orgs[skip : skip + limit]
 
 
 @router.get("/current", response_model=OrganizationResponseSchema)
@@ -94,14 +99,16 @@ def archive_current_organization(
 
 @router.get("/current/members", response_model=List[OrganizationMemberSchema])
 def list_organization_members(
+    skip: int = 0,
+    limit: int = 100,
     org: Organization = Depends(get_current_org),
     db: Session = Depends(get_db),
 ):
     mem_repo = MembershipRepository(db)
-    memberships = mem_repo.list_org_members(org.id)
+    memberships = mem_repo.list_org_members(org.id, skip=skip, limit=limit)
     result = []
     for m in memberships:
-        user = db.query(User).filter(User.id == m.user_id).first()
+        user = m.user
         full_name = user.profile.full_name if user and user.profile else None
         result.append({
             "id": m.id,

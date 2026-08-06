@@ -42,12 +42,15 @@ def create_workspace(
 
 @router.get("", response_model=List[WorkspaceResponseSchema])
 def list_workspaces(
+    skip: int = 0,
+    limit: int = 100,
     org: Organization = Depends(get_current_org),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ws_service = WorkspaceService(db)
-    return ws_service.list_workspaces_for_org(org.id, current_user.id)
+    workspaces = ws_service.list_workspaces_for_org(org.id, current_user.id)
+    return workspaces[skip : skip + limit]
 
 
 @router.put("/{workspace_id}", response_model=WorkspaceResponseSchema)

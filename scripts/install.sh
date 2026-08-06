@@ -494,31 +494,31 @@ install_uv() {
     # Two-stage: download the installer, then run it.  Piping
     # `curl | sh` masks curl failures (sh exits 0 on empty stdin)
     # and conflates network errors with installer errors.
-    local _uv_install_log _uv_installer
-    _uv_install_log="$(mktemp 2>/dev/null || echo "/tmp/hermes-uv-install.$$.log")"
-    _uv_installer="$(mktemp 2>/dev/null || echo "/tmp/hermes-uv-installer.$$.sh")"
+    local _uv_tmpdir _uv_install_log _uv_installer
+    _uv_tmpdir="$(mktemp -d 2>/dev/null || { _d="${TMPDIR:-/tmp}/hermes-uv-$$"; mkdir -p -m 700 "$_d" 2>/dev/null && echo "$_d"; })"
+    _uv_install_log="${_uv_tmpdir}/install.log"
+    _uv_installer="${_uv_tmpdir}/installer.sh"
     if ! curl -LsSf https://astral.sh/uv/install.sh -o "$_uv_installer" 2>"$_uv_install_log"; then
         log_error "Failed to download uv installer from https://astral.sh/uv/install.sh"
         log_info "curl output:"
         sed 's/^/    /' "$_uv_install_log" >&2
         log_info "Install manually: https://docs.astral.sh/uv/getting-started/installation/"
-        rm -f "$_uv_install_log" "$_uv_installer"
+        rm -rf "$_uv_tmpdir"
         exit 1
     fi
     # UV_UNMANAGED_INSTALL tells the astral installer to place the binary
     # directly into $HERMES_HOME/bin instead of ~/.local/bin.
     if UV_UNMANAGED_INSTALL="$HERMES_HOME/bin" sh "$_uv_installer" >>"$_uv_install_log" 2>&1; then
-        rm -f "$_uv_installer"
         if [ -x "$_managed_uv" ]; then
             UV_CMD="$_managed_uv"
         else
             log_error "uv installer reported success but binary not found at $_managed_uv"
             log_info "Installer output:"
             sed 's/^/    /' "$_uv_install_log" >&2
-            rm -f "$_uv_install_log"
+            rm -rf "$_uv_tmpdir"
             exit 1
         fi
-        rm -f "$_uv_install_log"
+        rm -rf "$_uv_tmpdir"
         UV_VERSION=$($UV_CMD --version 2>/dev/null)
         log_success "Managed uv installed ($UV_VERSION)"
     else
@@ -526,7 +526,7 @@ install_uv() {
         log_info "Installer output:"
         sed 's/^/    /' "$_uv_install_log" >&2
         log_info "Install manually: https://docs.astral.sh/uv/getting-started/installation/"
-        rm -f "$_uv_install_log" "$_uv_installer"
+        rm -rf "$_uv_tmpdir"
         exit 1
     fi
 }

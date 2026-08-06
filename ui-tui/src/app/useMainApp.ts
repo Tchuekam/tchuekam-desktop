@@ -514,14 +514,19 @@ export function useMainApp(gw: GatewayClient) {
       return
     }
 
-    let stopped = false
+    let pollAc = new AbortController()
 
     const refresh = () => {
+      pollAc.abort()
+      pollAc = new AbortController()
+      const signal = pollAc.signal
+
       gw.request<SessionActiveListResponse>('session.active_list', { current_session_id: getUiState().sid })
         .then(raw => {
+          if (signal.aborted) return
           const result = asRpcResult<SessionActiveListResponse>(raw)
 
-          if (!stopped && result?.sessions) {
+          if (result?.sessions) {
             patchUiState({ liveSessionCount: result.sessions.length })
           }
         })
@@ -532,7 +537,7 @@ export function useMainApp(gw: GatewayClient) {
     const timer = setInterval(refresh, 1500)
 
     return () => {
-      stopped = true
+      pollAc.abort()
       clearInterval(timer)
     }
   }, [gw, ui.sid])

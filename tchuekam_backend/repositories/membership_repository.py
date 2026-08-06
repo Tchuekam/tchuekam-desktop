@@ -3,7 +3,7 @@ Dépôt de données pour les Adhésions aux Organisations et Workspaces.
 """
 
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from tchuekam_backend.domain.models import OrganizationMembership, WorkspaceMembership, User
 
 
@@ -38,8 +38,10 @@ class MembershipRepository:
             .first()
         )
 
-    def list_org_members(self, org_id: str) -> List[OrganizationMembership]:
-        return self.db.query(OrganizationMembership).filter(OrganizationMembership.org_id == org_id).all()
+    def list_org_members(self, org_id: str, skip: int = 0, limit: int = 100) -> List[OrganizationMembership]:
+        return self.db.query(OrganizationMembership).options(
+            joinedload(OrganizationMembership.user).joinedload(User.profile)
+        ).filter(OrganizationMembership.org_id == org_id).offset(skip).limit(limit).all()
 
     def remove_org_member(self, org_id: str, user_id: str) -> bool:
         membership = self.get_org_membership(org_id, user_id)

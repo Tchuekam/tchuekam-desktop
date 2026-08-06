@@ -345,7 +345,7 @@ export function ActiveSessionSwitcher({
     // `quiet` skips the loading spinner (used by the live-status poll);
     // `includeHistory` re-queries the resumable DB list (skipped on the 1.5s
     // poll, which only needs fresh live-session status).
-    async (quiet = false, includeHistory = true) => {
+    async (quiet = false, includeHistory = true, signal?: AbortSignal) => {
       if (!quiet) {
         setLoading(true)
       }
@@ -360,6 +360,9 @@ export function ActiveSessionSwitcher({
           }),
           includeHistory ? gw.request<SessionListResponse>('session.list', { limit: 200 }) : Promise.resolve(null)
         ])
+        
+        if (signal?.aborted) return []
+        
         const r = liveRes.status === 'fulfilled' ? asRpcResult<SessionActiveListResponse>(liveRes.value) : null
 
         if (!r) {
@@ -446,10 +449,19 @@ export function ActiveSessionSwitcher({
   }, [items, history])
 
   useEffect(() => {
-    void load()
-    const timer = setInterval(() => void load(true, false), 1500)
+    let pollAc = new AbortController()
+    void load(false, true, pollAc.signal)
 
-    return () => clearInterval(timer)
+    const timer = setInterval(() => {
+      pollAc.abort()
+      pollAc = new AbortController()
+      void load(true, false, pollAc.signal)
+    }, 1500)
+
+    return () => {
+      pollAc.abort()
+      clearInterval(timer)
+    }
   }, [load])
 
   const submitDraft = useCallback(

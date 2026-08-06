@@ -32,6 +32,14 @@ services:
     image: hermes-agent
     container_name: hermes
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     network_mode: host
     volumes:
       - ~/.hermes:/opt/data
@@ -64,6 +72,14 @@ services:
     image: hermes-agent
     container_name: hermes-dashboard
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     network_mode: host
     depends_on:
       - gateway

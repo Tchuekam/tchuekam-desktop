@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0,<62"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -66,9 +66,9 @@ dependencies = [
   "psutil==7.2.2",
   # .gitignore-aware file matching for desktop build stamp.
   "pathspec==1.1.1",
-  "fastapi>=0.104.0,<1",
-  "uvicorn[standard]>=0.24.0,<1",
-  "ptyprocess>=0.7.0,<1; sys_platform != 'win32'",
+  "fastapi>=0.104.0,<0.106",
+  "uvicorn[standard]>=0.24.0,<0.26",
+  "ptyprocess>=0.7.0,<0.9; sys_platform != 'win32'",
   "pywinpty>=2.0.0,<3; sys_platform == 'win32'",
 ]
 

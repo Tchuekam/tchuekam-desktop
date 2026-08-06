@@ -43,12 +43,16 @@ env:
   IMAGE_NAME: nousresearch/hermes-agent
 
 jobs:
+  test:
+    uses: ./.github/workflows/tests.yml
+
   # ---------------------------------------------------------------------------
   # Build amd64 natively.  This job also runs the smoke tests (basic --help
   # and the dashboard subcommand regression guard from #9153), because amd64
   # is the only arch we can `load` into the local daemon on an amd64 runner.
   # ---------------------------------------------------------------------------
   build-amd64:
+    needs: [test]
     # Only run on the upstream repository, not on forks
     if: github.repository == 'NousResearch/hermes-agent'
     runs-on: ubuntu-latest
@@ -186,6 +190,7 @@ jobs:
   # smoke test, then on push/release push by digest.
   # ---------------------------------------------------------------------------
   build-arm64:
+    needs: [test]
     if: github.repository == 'NousResearch/hermes-agent'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
