@@ -274,7 +274,7 @@ export default function AppsStudio({ apiKey }) {
           </h1>
           <p className="text-white/40 text-sm font-medium leading-relaxed max-w-xl mx-auto">
             Each template is a fully-functional AI SaaS template you can deploy in minutes.
-            Charge your users, keep the revenue — Genimage handles the AI infrastructure.
+            Charge your users, keep the revenue — Tchuekam Studio handles the AI infrastructure.
           </p>
         </div>
 
