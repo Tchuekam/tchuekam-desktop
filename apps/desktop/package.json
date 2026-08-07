@@ -1,9 +1,9 @@
 {
-  "name": "tchukam",
-  "productName": "TchuekaM",
+  "name": "tchuekam",
+  "productName": "Tchuekam",
   "private": true,
   "version": "0.15.3",
-  "description": "TchuekaM — the AI operating system for business.",
+  "description": "Tchuekam — the AI operating system for business.",
   "author": "TchueKAM",
   "homepage": "https://tchuekam.com",
   "type": "module",
@@ -130,9 +130,9 @@
   "build": {
     "electronVersion": "40.9.3",
     "appId": "com.tchukam.desktop",
-    "productName": "TchuekaM",
-    "executableName": "TchuekaM",
-    "artifactName": "TchuekaM-Setup-${os}-${arch}.${ext}",
+    "productName": "Tchuekam",
+    "executableName": "Tchuekam",
+    "artifactName": "Tchuekam-Setup-${os}-${arch}.${ext}",
     "publish": [
       {
         "provider": "github",
@@ -181,11 +181,11 @@
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
       "extendInfo": {
-        "CFBundleDisplayName": "TchuekaM",
-        "CFBundleExecutable": "TchuekaM",
-        "CFBundleName": "TchuekaM",
-        "NSAudioCaptureUsageDescription": "TchuekaM uses audio capture for voice conversations.",
-        "NSMicrophoneUsageDescription": "TchuekaM uses the microphone for voice input and voice conversations."
+        "CFBundleDisplayName": "Tchuekam",
+        "CFBundleExecutable": "Tchuekam",
+        "CFBundleName": "Tchuekam",
+        "NSAudioCaptureUsageDescription": "Tchuekam uses audio capture for voice conversations.",
+        "NSMicrophoneUsageDescription": "Tchuekam uses the microphone for voice input and voice conversations."
       },
       "gatekeeperAssess": false,
       "hardenedRuntime": true,
@@ -195,7 +195,7 @@
       ]
     },
     "dmg": {
-      "title": "Install TchuekaM",
+      "title": "Install Tchuekam",
       "backgroundColor": "#f5f5f7",
       "iconSize": 96,
       "window": {
@@ -217,7 +217,7 @@
       ]
     },
     "win": {
-      "legalTrademarks": "TchuekaM",
+      "legalTrademarks": "Tchuekam",
       "target": [
         "nsis",
         "msi"
@@ -227,7 +227,7 @@
     "linux": {
       "category": "Office",
       "maintainer": "TchueKAM <support@tchuekam.com>",
-      "synopsis": "TchuekaM — the AI operating system for business.",
+      "synopsis": "Tchuekam — the AI operating system for business.",
       "target": [
         "AppImage",
         "deb",
@@ -238,8 +238,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "shortcutName": "TchuekaM",
-      "uninstallDisplayName": "TchuekaM",
+      "shortcutName": "Tchuekam",
+      "uninstallDisplayName": "Tchuekam",
       "warningsAsErrors": false
     }
   }
