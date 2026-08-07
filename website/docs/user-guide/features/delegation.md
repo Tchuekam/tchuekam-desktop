@@ -134,7 +134,7 @@ Single-task delegation runs directly without thread pool overhead.
 You can configure a different model for subagents via `config.yaml` — useful for delegating simple tasks to cheaper/faster models:
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.tchuekam/config.yaml
 delegation:
   model: "google/gemini-flash-2.0"    # Cheaper model for subagents
   provider: "openrouter"              # Optional: route subagents to a different provider
@@ -185,7 +185,7 @@ delegation:
 Lower it for fast local models; raise it for slow reasoning models on hard problems. The timer resets every time the child makes an API call or tool call — only genuinely idle workers trigger the kill.
 
 :::tip Diagnostic dump on zero-call timeout
-If a subagent times out having made **zero** API calls (usually: provider unreachable, auth failure, or tool-schema rejection), `delegate_task` writes a structured diagnostic to `~/.hermes/logs/subagent-timeout-<session>-<timestamp>.log` containing the subagent's config snapshot, credential-resolution trace, and any early error messages. Much easier to root-cause than the previous silent-timeout behavior.
+If a subagent times out having made **zero** API calls (usually: provider unreachable, auth failure, or tool-schema rejection), `delegate_task` writes a structured diagnostic to `~/.tchuekam/logs/subagent-timeout-<session>-<timestamp>.log` containing the subagent's config snapshot, credential-resolution trace, and any early error messages. Much easier to root-cause than the previous silent-timeout behavior.
 :::
 
 ## Monitoring Running Subagents (`/agents`)
@@ -221,7 +221,7 @@ delegate_task(
 
 ## Lifetime and Durability
 
-:::warning delegate_task is synchronous — not durable
+:::warning delegate_task is synchrotchuekam — not durable
 `delegate_task` runs **inside the parent's current turn**. It blocks the parent until every child finishes (or is cancelled). It is **not** a background job queue:
 
 - If the parent is interrupted (user sends a new message, `/stop`, `/new`), all active children are cancelled and return `status="interrupted"`. Their in-progress work is discarded.
@@ -260,7 +260,7 @@ For **durable long-running work** that must survive interrupts or outlive the cu
 ## Configuration
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.tchuekam/config.yaml
 delegation:
   max_iterations: 50                        # Max turns per child (default: 50)
   # max_concurrent_children: 3              # Parallel children per batch (default: 3)

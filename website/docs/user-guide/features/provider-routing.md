@@ -7,17 +7,17 @@ sidebar_position: 7
 
 # Provider Routing
 
-When using [OpenRouter](https://openrouter.ai) as your LLM provider, Hermes Agent supports **provider routing** — fine-grained control over which underlying AI providers handle your requests and how they're prioritized.
+When using [OpenRouter](https://openrouter.ai) as your LLM provider, Tchuekam Agent supports **provider routing** — fine-grained control over which underlying AI providers handle your requests and how they're prioritized.
 
 OpenRouter routes requests to many providers (e.g., Anthropic, Google, AWS Bedrock, Together AI). Provider routing lets you optimize for cost, speed, quality, or enforce specific provider requirements.
 
 :::tip
-Traffic routed through [Nous Portal](/integrations/nous-portal) still respects per-model routing and priority configs — and Portal subscribers get 10% off token-billed providers.
+Traffic routed through [Tchuekam Portal](/integrations/tchuekam-portal) still respects per-model routing and priority configs — and Portal subscribers get 10% off token-billed providers.
 :::
 
 ## Configuration
 
-Add a `provider_routing` section to your `~/.hermes/config.yaml`:
+Add a `provider_routing` section to your `~/.tchuekam/config.yaml`:
 
 ```yaml
 provider_routing:
@@ -169,7 +169,7 @@ provider_routing:
 
 Provider routing preferences are passed to the OpenRouter API via the `extra_body.provider` field on every API call. This applies to both:
 
-- **CLI mode** — configured in `~/.hermes/config.yaml`, loaded at startup
+- **CLI mode** — configured in `~/.tchuekam/config.yaml`, loaded at startup
 - **Gateway mode** — same config file, loaded when the gateway starts
 
 The routing config is read from `config.yaml` and passed as parameters when creating the `AIAgent`:

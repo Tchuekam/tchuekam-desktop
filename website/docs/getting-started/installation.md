@@ -102,7 +102,7 @@ npx @railway/cli up --service tchuekam-backend
 ### 2. Deploy Netlify Frontend Proxy
 ```bash
 # Deploy built assets to Netlify
-npx netlify-cli deploy --dir hermes_cli/web_dist --prod
+npx netlify-cli deploy --dir tchuekam_cli/web_dist --prod
 ```
 
 ---
@@ -116,7 +116,7 @@ Run the following validation commands to verify your installation:
 curl -s http://localhost:9119/api/status
 
 # Test CLI functionality
-python -m hermes_cli.main --version
+python -m tchuekam_cli.main --version
 ```
 
 Expected output confirming active installation:

@@ -20,7 +20,7 @@
 
 - **CLI Skin/Theme Engine** — Data-driven visual customization: banners, spinners, colors, branding. 7 built-in skins + custom YAML skins.
 
-- **Git Worktree Isolation** — `hermes -w` launches isolated agent sessions in git worktrees for safe parallel work on the same repo. ([#654](https://github.com/Tchuekam/tchuekam-desktop/pull/654))
+- **Git Worktree Isolation** — `tchuekam -w` launches isolated agent sessions in git worktrees for safe parallel work on the same repo. ([#654](https://github.com/Tchuekam/tchuekam-desktop/pull/654))
 
 - **Filesystem Checkpoints & Rollback** — Automatic snapshots before destructive operations with `/rollback` to restore. ([#824](https://github.com/Tchuekam/tchuekam-desktop/pull/824))
 
@@ -32,7 +32,7 @@
 
 ### Provider & Model Support
 - Centralized provider router with `resolve_provider_client()` + `call_llm()` API ([#1003](https://github.com/Tchuekam/tchuekam-desktop/pull/1003))
-- Nous Portal as first-class provider in setup ([#644](https://github.com/Tchuekam/tchuekam-desktop/issues/644))
+- Tchuekam Portal as first-class provider in setup ([#644](https://github.com/Tchuekam/tchuekam-desktop/issues/644))
 - OpenAI Codex (Responses API) with ChatGPT subscription support ([#43](https://github.com/Tchuekam/tchuekam-desktop/pull/43)) — @grp06
 - Codex OAuth vision support + multimodal content adapter
 - Validate `/model` against live API instead of hardcoded lists
@@ -40,7 +40,7 @@
 - Kimi Code API support ([#635](https://github.com/Tchuekam/tchuekam-desktop/pull/635)) — @christomitov
 - MiniMax model ID update ([#473](https://github.com/Tchuekam/tchuekam-desktop/pull/473)) — @tars90percent
 - OpenRouter provider routing configuration (provider_preferences)
-- Nous credential refresh on 401 errors ([#571](https://github.com/Tchuekam/tchuekam-desktop/pull/571), [#269](https://github.com/Tchuekam/tchuekam-desktop/pull/269)) — @rewbs
+- Giantech Empire credential refresh on 401 errors ([#571](https://github.com/Tchuekam/tchuekam-desktop/pull/571), [#269](https://github.com/Tchuekam/tchuekam-desktop/pull/269)) — @rewbs
 - z.ai/GLM, Kimi/Moonshot, MiniMax, Azure OpenAI as first-class providers
 - Unified `/model` and `/provider` into single view
 
@@ -151,14 +151,14 @@
 - Config migration system (currently v7)
 - API keys properly routed to .env instead of config.yaml ([#469](https://github.com/Tchuekam/tchuekam-desktop/pull/469)) — @ygd58
 - Atomic write for .env to prevent API key loss on crash ([#954](https://github.com/Tchuekam/tchuekam-desktop/pull/954))
-- `hermes tools` — per-platform tool enable/disable with curses UI
-- `hermes doctor` for health checks across all configured providers
-- `hermes update` with auto-restart for gateway service
+- `tchuekam tools` — per-platform tool enable/disable with curses UI
+- `tchuekam doctor` for health checks across all configured providers
+- `tchuekam update` with auto-restart for gateway service
 - Show update-available notice in CLI banner
 - Multiple named custom providers
 - Shell config detection improvement for PATH setup ([#317](https://github.com/Tchuekam/tchuekam-desktop/pull/317)) — @mehmetkr-31
-- Consistent HERMES_HOME and .env path resolution ([#51](https://github.com/Tchuekam/tchuekam-desktop/pull/51), [#48](https://github.com/Tchuekam/tchuekam-desktop/pull/48)) — @deankerr
-- Docker backend fix on macOS + subagent auth for Nous Portal ([#46](https://github.com/Tchuekam/tchuekam-desktop/pull/46)) — @rsavitt
+- Consistent TCHUEKAM_HOME and .env path resolution ([#51](https://github.com/Tchuekam/tchuekam-desktop/pull/51), [#48](https://github.com/Tchuekam/tchuekam-desktop/pull/48)) — @deankerr
+- Docker backend fix on macOS + subagent auth for Tchuekam Portal ([#46](https://github.com/Tchuekam/tchuekam-desktop/pull/46)) — @rsavitt
 
 ---
 
@@ -170,7 +170,7 @@
 - Resource and prompt discovery
 - Automatic reconnection and security hardening
 - Banner integration, `/reload-mcp` command
-- `hermes tools` UI integration
+- `tchuekam tools` UI integration
 
 ### Browser
 - Local browser backend — zero-cost headless Chromium (no Browserbase needed)
@@ -200,7 +200,7 @@
 - Conditional skill activation based on tool availability ([#785](https://github.com/Tchuekam/tchuekam-desktop/pull/785)) — @teyrebaz33
 - Skill prerequisites — hide skills with unmet dependencies ([#659](https://github.com/Tchuekam/tchuekam-desktop/pull/659)) — @kshitijk4poor
 - Optional skills — shipped but not activated by default
-- `hermes skills browse` — paginated hub browsing
+- `tchuekam skills browse` — paginated hub browsing
 - Skills sub-category organization
 - Platform-conditional skill loading
 - Atomic skill file writes ([#551](https://github.com/Tchuekam/tchuekam-desktop/pull/551)) — @aydnOktay
@@ -217,7 +217,7 @@
 - **OpenClaw Migration** — Official migration tool ([#570](https://github.com/Tchuekam/tchuekam-desktop/pull/570)) — @unmodeled-tyler
 - **Domain Intelligence** — Passive recon: subdomains, SSL, WHOIS, DNS ([#136](https://github.com/Tchuekam/tchuekam-desktop/pull/136)) — @FurkanL0
 - **Superpowers** — Software development skills ([#137](https://github.com/Tchuekam/tchuekam-desktop/pull/137)) — @kaos35
-- **Hermes-Atropos** — RL environment development skill ([#815](https://github.com/Tchuekam/tchuekam-desktop/pull/815))
+- **Tchuekam-Atropos** — RL environment development skill ([#815](https://github.com/Tchuekam/tchuekam-desktop/pull/815))
 - Plus: arXiv search, OCR/documents, Excalidraw diagrams, YouTube transcripts, GIF search, Pokémon player, Minecraft modpack server, OpenHue (Philips Hue), Google Workspace, Notion, PowerPoint, Obsidian, find-nearby, and 40+ MLOps skills
 
 ---
@@ -288,8 +288,8 @@
 - Fix Anthropic "prompt is too long" 400 error not detected as context length error ([#813](https://github.com/Tchuekam/tchuekam-desktop/issues/813))
 - Fix SQLite session transcript accumulating duplicate messages — 3-4x token inflation ([#860](https://github.com/Tchuekam/tchuekam-desktop/issues/860))
 - Fix setup wizard skipping API key prompts on first install ([#748](https://github.com/Tchuekam/tchuekam-desktop/pull/748))
-- Fix setup wizard showing OpenRouter model list for Nous Portal ([#575](https://github.com/Tchuekam/tchuekam-desktop/pull/575)) — @PercyDikec
-- Fix provider selection not persisting when switching via hermes model ([#881](https://github.com/Tchuekam/tchuekam-desktop/pull/881))
+- Fix setup wizard showing OpenRouter model list for Tchuekam Portal ([#575](https://github.com/Tchuekam/tchuekam-desktop/pull/575)) — @PercyDikec
+- Fix provider selection not persisting when switching via tchuekam model ([#881](https://github.com/Tchuekam/tchuekam-desktop/pull/881))
 - Fix Docker backend failing when docker not in PATH on macOS ([#889](https://github.com/Tchuekam/tchuekam-desktop/pull/889))
 - Fix ClawHub Skills Hub adapter for API endpoint changes ([#286](https://github.com/Tchuekam/tchuekam-desktop/pull/286)) — @BP602
 - Fix Honcho auto-enable when API key is present ([#243](https://github.com/Tchuekam/tchuekam-desktop/pull/243)) — @Bartok9
@@ -299,7 +299,7 @@
 - Fix false positives in recursive delete detection ([#68](https://github.com/Tchuekam/tchuekam-desktop/pull/68)) — @cutepawss
 - Fix Ruff lint warnings across codebase ([#608](https://github.com/Tchuekam/tchuekam-desktop/pull/608)) — @JackTheGit
 - Fix Anthropic native base URL fail-fast ([#173](https://github.com/Tchuekam/tchuekam-desktop/pull/173)) — @adavyas
-- Fix install.sh creating ~/.hermes before moving Node.js directory ([#53](https://github.com/Tchuekam/tchuekam-desktop/pull/53)) — @JoshuaMart
+- Fix install.sh creating ~/.tchuekam before moving Node.js directory ([#53](https://github.com/Tchuekam/tchuekam-desktop/pull/53)) — @JoshuaMart
 - Fix SystemExit traceback during atexit cleanup on Ctrl+C ([#55](https://github.com/Tchuekam/tchuekam-desktop/pull/55)) — @bierlingm
 - Restore missing MIT license file ([#620](https://github.com/Tchuekam/tchuekam-desktop/pull/620)) — @stablegenius49
 
@@ -328,7 +328,7 @@
 
 - WebResearchEnv — Multi-step web research RL environment ([#434](https://github.com/Tchuekam/tchuekam-desktop/pull/434)) — @jackx707
 - Modal sandbox concurrency limits to avoid deadlocks ([#621](https://github.com/Tchuekam/tchuekam-desktop/pull/621)) — @voteblake
-- Hermes-atropos-environments bundled skill ([#815](https://github.com/Tchuekam/tchuekam-desktop/pull/815))
+- Tchuekam-atropos-environments bundled skill ([#815](https://github.com/Tchuekam/tchuekam-desktop/pull/815))
 - Local vLLM instance support for evaluation — @dmahan93
 - YC-Bench long-horizon agent benchmark environment
 - OpenThoughts-TBLite evaluation environment and scripts

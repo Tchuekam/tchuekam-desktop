@@ -30,7 +30,7 @@ The `Agent` class is the easiest way to get started. It manages the full
 lifecycle — binary discovery, tool wiring, hook registration, and policy
 defaults — behind a single async context manager.
 
-Below is a complete asynchronous example demonstrating agent initialization,
+Below is a complete asynchrotchuekam example demonstrating agent initialization,
 simple chat execution, and streaming response tokens in real time:
 
 ```python

@@ -53,7 +53,7 @@ Specific metrics to reference in
 ## 2. Long-Running or Stuck Operations
 
 Most User-Defined Functions (UDFs/`DoFn`s) execute in milliseconds. External
-service RPCs or synchronous, blocking calls can stall execution.
+service RPCs or synchrotchuekam, blocking calls can stall execution.
 
 ### The Blockage Cascade
 

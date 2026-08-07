@@ -1,42 +1,42 @@
-# Hermes Agent v0.15.0 (v2026.5.28)
+# Tchuekam Agent v0.15.0 (v2026.5.28)
 
 **Release Date:** May 28, 2026
 **Since v0.14.0:** 1,302 commits · 747 merged PRs · 1,746 files changed · 282,712 insertions · 36,699 deletions · 560+ issues closed (15 P0, 65 P1, 19 security-tagged) · 321 community contributors (including co-authors)
 
-> **The Velocity Release.** Hermes gets dramatically faster — to start, to run, to ship work, and to grow. The 16,083-line `run_agent.py` collapses to 3,821 (-76%) across 14 cohesive `agent/*` modules. Kanban grew into a real multi-agent platform across 104 PRs — orchestrator auto-decomposition, swarm topology, scheduled tasks, worktree-per-task, per-task model overrides. The cold-start perf wave keeps going: another second shaved off launch, 47% fewer per-conversation function calls, `hermes --version` flipping the head-to-head benchmark against Codex CLI. `session_search` is 4,500× faster and free now. Promptware defense lands against Brainworm-class attacks. Bitwarden Secrets Manager replaces N per-provider API keys with one bootstrap token. Skill bundles let one slash command load a whole workflow. The Ink TUI gets a multi-session orchestrator. Two new image_gen providers (Krea 2 Medium + Large, FAL ported to plugin), the Nous-approved MCP catalog with an interactive picker, an OpenHands orchestration skill, ntfy as the 23rd messaging platform, and a deep xAI integration round (Web Search plugin, xai-oauth `hermes proxy` upstream, retired-May-15 model detection + `hermes migrate xai`, natural TTS speech-tag pauses, base_url leak guard, OpenAI-style execution guidance for Grok). 15 P0 + 65 P1 closures alongside.
+> **The Velocity Release.** Tchuekam gets dramatically faster — to start, to run, to ship work, and to grow. The 16,083-line `run_agent.py` collapses to 3,821 (-76%) across 14 cohesive `agent/*` modules. Kanban grew into a real multi-agent platform across 104 PRs — orchestrator auto-decomposition, swarm topology, scheduled tasks, worktree-per-task, per-task model overrides. The cold-start perf wave keeps going: another second shaved off launch, 47% fewer per-conversation function calls, `tchuekam --version` flipping the head-to-head benchmark against Codex CLI. `session_search` is 4,500× faster and free now. Promptware defense lands against Brainworm-class attacks. Bitwarden Secrets Manager replaces N per-provider API keys with one bootstrap token. Skill bundles let one slash command load a whole workflow. The Ink TUI gets a multi-session orchestrator. Two new image_gen providers (Krea 2 Medium + Large, FAL ported to plugin), the Giantech Empire-approved MCP catalog with an interactive picker, an OpenHands orchestration skill, ntfy as the 23rd messaging platform, and a deep xAI integration round (Web Search plugin, xai-oauth `tchuekam proxy` upstream, retired-May-15 model detection + `tchuekam migrate xai`, natural TTS speech-tag pauses, base_url leak guard, OpenAI-style execution guidance for Grok). 15 P0 + 65 P1 closures alongside.
 
 ---
 
 ## ✨ Highlights
 
-- **The Big Refactor — `run_agent.py` is no longer 16,000 lines** — The file at the heart of Hermes — the agent conversation loop — has been reduced from 16,083 lines to 3,821 (-76%), with the extracted code redistributed across 14 cohesive modules under `agent/`. Behavior is unchanged: every extraction keeps a thin forwarder on `AIAgent`, every test patch path still works, every external caller is compatible. The reason you care: future Hermes development moves faster, plugin authors can finally grep the codebase, and the file that took 90 seconds to load in your editor opens in a blink. ([#27248](https://github.com/Tchuekam/tchuekam-desktop/pull/27248))
+- **The Big Refactor — `run_agent.py` is no longer 16,000 lines** — The file at the heart of Tchuekam — the agent conversation loop — has been reduced from 16,083 lines to 3,821 (-76%), with the extracted code redistributed across 14 cohesive modules under `agent/`. Behavior is unchanged: every extraction keeps a thin forwarder on `AIAgent`, every test patch path still works, every external caller is compatible. The reason you care: future Tchuekam development moves faster, plugin authors can finally grep the codebase, and the file that took 90 seconds to load in your editor opens in a blink. ([#27248](https://github.com/Tchuekam/tchuekam-desktop/pull/27248))
 
-- **Kanban grew into a real multi-agent platform — 104 PRs end to end** — Triage auto-decomposes one task into a tree of sub-tasks. `hermes kanban swarm` creates a full Swarm v1 graph in one command — root, parallel workers, gated verifier, gated synthesizer, shared blackboard. Tasks support per-task model overrides (cheap models for boilerplate, expensive ones for hard sub-tasks), board-level default workdirs, per-task worktree paths and branches, scheduled start times, configurable claim TTL, retry fingerprinting, stale-task detection, respawn guards, and a drag-to-delete trash zone. Workers report through `/workers/active`, `/runs/{id}`, and `/inspect` endpoints. ([#27572](https://github.com/Tchuekam/tchuekam-desktop/pull/27572), [#28443](https://github.com/Tchuekam/tchuekam-desktop/pull/28443), [#28364](https://github.com/Tchuekam/tchuekam-desktop/pull/28364), [#28394](https://github.com/Tchuekam/tchuekam-desktop/pull/28394), [#28462](https://github.com/Tchuekam/tchuekam-desktop/pull/28462), [#28384](https://github.com/Tchuekam/tchuekam-desktop/pull/28384), [#28467](https://github.com/Tchuekam/tchuekam-desktop/pull/28467), [#28455](https://github.com/Tchuekam/tchuekam-desktop/pull/28455), [#28452](https://github.com/Tchuekam/tchuekam-desktop/pull/28452), [#28432](https://github.com/Tchuekam/tchuekam-desktop/pull/28432), [#28468](https://github.com/Tchuekam/tchuekam-desktop/pull/28468), [#28420](https://github.com/Tchuekam/tchuekam-desktop/pull/28420))
+- **Kanban grew into a real multi-agent platform — 104 PRs end to end** — Triage auto-decomposes one task into a tree of sub-tasks. `tchuekam kanban swarm` creates a full Swarm v1 graph in one command — root, parallel workers, gated verifier, gated synthesizer, shared blackboard. Tasks support per-task model overrides (cheap models for boilerplate, expensive ones for hard sub-tasks), board-level default workdirs, per-task worktree paths and branches, scheduled start times, configurable claim TTL, retry fingerprinting, stale-task detection, respawn guards, and a drag-to-delete trash zone. Workers report through `/workers/active`, `/runs/{id}`, and `/inspect` endpoints. ([#27572](https://github.com/Tchuekam/tchuekam-desktop/pull/27572), [#28443](https://github.com/Tchuekam/tchuekam-desktop/pull/28443), [#28364](https://github.com/Tchuekam/tchuekam-desktop/pull/28364), [#28394](https://github.com/Tchuekam/tchuekam-desktop/pull/28394), [#28462](https://github.com/Tchuekam/tchuekam-desktop/pull/28462), [#28384](https://github.com/Tchuekam/tchuekam-desktop/pull/28384), [#28467](https://github.com/Tchuekam/tchuekam-desktop/pull/28467), [#28455](https://github.com/Tchuekam/tchuekam-desktop/pull/28455), [#28452](https://github.com/Tchuekam/tchuekam-desktop/pull/28452), [#28432](https://github.com/Tchuekam/tchuekam-desktop/pull/28432), [#28468](https://github.com/Tchuekam/tchuekam-desktop/pull/28468), [#28420](https://github.com/Tchuekam/tchuekam-desktop/pull/28420))
 
-- **Cold-start perf wave keeps going — another second saved, 47% fewer per-turn function calls** — Three new optimization rounds: defer `openai._base_client` import (-240ms / -17MB on every CLI invocation), hot-path optimizations cut 47% of per-conversation function calls (399k → 213k for 31-turn chat), defer compression-feasibility check (-170 to -290ms on every agent construction), adaptive subprocess polling (-195ms per tool call, 1+ second per turn). Termux cold start drops from 2.9s to 0.8s. `hermes --version` cold drops 63% (701ms → 258ms), flipping the head-to-head benchmark against Codex CLI from 5/11 wins to 6/11. ([#28864](https://github.com/Tchuekam/tchuekam-desktop/pull/28864), [#28866](https://github.com/Tchuekam/tchuekam-desktop/pull/28866), [#28957](https://github.com/Tchuekam/tchuekam-desktop/pull/28957), [#29006](https://github.com/Tchuekam/tchuekam-desktop/pull/29006), [#29419](https://github.com/Tchuekam/tchuekam-desktop/pull/29419), [#30121](https://github.com/Tchuekam/tchuekam-desktop/pull/30121), [#30609](https://github.com/Tchuekam/tchuekam-desktop/pull/30609), [#31968](https://github.com/Tchuekam/tchuekam-desktop/pull/31968))
+- **Cold-start perf wave keeps going — another second saved, 47% fewer per-turn function calls** — Three new optimization rounds: defer `openai._base_client` import (-240ms / -17MB on every CLI invocation), hot-path optimizations cut 47% of per-conversation function calls (399k → 213k for 31-turn chat), defer compression-feasibility check (-170 to -290ms on every agent construction), adaptive subprocess polling (-195ms per tool call, 1+ second per turn). Termux cold start drops from 2.9s to 0.8s. `tchuekam --version` cold drops 63% (701ms → 258ms), flipping the head-to-head benchmark against Codex CLI from 5/11 wins to 6/11. ([#28864](https://github.com/Tchuekam/tchuekam-desktop/pull/28864), [#28866](https://github.com/Tchuekam/tchuekam-desktop/pull/28866), [#28957](https://github.com/Tchuekam/tchuekam-desktop/pull/28957), [#29006](https://github.com/Tchuekam/tchuekam-desktop/pull/29006), [#29419](https://github.com/Tchuekam/tchuekam-desktop/pull/29419), [#30121](https://github.com/Tchuekam/tchuekam-desktop/pull/30121), [#30609](https://github.com/Tchuekam/tchuekam-desktop/pull/30609), [#31968](https://github.com/Tchuekam/tchuekam-desktop/pull/31968))
 
 - **`session_search` rebuilt — no LLM, no cost, 4,500× faster** — The old `session_search` was an aux-LLM-powered tool that cost ~$0.30/call and took ~30 seconds to summarize three sessions, sometimes confabulating when the right session wasn't even in the FTS5 hit list. The new shape is one tool with three modes (discovery, scroll, browse) inferred from which args are set — no `mode` parameter, no aux-LLM, no config knob, no companion skill. Discovery is ~20ms instead of ~90s; scroll is ~1ms. Searching your past sessions for context is now free and instant. ([#27590](https://github.com/Tchuekam/tchuekam-desktop/pull/27590))
 
-- **Promptware defense — Brainworm-class attacks blocked at three chokepoints** — Inspired by recent Brainworm / Promptware Kill Chain research (Origin HQ, arxiv 2601.09625), Hermes now defends the context window against prompt-injection attacks that try to hijack the agent via tool output, recalled memory, or stored skills. Single source of truth (`tools/threat_patterns.py`) with ~15 new Brainworm/C2 patterns; recalled memory is scanned at load time; tool results get delimiter markers so a malicious file or remote service can't impersonate Hermes' own system content. Paired with a new `security-guidance` plugin that pattern-matches dangerous code writes. ([#32269](https://github.com/Tchuekam/tchuekam-desktop/pull/32269), [#33131](https://github.com/Tchuekam/tchuekam-desktop/pull/33131), [#9151](https://github.com/Tchuekam/tchuekam-desktop/pull/9151))
+- **Promptware defense — Brainworm-class attacks blocked at three chokepoints** — Inspired by recent Brainworm / Promptware Kill Chain research (Origin HQ, arxiv 2601.09625), Tchuekam now defends the context window against prompt-injection attacks that try to hijack the agent via tool output, recalled memory, or stored skills. Single source of truth (`tools/threat_patterns.py`) with ~15 new Brainworm/C2 patterns; recalled memory is scanned at load time; tool results get delimiter markers so a malicious file or remote service can't impersonate Tchuekam' own system content. Paired with a new `security-guidance` plugin that pattern-matches dangerous code writes. ([#32269](https://github.com/Tchuekam/tchuekam-desktop/pull/32269), [#33131](https://github.com/Tchuekam/tchuekam-desktop/pull/33131), [#9151](https://github.com/Tchuekam/tchuekam-desktop/pull/9151))
 
-- **Bitwarden Secrets Manager — one bootstrap token replaces every per-provider API key** — Stop keeping plaintext API keys in `~/.hermes/.env`. Install Bitwarden Secrets Manager (`bws` auto-installs lazily on first use), point Hermes at it with one bootstrap token (`BWS_ACCESS_TOKEN`), and every credential you need comes from Bitwarden at startup. Rotate a key in the Bitwarden web app and the rotation actually takes effect — Bitwarden defaults to source-of-truth so its values overwrite matching env vars on startup. Flip `secrets.bitwarden.override_existing: false` to invert. EU Cloud and self-hosted Bitwarden server URLs supported. Detected credentials are now labeled with their source so you can see at a glance which keys came from Bitwarden vs. the local env. ([#30035](https://github.com/Tchuekam/tchuekam-desktop/pull/30035), [#31378](https://github.com/Tchuekam/tchuekam-desktop/pull/31378), [#30364](https://github.com/Tchuekam/tchuekam-desktop/pull/30364))
+- **Bitwarden Secrets Manager — one bootstrap token replaces every per-provider API key** — Stop keeping plaintext API keys in `~/.tchuekam/.env`. Install Bitwarden Secrets Manager (`bws` auto-installs lazily on first use), point Tchuekam at it with one bootstrap token (`BWS_ACCESS_TOKEN`), and every credential you need comes from Bitwarden at startup. Rotate a key in the Bitwarden web app and the rotation actually takes effect — Bitwarden defaults to source-of-truth so its values overwrite matching env vars on startup. Flip `secrets.bitwarden.override_existing: false` to invert. EU Cloud and self-hosted Bitwarden server URLs supported. Detected credentials are now labeled with their source so you can see at a glance which keys came from Bitwarden vs. the local env. ([#30035](https://github.com/Tchuekam/tchuekam-desktop/pull/30035), [#31378](https://github.com/Tchuekam/tchuekam-desktop/pull/31378), [#30364](https://github.com/Tchuekam/tchuekam-desktop/pull/30364))
 
-- **ntfy as the 23rd messaging platform — push notifications without an account** — ntfy is the self-hostable push-notification service with no signup, no API key, just a topic URL. Hermes now adapts to it as a platform plugin (zero edits to core), so your agent can send you push notifications from any cron job, kanban task completion, or chat `send_message` — to your phone, your watch, your desktop, your homelab. (salvages [#30625](https://github.com/Tchuekam/tchuekam-desktop/pull/30625) → originally [#4043](https://github.com/Tchuekam/tchuekam-desktop/pull/4043)) ([#30867](https://github.com/Tchuekam/tchuekam-desktop/pull/30867))
+- **ntfy as the 23rd messaging platform — push notifications without an account** — ntfy is the self-hostable push-notification service with no signup, no API key, just a topic URL. Tchuekam now adapts to it as a platform plugin (zero edits to core), so your agent can send you push notifications from any cron job, kanban task completion, or chat `send_message` — to your phone, your watch, your desktop, your homelab. (salvages [#30625](https://github.com/Tchuekam/tchuekam-desktop/pull/30625) → originally [#4043](https://github.com/Tchuekam/tchuekam-desktop/pull/4043)) ([#30867](https://github.com/Tchuekam/tchuekam-desktop/pull/30867))
 
 - **Skill bundles — `/<name>` loads multiple skills at once** — A skill bundle is a named group of skills that loads them all together with one slash command. Set up your "writing day" bundle (humanizer + ideation + obsidian + youtube-content) and `/writing-day` activates all four for the session. Skills Hub now has health checks, a freshness badge, and a watchdog cron. Three new optional skills land: `code-wiki` (Karpathy's LLM-Wiki, persistent indexed dev wiki), `openhands` (delegate to OpenHands for parallel coding agents), and `web-pentest` (OWASP-style web pentest recipes). ([#28373](https://github.com/Tchuekam/tchuekam-desktop/pull/28373), [#32345](https://github.com/Tchuekam/tchuekam-desktop/pull/32345), [#32240](https://github.com/Tchuekam/tchuekam-desktop/pull/32240), [#32261](https://github.com/Tchuekam/tchuekam-desktop/pull/32261), [#32265](https://github.com/Tchuekam/tchuekam-desktop/pull/32265))
 
 - **TUI session orchestrator — multiple live sessions in one TUI window** — The Ink TUI gained an active-session switcher overlay. List, switch between, refresh, and close multiple live process-local sessions without leaving the TUI; dispatch a new session with a session-scoped model picker. Plus a wave of TUI polish — mouse-tracking DEC mode presets, scrollback preservation across branches and termux, slash-dropdown fixes, x.com link rendering, and CJK / IME input rendering improvements. (salvages [#27642](https://github.com/Tchuekam/tchuekam-desktop/pull/27642)) ([#32980](https://github.com/Tchuekam/tchuekam-desktop/pull/32980), [#30084](https://github.com/Tchuekam/tchuekam-desktop/pull/30084))
 
-- **Two new image_gen providers — Krea 2 Medium + Large, FAL ported to plugin** — Krea joins the image_gen lineup as a built-in plugin: `Krea 2 Medium` ($0.03) and `Krea 2 Large` ($0.06), auto-discovered, selectable via `hermes tools` → Image Generation → Krea. Available through both the native Krea plugin and the FAL.ai catalog. The FAL.ai backend got pulled out of the monolithic image-generation tool into `plugins/image_gen/fal/`, completing the four-way architectural parity already established by web, browser, and video_gen — new image providers are now one file, not a fork. ([#33236](https://github.com/Tchuekam/tchuekam-desktop/pull/33236), [#30380](https://github.com/Tchuekam/tchuekam-desktop/pull/30380), [#33506](https://github.com/Tchuekam/tchuekam-desktop/pull/33506))
+- **Two new image_gen providers — Krea 2 Medium + Large, FAL ported to plugin** — Krea joins the image_gen lineup as a built-in plugin: `Krea 2 Medium` ($0.03) and `Krea 2 Large` ($0.06), auto-discovered, selectable via `tchuekam tools` → Image Generation → Krea. Available through both the native Krea plugin and the FAL.ai catalog. The FAL.ai backend got pulled out of the monolithic image-generation tool into `plugins/image_gen/fal/`, completing the four-way architectural parity already established by web, browser, and video_gen — new image providers are now one file, not a fork. ([#33236](https://github.com/Tchuekam/tchuekam-desktop/pull/33236), [#30380](https://github.com/Tchuekam/tchuekam-desktop/pull/30380), [#33506](https://github.com/Tchuekam/tchuekam-desktop/pull/33506))
 
-- **Nous-approved MCP catalog with interactive picker** — A curated catalog of Nous-vetted MCP servers, mirroring the optional-skills shape. Run `hermes mcp` and you get an interactive picker; install with one keystroke, credentials prompted at install time and written to `~/.hermes/.env`. Ships with the n8n manifest first. Closes the discovery gap that left users hunting GitHub for trusted MCP servers. ([#30870](https://github.com/Tchuekam/tchuekam-desktop/pull/30870))
+- **Giantech Empire-approved MCP catalog with interactive picker** — A curated catalog of Giantech Empire-vetted MCP servers, mirroring the optional-skills shape. Run `tchuekam mcp` and you get an interactive picker; install with one keystroke, credentials prompted at install time and written to `~/.tchuekam/.env`. Ships with the n8n manifest first. Closes the discovery gap that left users hunting GitHub for trusted MCP servers. ([#30870](https://github.com/Tchuekam/tchuekam-desktop/pull/30870))
 
 - **OpenHands orchestration skill** — A new optional skill under `optional-skills/autonomous-ai-agents/openhands/` lets the agent delegate coding tasks to the OpenHands CLI alongside `claude-code`, `codex`, and `opencode`. OpenHands is the model-agnostic member of that family — any LiteLLM-supported provider works (OpenAI, Anthropic, OpenRouter, your own), so you can route a sub-task to the cheapest model that can finish it. Drop-in worker for kanban swarms and `/delegate` flows. (closes [#477](https://github.com/Tchuekam/tchuekam-desktop/issues/477)) ([#32261](https://github.com/Tchuekam/tchuekam-desktop/pull/32261))
 
 - **Deep xAI integration round — Web Search plugin, OAuth proxy upstream, May 15 retirement detection, natural TTS, security hardening** — Six interlocking xAI improvements:
     - **xAI Web Search** lands as a `plugins/web/xai/` provider, slots alongside Brave / Tavily / Exa / SearXNG / DDGS / Firecrawl — reuses your existing Grok OAuth or `XAI_API_KEY` credentials, no new env vars. ([#29042](https://github.com/Tchuekam/tchuekam-desktop/pull/29042))
-    - **`hermes proxy` gains an xAI upstream** — your local OpenAI-compatible endpoint can now be backed by SuperGrok OAuth, no PKCE-refresh code to write in your client. ([#28356](https://github.com/Tchuekam/tchuekam-desktop/pull/28356))
-    - **May 15 model retirement detection** — `grok-4`, `grok-4-fast{,-reasoning,-non-reasoning}`, `grok-3`, `grok-code-fast-1`, `grok-imagine-image-pro` etc. are detected in doctor and chat startup, with `hermes migrate xai` to one-shot config migration to the supported model. No more silent 404s after the retirement date. ([#29277](https://github.com/Tchuekam/tchuekam-desktop/pull/29277))
+    - **`tchuekam proxy` gains an xAI upstream** — your local OpenAI-compatible endpoint can now be backed by SuperGrok OAuth, no PKCE-refresh code to write in your client. ([#28356](https://github.com/Tchuekam/tchuekam-desktop/pull/28356))
+    - **May 15 model retirement detection** — `grok-4`, `grok-4-fast{,-reasoning,-non-reasoning}`, `grok-3`, `grok-code-fast-1`, `grok-imagine-image-pro` etc. are detected in doctor and chat startup, with `tchuekam migrate xai` to one-shot config migration to the supported model. No more silent 404s after the retirement date. ([#29277](https://github.com/Tchuekam/tchuekam-desktop/pull/29277))
     - **Opt-in `auto_speech_tags`** for xAI TTS — inserts light `[pause]` tags between paragraphs and sentences for more natural-sounding voice replies. Default OFF. ([#29376](https://github.com/Tchuekam/tchuekam-desktop/pull/29376))
     - **`xai-oauth` `base_url` pinned to `x.ai` origin** — closes a silent credential-leak vector where `XAI_BASE_URL` could repoint OAuth-authenticated inference to an attacker-controlled host. ([#28952](https://github.com/Tchuekam/tchuekam-desktop/pull/28952))
     - **OpenAI-style execution guidance applied to Grok models** — Grok and xai-oauth now get the same family-specific execution discipline block GPT/Codex have, so the model stops claiming completion without tool calls and stops suggesting workarounds instead of using existing tools. ([#27797](https://github.com/Tchuekam/tchuekam-desktop/pull/27797))
@@ -101,7 +101,7 @@
 ### Orchestration & dispatch
 
 - Orchestrator-driven auto-decomposition on triage. ([#27572](https://github.com/Tchuekam/tchuekam-desktop/pull/27572))
-- Kanban swarm topology helper — `hermes kanban swarm` creates a Swarm v1 graph (root + parallel workers + gated verifier + gated synthesizer + shared blackboard). (salvages [#26791](https://github.com/Tchuekam/tchuekam-desktop/pull/26791) by @Niraven) ([#28443](https://github.com/Tchuekam/tchuekam-desktop/pull/28443))
+- Kanban swarm topology helper — `tchuekam kanban swarm` creates a Swarm v1 graph (root + parallel workers + gated verifier + gated synthesizer + shared blackboard). (salvages [#26791](https://github.com/Tchuekam/tchuekam-desktop/pull/26791) by @Niraven) ([#28443](https://github.com/Tchuekam/tchuekam-desktop/pull/28443))
 - Dispatcher wires review agents from the review column. ([#28449](https://github.com/Tchuekam/tchuekam-desktop/pull/28449))
 - Stale-detection for running tasks in dispatcher. ([#28452](https://github.com/Tchuekam/tchuekam-desktop/pull/28452))
 - Respawn guard blocks repeat worker storms. ([#28455](https://github.com/Tchuekam/tchuekam-desktop/pull/28455))
@@ -120,7 +120,7 @@
 - Initial-status for human-ops cards. ([#28414](https://github.com/Tchuekam/tchuekam-desktop/pull/28414))
 - `max_in_progress` config to cap concurrent running tasks. ([#28420](https://github.com/Tchuekam/tchuekam-desktop/pull/28420))
 - Filter tasks by workflow fields. ([#28454](https://github.com/Tchuekam/tchuekam-desktop/pull/28454))
-- `--sort` for `hermes kanban list`. ([#28427](https://github.com/Tchuekam/tchuekam-desktop/pull/28427))
+- `--sort` for `tchuekam kanban list`. ([#28427](https://github.com/Tchuekam/tchuekam-desktop/pull/28427))
 - Optional `board` parameter on all MCP tools. ([#28444](https://github.com/Tchuekam/tchuekam-desktop/pull/28444))
 - Stamp originating ACP session_id on tasks. ([#28447](https://github.com/Tchuekam/tchuekam-desktop/pull/28447))
 - `auto_promote_children` config toggle. ([#28344](https://github.com/Tchuekam/tchuekam-desktop/pull/28344))
@@ -154,7 +154,7 @@
 - Persist worker session metadata on completion. ([#28387](https://github.com/Tchuekam/tchuekam-desktop/pull/28387))
 - Pass `accept-hooks` to worker chat subprocess. ([#28393](https://github.com/Tchuekam/tchuekam-desktop/pull/28393))
 - Preserve worker tools with restricted toolsets. ([#28396](https://github.com/Tchuekam/tchuekam-desktop/pull/28396))
-- Avoid unsafe Windows worker Hermes shim resolution. ([#28398](https://github.com/Tchuekam/tchuekam-desktop/pull/28398))
+- Avoid unsafe Windows worker Tchuekam shim resolution. ([#28398](https://github.com/Tchuekam/tchuekam-desktop/pull/28398))
 - Sync slash subcommands with live parser. ([#28376](https://github.com/Tchuekam/tchuekam-desktop/pull/28376))
 - Show scheduled kanban tasks in dashboard. ([#28400](https://github.com/Tchuekam/tchuekam-desktop/pull/28400))
 - Assign single-task kanban decompositions. ([#28401](https://github.com/Tchuekam/tchuekam-desktop/pull/28401))
@@ -174,7 +174,7 @@
 - Termux TUI cold start speedup. ([#29419](https://github.com/Tchuekam/tchuekam-desktop/pull/29419))
 - Termux non-TUI cold start speedup. (salvage [#29438](https://github.com/Tchuekam/tchuekam-desktop/pull/29438)) ([#30121](https://github.com/Tchuekam/tchuekam-desktop/pull/30121))
 - Termux fast-path version + deferred bare-prompt agent startup. ([#30609](https://github.com/Tchuekam/tchuekam-desktop/pull/30609))
-- Cut hermes `--version` wall time 63% — flips head-to-head vs Codex CLI. ([#31968](https://github.com/Tchuekam/tchuekam-desktop/pull/31968))
+- Cut tchuekam `--version` wall time 63% — flips head-to-head vs Codex CLI. ([#31968](https://github.com/Tchuekam/tchuekam-desktop/pull/31968))
 - Date-only timestamp + loud gateway-DB roundtrip logging — improves prompt-cache hit rate. ([#27675](https://github.com/Tchuekam/tchuekam-desktop/pull/27675))
 - Cache kanban worker guidance at session init for prompt-cache reuse. ([#28425](https://github.com/Tchuekam/tchuekam-desktop/pull/28425))
 
@@ -215,7 +215,7 @@
 
 ### MCP
 
-- **Nous-approved MCP catalog** with interactive picker. ([#30870](https://github.com/Tchuekam/tchuekam-desktop/pull/30870))
+- **Giantech Empire-approved MCP catalog** with interactive picker. ([#30870](https://github.com/Tchuekam/tchuekam-desktop/pull/30870))
 - **TLS client certificate (mTLS) support** for HTTP and SSE MCP servers. ([#33721](https://github.com/Tchuekam/tchuekam-desktop/pull/33721))
 - Stdin paste-back fallback for headless OAuth flow. ([#32053](https://github.com/Tchuekam/tchuekam-desktop/pull/32053))
 - `skip` at paste prompt bypasses auth without disabling server. ([#32069](https://github.com/Tchuekam/tchuekam-desktop/pull/32069))
@@ -249,8 +249,8 @@
 ### xAI deep integration
 
 - **xAI Web Search** as a `plugins/web/xai/` provider plugin. ([#29042](https://github.com/Tchuekam/tchuekam-desktop/pull/29042))
-- **`hermes proxy` xAI upstream** — OpenAI-compatible local proxy backed by xai-oauth. ([#28356](https://github.com/Tchuekam/tchuekam-desktop/pull/28356))
-- **May 15 model retirement detection + `hermes migrate xai`** for grok-4 / grok-3 / grok-code-fast-1 / grok-imagine-image-pro. ([#29277](https://github.com/Tchuekam/tchuekam-desktop/pull/29277))
+- **`tchuekam proxy` xAI upstream** — OpenAI-compatible local proxy backed by xai-oauth. ([#28356](https://github.com/Tchuekam/tchuekam-desktop/pull/28356))
+- **May 15 model retirement detection + `tchuekam migrate xai`** for grok-4 / grok-3 / grok-code-fast-1 / grok-imagine-image-pro. ([#29277](https://github.com/Tchuekam/tchuekam-desktop/pull/29277))
 - **Opt-in `auto_speech_tags`** for natural xAI TTS voice replies. ([#29376](https://github.com/Tchuekam/tchuekam-desktop/pull/29376))
 - **xai-oauth base_url pinned to x.ai origin** — closes silent credential-leak vector. ([#28952](https://github.com/Tchuekam/tchuekam-desktop/pull/28952))
 - **OpenAI-style execution guidance** applied to Grok / xai-oauth models. ([#27797](https://github.com/Tchuekam/tchuekam-desktop/pull/27797))
@@ -269,8 +269,8 @@
 - **OpenAI API as a first-class provider** (distinct from Codex runtime). ([#31898](https://github.com/Tchuekam/tchuekam-desktop/pull/31898))
 - **Microsoft Entra ID** auth for Azure Foundry (with 1M Anthropic-Messages beta preserved on Bearer). (salvages [#27509](https://github.com/Tchuekam/tchuekam-desktop/pull/27509), [#27022](https://github.com/Tchuekam/tchuekam-desktop/pull/27022)) ([#28101](https://github.com/Tchuekam/tchuekam-desktop/pull/28101), [#28084](https://github.com/Tchuekam/tchuekam-desktop/pull/28084))
 - **OpenRouter** sticky routing — `session_id` passed via `extra_body` so a long-running session keeps landing on the same upstream provider. (@Cybourgeoisie) ([#33939](https://github.com/Tchuekam/tchuekam-desktop/pull/33939))
-- Nous: JWT token for inference; stop replaying invalid Nous refresh tokens. (@rewbs) ([#27663](https://github.com/Tchuekam/tchuekam-desktop/pull/27663))
-- Nous Portal: one-shot setup, status CLI, and Nous-included markers. ([#30860](https://github.com/Tchuekam/tchuekam-desktop/pull/30860))
+- Giantech Empire: JWT token for inference; stop replaying invalid Giantech Empire refresh tokens. (@rewbs) ([#27663](https://github.com/Tchuekam/tchuekam-desktop/pull/27663))
+- Tchuekam Portal: one-shot setup, status CLI, and Giantech Empire-included markers. ([#30860](https://github.com/Tchuekam/tchuekam-desktop/pull/30860))
 - Anthropic adapter: extract 7 helpers from `convert_messages_to_anthropic`. (salvage [#27784](https://github.com/Tchuekam/tchuekam-desktop/pull/27784)) ([#30386](https://github.com/Tchuekam/tchuekam-desktop/pull/30386))
 - Catalog: add `qwen3.7-max` to Alibaba + Alibaba-Coding-Plan model lists. ([#33129](https://github.com/Tchuekam/tchuekam-desktop/pull/33129))
 - opencode-go: route `qwen3.7-max` via `anthropic_messages`. (@beardthelion) ([#32780](https://github.com/Tchuekam/tchuekam-desktop/pull/32780))
@@ -297,7 +297,7 @@
 ### Gateway core
 
 - **Deliverable mode** — agents ship artifacts as native uploads from any platform (Slack/Discord/Telegram/Teams/Email). ([#27813](https://github.com/Tchuekam/tchuekam-desktop/pull/27813))
-- `hermes send` — pipe any script's output to any messaging platform. (salvage of [#19631](https://github.com/Tchuekam/tchuekam-desktop/pull/19631)) ([#27188](https://github.com/Tchuekam/tchuekam-desktop/pull/27188))
+- `tchuekam send` — pipe any script's output to any messaging platform. (salvage of [#19631](https://github.com/Tchuekam/tchuekam-desktop/pull/19631)) ([#27188](https://github.com/Tchuekam/tchuekam-desktop/pull/27188))
 - Debounce queued text follow-ups during active sessions. (salvage of [#31235](https://github.com/Tchuekam/tchuekam-desktop/pull/31235)) ([#31341](https://github.com/Tchuekam/tchuekam-desktop/pull/31341))
 - Plugin-transformed final_response delivered through streaming gate. ([#31433](https://github.com/Tchuekam/tchuekam-desktop/pull/31433))
 - Refresh cached agent tools on `/reload-mcp`. ([#32815](https://github.com/Tchuekam/tchuekam-desktop/pull/32815))
@@ -355,7 +355,7 @@
 
 - `/update` slash command in CLI and TUI. ([#23854](https://github.com/Tchuekam/tchuekam-desktop/pull/23854))
 - Update auto-rollback when post-pull syntax check fails. ([#28669](https://github.com/Tchuekam/tchuekam-desktop/pull/28669))
-- `--branch` flag for `hermes update`. (@jquesnelle) ([#29591](https://github.com/Tchuekam/tchuekam-desktop/pull/29591))
+- `--branch` flag for `tchuekam update`. (@jquesnelle) ([#29591](https://github.com/Tchuekam/tchuekam-desktop/pull/29591))
 - `/exit --delete` flag to remove session on quit. (salvage of [#17665](https://github.com/Tchuekam/tchuekam-desktop/pull/17665)) ([#27101](https://github.com/Tchuekam/tchuekam-desktop/pull/27101))
 - `▶ N` indicator in status bar for running `/background` tasks. ([#27175](https://github.com/Tchuekam/tchuekam-desktop/pull/27175))
 - Live background terminal-process count in status bar. ([#32061](https://github.com/Tchuekam/tchuekam-desktop/pull/32061))
@@ -405,7 +405,7 @@
 
 ### File safety
 
-- Protect Hermes control-plane files from prompt injection (`auth.json`, `config.yaml`, `webhook_subscriptions.json`, `mcp-tokens/`). (salvages @PratikRai0101's [#14157](https://github.com/Tchuekam/tchuekam-desktop/pull/14157)) ([#30397](https://github.com/Tchuekam/tchuekam-desktop/pull/30397))
+- Protect Tchuekam control-plane files from prompt injection (`auth.json`, `config.yaml`, `webhook_subscriptions.json`, `mcp-tokens/`). (salvages @PratikRai0101's [#14157](https://github.com/Tchuekam/tchuekam-desktop/pull/14157)) ([#30397](https://github.com/Tchuekam/tchuekam-desktop/pull/30397))
 - Write-deny `<root>/.env` when running under a profile. ([#29687](https://github.com/Tchuekam/tchuekam-desktop/pull/29687))
 - Defense-in-depth read-deny on credential stores. (salvages [#17659](https://github.com/Tchuekam/tchuekam-desktop/pull/17659) + [#8055](https://github.com/Tchuekam/tchuekam-desktop/pull/8055)) ([#30721](https://github.com/Tchuekam/tchuekam-desktop/pull/30721))
 - TTS `output_path` traversal + update ZIP symlink reject. (salvage [#6693](https://github.com/Tchuekam/tchuekam-desktop/pull/6693) + [#15881](https://github.com/Tchuekam/tchuekam-desktop/pull/15881)) ([#32056](https://github.com/Tchuekam/tchuekam-desktop/pull/32056))
@@ -414,7 +414,7 @@
 ### Credential safety
 
 - Avoid persisting borrowed credential secrets — runtime env-sourced keys no longer leak into `auth.json`. ([#31416](https://github.com/Tchuekam/tchuekam-desktop/pull/31416))
-- Validate Nous Portal `inference_base_url` against host allowlist. (salvages [#27612](https://github.com/Tchuekam/tchuekam-desktop/pull/27612)) ([#30611](https://github.com/Tchuekam/tchuekam-desktop/pull/30611))
+- Validate Tchuekam Portal `inference_base_url` against host allowlist. (salvages [#27612](https://github.com/Tchuekam/tchuekam-desktop/pull/27612)) ([#30611](https://github.com/Tchuekam/tchuekam-desktop/pull/30611))
 - Harden API server key placeholder handling. ([#30738](https://github.com/Tchuekam/tchuekam-desktop/pull/30738))
 - Harden Google Chat OAuth credential persistence. (@Zyrixtrex) ([#24788](https://github.com/Tchuekam/tchuekam-desktop/pull/24788))
 - xAI OAuth: pin inference `base_url` to x.ai origin. ([#28952](https://github.com/Tchuekam/tchuekam-desktop/pull/28952))
@@ -422,9 +422,9 @@
 
 ### Supply-chain
 
-- **On-demand supply-chain audit via OSV.dev** — `hermes audit`. ([#31460](https://github.com/Tchuekam/tchuekam-desktop/pull/31460))
-- `hermes update` syntax-validates critical files post-pull, auto-rollback on failure. ([#28669](https://github.com/Tchuekam/tchuekam-desktop/pull/28669))
-- Quarantine `hermes.exe` vs concurrent Windows instance. ([#26677](https://github.com/Tchuekam/tchuekam-desktop/pull/26677))
+- **On-demand supply-chain audit via OSV.dev** — `tchuekam audit`. ([#31460](https://github.com/Tchuekam/tchuekam-desktop/pull/31460))
+- `tchuekam update` syntax-validates critical files post-pull, auto-rollback on failure. ([#28669](https://github.com/Tchuekam/tchuekam-desktop/pull/28669))
+- Quarantine `tchuekam.exe` vs concurrent Windows instance. ([#26677](https://github.com/Tchuekam/tchuekam-desktop/pull/26677))
 
 ### Other hardening
 
@@ -446,7 +446,7 @@
 - Complete Windows bootstrap — `dep_ensure` + `install.ps1` + detection. (@alt-glitch) ([#27845](https://github.com/Tchuekam/tchuekam-desktop/pull/27845))
 - `install.ps1`: strip BOM, `-Commit`/`-Tag` pin params, harden git ops. (@jquesnelle) ([#28169](https://github.com/Tchuekam/tchuekam-desktop/pull/28169))
 - Consolidate ACP browser bootstrap into `install.{sh,ps1}`. (@alt-glitch) ([#27851](https://github.com/Tchuekam/tchuekam-desktop/pull/27851))
-- `hermes update` quarantines live `hermes.exe`. ([#26677](https://github.com/Tchuekam/tchuekam-desktop/pull/26677))
+- `tchuekam update` quarantines live `tchuekam.exe`. ([#26677](https://github.com/Tchuekam/tchuekam-desktop/pull/26677))
 - Discord voice opus decoding on Windows. ([#33182](https://github.com/Tchuekam/tchuekam-desktop/pull/33182))
 - Windows Docker Desktop compatible compose file. (@Sunil123135) ([#31031](https://github.com/Tchuekam/tchuekam-desktop/pull/31031))
 
@@ -455,7 +455,7 @@
 ## 🖥️ Web Dashboard
 
 - Hardened Slack socket recovery + Windows restart dedupe. ([#28873](https://github.com/Tchuekam/tchuekam-desktop/pull/28873))
-- Web dashboard: migrate checkboxes to `@nous-research/ui` + design-system polish. (@austinpickett) ([#28814](https://github.com/Tchuekam/tchuekam-desktop/pull/28814))
+- Web dashboard: migrate checkboxes to `@giantech-empire/ui` + design-system polish. (@austinpickett) ([#28814](https://github.com/Tchuekam/tchuekam-desktop/pull/28814))
 - Web dashboard: collapsible sidebar. (@austinpickett) ([#33421](https://github.com/Tchuekam/tchuekam-desktop/pull/33421))
 - Dashboard typography & contrast pass. (salvage of [#28832](https://github.com/Tchuekam/tchuekam-desktop/pull/28832)) ([#30714](https://github.com/Tchuekam/tchuekam-desktop/pull/30714))
 - Skills page: lazy-fetch catalog instead of bundling 34MB into JS. ([#33809](https://github.com/Tchuekam/tchuekam-desktop/pull/33809))
@@ -467,15 +467,15 @@
 - **s6-overlay container supervision** — abstract `ServiceManager` protocol (systemd/launchd/Windows/s6 backends), per-profile gateway supervision in-container, container-restart reconciliation, hadolint/shellcheck CI. (salvage of [#30136](https://github.com/Tchuekam/tchuekam-desktop/pull/30136), @benbarclay) ([#31760](https://github.com/Tchuekam/tchuekam-desktop/pull/31760))
 - Auto-redirect `gateway run` to supervised mode inside the s6 image. (@benbarclay) ([#33583](https://github.com/Tchuekam/tchuekam-desktop/pull/33583))
 - Tee supervised gateway stdout to docker logs. (@benbarclay) ([#33621](https://github.com/Tchuekam/tchuekam-desktop/pull/33621))
-- Drop `docker exec` to hermes uid before invoking the CLI. (@benbarclay) ([#33628](https://github.com/Tchuekam/tchuekam-desktop/pull/33628))
+- Drop `docker exec` to tchuekam uid before invoking the CLI. (@benbarclay) ([#33628](https://github.com/Tchuekam/tchuekam-desktop/pull/33628))
 - Align HOME for dashboard and s6 gateway services. (@Dusk1e) ([#33481](https://github.com/Tchuekam/tchuekam-desktop/pull/33481))
-- Bake build-time git SHA into image so `hermes dump` reports it. (@benbarclay) ([#33655](https://github.com/Tchuekam/tchuekam-desktop/pull/33655))
-- `hermes update` prints `docker pull` guidance instead of bogus git error. (@benbarclay) ([#33659](https://github.com/Tchuekam/tchuekam-desktop/pull/33659))
+- Bake build-time git SHA into image so `tchuekam dump` reports it. (@benbarclay) ([#33655](https://github.com/Tchuekam/tchuekam-desktop/pull/33655))
+- `tchuekam update` prints `docker pull` guidance instead of bogus git error. (@benbarclay) ([#33659](https://github.com/Tchuekam/tchuekam-desktop/pull/33659))
 - Upgrade Node to 22 LTS via multi-stage from `node:22-bookworm-slim`. (@benbarclay) ([#33060](https://github.com/Tchuekam/tchuekam-desktop/pull/33060))
 - Drop `build-essential` from apt install. (@benbarclay) ([#33028](https://github.com/Tchuekam/tchuekam-desktop/pull/33028))
 - Propagate env through s6 to cont-init and main CMD. ([#32412](https://github.com/Tchuekam/tchuekam-desktop/pull/32412))
-- Targeted chown to preserve host file ownership in `HERMES_HOME`. ([#33033](https://github.com/Tchuekam/tchuekam-desktop/pull/33033))
-- `mkdir HERMES_HOME` as root in stage2 before chown / privilege drop. ([#33078](https://github.com/Tchuekam/tchuekam-desktop/pull/33078))
+- Targeted chown to preserve host file ownership in `TCHUEKAM_HOME`. ([#33033](https://github.com/Tchuekam/tchuekam-desktop/pull/33033))
+- `mkdir TCHUEKAM_HOME` as root in stage2 before chown / privilege drop. ([#33078](https://github.com/Tchuekam/tchuekam-desktop/pull/33078))
 - chown `ui-tui` and `node_modules` on UID remap so TUI esbuild works. ([#33045](https://github.com/Tchuekam/tchuekam-desktop/pull/33045))
 - Include `anthropic`, `bedrock`, `azure-identity` extras in image. ([#30504](https://github.com/Tchuekam/tchuekam-desktop/pull/30504))
 - Stop pushing per-commit SHA tags to Docker Hub. ([#29387](https://github.com/Tchuekam/tchuekam-desktop/pull/29387))
@@ -511,9 +511,9 @@
 - Bundled `security-guidance` plugin. ([#33131](https://github.com/Tchuekam/tchuekam-desktop/pull/33131))
 - Discord and Mattermost migrated to bundled plugins. ([#30591](https://github.com/Tchuekam/tchuekam-desktop/pull/30591), [#31748](https://github.com/Tchuekam/tchuekam-desktop/pull/31748))
 - ntfy as platform plugin. ([#30867](https://github.com/Tchuekam/tchuekam-desktop/pull/30867))
-- Surface category-namespaced plugins in `hermes plugins list`. ([#27187](https://github.com/Tchuekam/tchuekam-desktop/pull/27187))
+- Surface category-namespaced plugins in `tchuekam plugins list`. ([#27187](https://github.com/Tchuekam/tchuekam-desktop/pull/27187))
 - Plugin discovery failures raised to WARNING level. ([#28318](https://github.com/Tchuekam/tchuekam-desktop/pull/28318))
-- `hermes_plugins` included in gateway.log component filter. ([#28313](https://github.com/Tchuekam/tchuekam-desktop/pull/28313))
+- `tchuekam_plugins` included in gateway.log component filter. ([#28313](https://github.com/Tchuekam/tchuekam-desktop/pull/28313))
 - Seed plugin extras before `is_connected` gate. ([#31703](https://github.com/Tchuekam/tchuekam-desktop/pull/31703))
 - Dashboard: allowlist plugin assets + denylist subprocess-influencing env vars. ([#32277](https://github.com/Tchuekam/tchuekam-desktop/pull/32277))
 
@@ -534,7 +534,7 @@
 
 ## 🐛 Notable Bug Fixes (highlights only)
 
-- Match bare custom provider by active base URL in `hermes model`. ([#28908](https://github.com/Tchuekam/tchuekam-desktop/pull/28908))
+- Match bare custom provider by active base URL in `tchuekam model`. ([#28908](https://github.com/Tchuekam/tchuekam-desktop/pull/28908))
 - Route `auxiliary.vision.provider=openai` to api.openai.com, skip text-only main. ([#31452](https://github.com/Tchuekam/tchuekam-desktop/pull/31452))
 - Lint: skip per-file shell linter when LSP will handle the file. ([#29054](https://github.com/Tchuekam/tchuekam-desktop/pull/29054))
 - Treat empty credential pool entries as unauthenticated in `/model` picker. ([#28312](https://github.com/Tchuekam/tchuekam-desktop/pull/28312))
@@ -554,16 +554,16 @@
 
 ## 📚 Documentation
 
-- **30-day docs overhaul** — full correctness audit, every PR in the window covered, Nous Portal weave, sidebar reorg. ([#33782](https://github.com/Tchuekam/tchuekam-desktop/pull/33782))
-- Dedicated Nous Portal integration page and setup guide. ([#31296](https://github.com/Tchuekam/tchuekam-desktop/pull/31296))
-- Providers: move Nous Portal first, Google Gemini OAuth last. ([#31287](https://github.com/Tchuekam/tchuekam-desktop/pull/31287))
+- **30-day docs overhaul** — full correctness audit, every PR in the window covered, Tchuekam Portal weave, sidebar reorg. ([#33782](https://github.com/Tchuekam/tchuekam-desktop/pull/33782))
+- Dedicated Tchuekam Portal integration page and setup guide. ([#31296](https://github.com/Tchuekam/tchuekam-desktop/pull/31296))
+- Providers: move Tchuekam Portal first, Google Gemini OAuth last. ([#31287](https://github.com/Tchuekam/tchuekam-desktop/pull/31287))
 - `session_search` rewrite for single-shape tool. ([#27840](https://github.com/Tchuekam/tchuekam-desktop/pull/27840))
 - Kanban: document failure_limit, max_retries, inline create shortcuts, goals & kanban settings. ([#28357](https://github.com/Tchuekam/tchuekam-desktop/pull/28357), [#28358](https://github.com/Tchuekam/tchuekam-desktop/pull/28358), [#28359](https://github.com/Tchuekam/tchuekam-desktop/pull/28359), [#28360](https://github.com/Tchuekam/tchuekam-desktop/pull/28360), [#28362](https://github.com/Tchuekam/tchuekam-desktop/pull/28362))
 - Kanban Codex lane skill. ([#28430](https://github.com/Tchuekam/tchuekam-desktop/pull/28430))
 - xAI OAuth: note X Premium+ also unlocks Grok OAuth. ([#29055](https://github.com/Tchuekam/tchuekam-desktop/pull/29055))
 - Docs site: Docker audio bridge notes, "Installing more tools in the container", xurl auth HOME in Docker.
 - Email: clarify gateway vs Himalaya setup. (@helix4u) ([#33634](https://github.com/Tchuekam/tchuekam-desktop/pull/33634))
-- Auth docs: replace stale `hermes login` references with `hermes auth add`. ([#32859](https://github.com/Tchuekam/tchuekam-desktop/pull/32859))
+- Auth docs: replace stale `tchuekam login` references with `tchuekam auth add`. ([#32859](https://github.com/Tchuekam/tchuekam-desktop/pull/32859))
 
 ---
 
@@ -574,14 +574,14 @@
 
 ### Notable salvages & cherry-picks
 
-- **@benbarclay** — s6-overlay container supervision (29 commits salvaged), Node 22 LTS upgrade, build-essential cleanup, `gateway run` auto-redirect in s6, tee supervised stdout to docker logs, `hermes update` Docker guidance, build-time SHA stamping
+- **@benbarclay** — s6-overlay container supervision (29 commits salvaged), Node 22 LTS upgrade, build-essential cleanup, `gateway run` auto-redirect in s6, tee supervised stdout to docker logs, `tchuekam update` Docker guidance, build-time SHA stamping
 - **@OutThisLife** — `mouse_tracking` DEC mode presets
-- **@jquesnelle** — Windows installer hardening, `--branch` flag for `hermes update`, install.ps1 BOM strip / commit-pin
+- **@jquesnelle** — Windows installer hardening, `--branch` flag for `tchuekam update`, install.ps1 BOM strip / commit-pin
 - **@alt-glitch** — Windows `dep_ensure` bootstrap, Nix package variants (`.#messaging`, `.#full`), install-method stamping, ACP browser bootstrap consolidation
-- **@austinpickett** — `/update` slash command, dashboard checkboxes → `@nous-research/ui`, mobile dashboard polish, collapsible sidebar
+- **@austinpickett** — `/update` slash command, dashboard checkboxes → `@giantech-empire/ui`, mobile dashboard polish, collapsible sidebar
 - **@ethernet8023** — CI test slicing across GH Actions jobs, TUI clipboard copy fix
 - **@kshitijk4poor** — doctor section banner + fail-and-issue helpers extraction, post-tag salvage cluster (curator-fallout, kanban SQLite hardening, install world-readable uv dirs, xAI bare-code paste)
-- **@rewbs** — Nous JWT inference switch + refresh-token replay fix
+- **@rewbs** — Giantech Empire JWT inference switch + refresh-token replay fix
 - **@Codename-11** + **@Schwartz10** — session control API (REST + SSE + multimodal followup)
 - **@Niraven** — kanban swarm topology helper
 - **@Interstellar-code** — kanban worker visibility endpoints
@@ -589,9 +589,9 @@
 - **@qike-ms** — Telegram in-place status edits design
 - **@sprmn24** — ntfy adapter
 - **@Jaaneek** — xAI Web Search provider plugin
-- **@yannsunn** — xAI upstream adapter for `hermes proxy`
+- **@yannsunn** — xAI upstream adapter for `tchuekam proxy`
 - **@Cybourgeoisie** — OpenRouter sticky routing via session_id
-- **@memosr** — Nous Portal base_url allowlist validation
+- **@memosr** — Tchuekam Portal base_url allowlist validation
 - **@Sunil123135** — Windows Docker Desktop compose file
 - **@Dusk1e** — Docker HOME alignment for dashboard + s6 gateway services
 - **@beardthelion** — opencode-go anthropic_messages routing
@@ -602,7 +602,7 @@
 - **@PratikRai0101** — control-plane file write protection
 - **@helix4u**, **@Bartok9**, **@zccyman** — auxiliary fallback ladder components
 - **@ms-alan**, **@ticketclosed-wontfix**, **@donovan-yohan** — TUI session orchestrator + follow-ups
-- **@daimon-nous[bot]** — cron per-job profile support
+- **@daimon-tchuekam[bot]** — cron per-job profile support
 - **@bisko** — re-pad `reasoning_content` on cross-provider fallback
 
 ### All Contributors
@@ -621,7 +621,7 @@
 @falasi, @falconexe, @fardoche6, @felix-windsor, @Fewmanism, @ffr31mr, @flamiinngo, @flanny7, @flooryyyy,
 @fonhal, @francip, @fujinice, @gianfrancopiana, @glennc, @Glucksberg, @godlin-gh, @Grogger, @guillaumemeyer,
 @Gutslabs, @H-Ali13381, @hanzckernel, @haran2001, @hawknewton, @hayka-pacha, @hehehe0803, @helix4u, @HenkDz,
-@Hermes, @hermesagent26, @Hinotoi-agent, @hongchen1993, @honor2030, @houenyang-momo, @ht1072, @hueilau,
+@Tchuekam, @tchuekamagent26, @Hinotoi-agent, @hongchen1993, @honor2030, @houenyang-momo, @ht1072, @hueilau,
 @iamfoz, @ilonagaja509-glitch, @InB4DevOps, @indigokarasu, @Interstellar-code, @iqdoctor, @iRonin, @Jaaneek,
 @JabberELF, @jacevys, @jackey8616, @jackjin1997, @jdelmerico, @jfuenmayor, @Jiahui-Gu, @JimLiu, @joe102084,
 @JohnC1009, @jonpol01, @Jpalmer95, @Julientalbot, @justemu, @justincc, @jvinals, @karthikeyann, @kasunvinod,

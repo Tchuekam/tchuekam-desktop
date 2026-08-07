@@ -2,11 +2,11 @@
 name: docker-containerization
 description: "Production containerization, multi-stage Dockerfiles, docker-compose orchestration, and container security."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Docker, DevOps, Containerization, Microservices, Deployment, Security]
     related_skills: [fullstack-nextjs-vite, devops, gcp-dataflow]
 ---

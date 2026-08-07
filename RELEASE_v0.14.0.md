@@ -1,31 +1,31 @@
-# Hermes Agent v0.14.0 (v2026.5.16)
+# Tchuekam Agent v0.14.0 (v2026.5.16)
 
 **Release Date:** May 16, 2026
 **Since v0.13.0:** 808 commits · 633 merged PRs · 1393 files changed · 165,061 insertions · 545 issues closed (12 P0, 50 P1) · 215 community contributors (including co-authors)
 
-> The Foundation Release — Hermes Agent installs and runs anywhere now. Native Windows ships in early beta with a full PowerShell installer story, a `pip install hermes-agent` wheel lands on PyPI, lazy-deps reshape what `pip install hermes-agent` actually pulls down, the supply-chain checker scans every install/upgrade for unsafe versions, and a new OpenAI-compatible local proxy lets Codex / Aider / Cline talk to OAuth-only providers (Claude Pro, ChatGPT Pro, SuperGrok). The cold-start wave shaves ~19 seconds off `hermes` launch, browser-tool CDP calls run 180x faster, and `hermes tools` All-Platforms drops from 14s to under 1.5s. Two new messaging platforms (LINE and SimpleX Chat) and a Microsoft Graph foundation (Teams pipeline + webhook adapter) land alongside `/handoff` that finally transfers sessions live, `vision_analyze` passing pixels through to vision-capable models, `x_search` as a first-class tool, LSP semantic diagnostics on every `write_file` / `patch`, a unified pluggable `video_generate`, a `computer_use` cua-driver backend, cross-session 1-hour Claude prompt caching, a per-turn file-mutation verifier, plus 9 new optional skills. 50+ P1 closures, 12 P0 closures.
+> The Foundation Release — Tchuekam Agent installs and runs anywhere now. Native Windows ships in early beta with a full PowerShell installer story, a `pip install tchuekam-agent` wheel lands on PyPI, lazy-deps reshape what `pip install tchuekam-agent` actually pulls down, the supply-chain checker scans every install/upgrade for unsafe versions, and a new OpenAI-compatible local proxy lets Codex / Aider / Cline talk to OAuth-only providers (Claude Pro, ChatGPT Pro, SuperGrok). The cold-start wave shaves ~19 seconds off `tchuekam` launch, browser-tool CDP calls run 180x faster, and `tchuekam tools` All-Platforms drops from 14s to under 1.5s. Two new messaging platforms (LINE and SimpleX Chat) and a Microsoft Graph foundation (Teams pipeline + webhook adapter) land alongside `/handoff` that finally transfers sessions live, `vision_analyze` passing pixels through to vision-capable models, `x_search` as a first-class tool, LSP semantic diagnostics on every `write_file` / `patch`, a unified pluggable `video_generate`, a `computer_use` cua-driver backend, cross-session 1-hour Claude prompt caching, a per-turn file-mutation verifier, plus 9 new optional skills. 50+ P1 closures, 12 P0 closures.
 
 ---
 
 ## ✨ Highlights
 
-- **Native Windows support (early beta)** — full PowerShell installer, native subprocess/PTY paths, taskkill-based process management, MinGit auto-install, Microsoft Store python stub detection, foreground Ctrl+C preservation, taskkill+ps2 fallback, npm prefix handling, and ~40 follow-up Windows-only fixes across CLI / gateway / TUI / curator / tools. Hermes finally runs natively on `cmd.exe` and PowerShell, no WSL required. ([#21561](https://github.com/Tchuekam/tchuekam-desktop/pull/21561), [#22130](https://github.com/Tchuekam/tchuekam-desktop/pull/22130), [#22752](https://github.com/Tchuekam/tchuekam-desktop/pull/22752), [#26618](https://github.com/Tchuekam/tchuekam-desktop/pull/26618), and many more)
+- **Native Windows support (early beta)** — full PowerShell installer, native subprocess/PTY paths, taskkill-based process management, MinGit auto-install, Microsoft Store python stub detection, foreground Ctrl+C preservation, taskkill+ps2 fallback, npm prefix handling, and ~40 follow-up Windows-only fixes across CLI / gateway / TUI / curator / tools. Tchuekam finally runs natively on `cmd.exe` and PowerShell, no WSL required. ([#21561](https://github.com/Tchuekam/tchuekam-desktop/pull/21561), [#22130](https://github.com/Tchuekam/tchuekam-desktop/pull/22130), [#22752](https://github.com/Tchuekam/tchuekam-desktop/pull/22752), [#26618](https://github.com/Tchuekam/tchuekam-desktop/pull/26618), and many more)
 
-- **`pip install hermes-agent && hermes`** — Hermes Agent is now a real PyPI package. One command, no clone, no git, no shell installer. Wheel includes the Ink TUI bundle and shell launcher. (salvage of [#26350](https://github.com/Tchuekam/tchuekam-desktop/pull/26350)) ([#26593](https://github.com/Tchuekam/tchuekam-desktop/pull/26593))
+- **`pip install tchuekam-agent && tchuekam`** — Tchuekam Agent is now a real PyPI package. One command, no clone, no git, no shell installer. Wheel includes the Ink TUI bundle and shell launcher. (salvage of [#26350](https://github.com/Tchuekam/tchuekam-desktop/pull/26350)) ([#26593](https://github.com/Tchuekam/tchuekam-desktop/pull/26593))
 
-- **Cold-start performance wave — ~19s off `hermes` launch** — skills cache, lazy Feishu import, no Nous HTTP at startup, plus PEP-562 lazy adapter imports (QQ, Yuanbao, Teams, Google Chat), deferred `fal_client` / `google-cloud` / `httpx` loads, models.dev disk-cache-first lookup, parallel doctor API checks, eager-skip plugin discovery on built-in subcommands, `hermes tools` All-Platforms drops from 14s to <1.5s, welcome banner skipped on `chat -q`. ([#22138](https://github.com/Tchuekam/tchuekam-desktop/pull/22138), [#22120](https://github.com/Tchuekam/tchuekam-desktop/pull/22120), [#22681](https://github.com/Tchuekam/tchuekam-desktop/pull/22681), [#22790](https://github.com/Tchuekam/tchuekam-desktop/pull/22790), [#22808](https://github.com/Tchuekam/tchuekam-desktop/pull/22808), [#22831](https://github.com/Tchuekam/tchuekam-desktop/pull/22831), [#22859](https://github.com/Tchuekam/tchuekam-desktop/pull/22859), [#22904](https://github.com/Tchuekam/tchuekam-desktop/pull/22904), [#22766](https://github.com/Tchuekam/tchuekam-desktop/pull/22766), [#25341](https://github.com/Tchuekam/tchuekam-desktop/pull/25341))
+- **Cold-start performance wave — ~19s off `tchuekam` launch** — skills cache, lazy Feishu import, no Giantech Empire HTTP at startup, plus PEP-562 lazy adapter imports (QQ, Yuanbao, Teams, Google Chat), deferred `fal_client` / `google-cloud` / `httpx` loads, models.dev disk-cache-first lookup, parallel doctor API checks, eager-skip plugin discovery on built-in subcommands, `tchuekam tools` All-Platforms drops from 14s to <1.5s, welcome banner skipped on `chat -q`. ([#22138](https://github.com/Tchuekam/tchuekam-desktop/pull/22138), [#22120](https://github.com/Tchuekam/tchuekam-desktop/pull/22120), [#22681](https://github.com/Tchuekam/tchuekam-desktop/pull/22681), [#22790](https://github.com/Tchuekam/tchuekam-desktop/pull/22790), [#22808](https://github.com/Tchuekam/tchuekam-desktop/pull/22808), [#22831](https://github.com/Tchuekam/tchuekam-desktop/pull/22831), [#22859](https://github.com/Tchuekam/tchuekam-desktop/pull/22859), [#22904](https://github.com/Tchuekam/tchuekam-desktop/pull/22904), [#22766](https://github.com/Tchuekam/tchuekam-desktop/pull/22766), [#25341](https://github.com/Tchuekam/tchuekam-desktop/pull/25341))
 
 - **180x faster `browser_console` evaluations** — routed through the supervisor's persistent CDP WebSocket instead of spawning a fresh DevTools session per call. Real-world page interactions feel instant. ([#23226](https://github.com/Tchuekam/tchuekam-desktop/pull/23226))
 
-- **Supply-chain advisory checker + lazy-deps framework + tiered install fallback** — every `pip install` / `hermes update` scans dependencies against an advisory list, lazy-deps replace heavy import-time loads with first-use installs, and the installer falls back through extras tiers when a wheel rejects on the target platform. ([#24220](https://github.com/Tchuekam/tchuekam-desktop/pull/24220))
+- **Supply-chain advisory checker + lazy-deps framework + tiered install fallback** — every `pip install` / `tchuekam update` scans dependencies against an advisory list, lazy-deps replace heavy import-time loads with first-use installs, and the installer falls back through extras tiers when a wheel rejects on the target platform. ([#24220](https://github.com/Tchuekam/tchuekam-desktop/pull/24220))
 
-- **OpenAI-compatible local proxy** — `hermes proxy` exposes any OAuth-authed provider (Claude Pro, ChatGPT Pro, SuperGrok) as an OpenAI-compatible endpoint that Codex / Aider / Cline / VS Code Continue can hit. Your subscription, your tools. ([#25969](https://github.com/Tchuekam/tchuekam-desktop/pull/25969))
+- **OpenAI-compatible local proxy** — `tchuekam proxy` exposes any OAuth-authed provider (Claude Pro, ChatGPT Pro, SuperGrok) as an OpenAI-compatible endpoint that Codex / Aider / Cline / VS Code Continue can hit. Your subscription, your tools. ([#25969](https://github.com/Tchuekam/tchuekam-desktop/pull/25969))
 
-- **Cross-session 1-hour Claude prompt cache** — Anthropic / OpenRouter / Nous Portal now share a 1h prefix cache across sessions for Claude models. Fast resume, fast `/new`, lower cost on repeat work. ([#23828](https://github.com/Tchuekam/tchuekam-desktop/pull/23828))
+- **Cross-session 1-hour Claude prompt cache** — Anthropic / OpenRouter / Tchuekam Portal now share a 1h prefix cache across sessions for Claude models. Fast resume, fast `/new`, lower cost on repeat work. ([#23828](https://github.com/Tchuekam/tchuekam-desktop/pull/23828))
 
-- **Two new messaging platforms — LINE + SimpleX Chat** — LINE Messaging API lands as a first-class platform, SimpleX Chat salvages #2558 onto the modern adapter spec. Hermes is now on 22 platforms. ([#23197](https://github.com/Tchuekam/tchuekam-desktop/pull/23197), [#26232](https://github.com/Tchuekam/tchuekam-desktop/pull/26232))
+- **Two new messaging platforms — LINE + SimpleX Chat** — LINE Messaging API lands as a first-class platform, SimpleX Chat salvages #2558 onto the modern adapter spec. Tchuekam is now on 22 platforms. ([#23197](https://github.com/Tchuekam/tchuekam-desktop/pull/23197), [#26232](https://github.com/Tchuekam/tchuekam-desktop/pull/26232))
 
-- **Microsoft Graph foundation — Teams pipeline + webhook adapter** — `msgraph` auth/client foundation, webhook listener platform, Teams pipeline plugin runtime, and Teams outbound delivery via the existing adapter — Hermes can now read and post to Teams. (salvages of #21408–#21411) ([#21922](https://github.com/Tchuekam/tchuekam-desktop/pull/21922), [#21969](https://github.com/Tchuekam/tchuekam-desktop/pull/21969), [#22007](https://github.com/Tchuekam/tchuekam-desktop/pull/22007), [#22024](https://github.com/Tchuekam/tchuekam-desktop/pull/22024))
+- **Microsoft Graph foundation — Teams pipeline + webhook adapter** — `msgraph` auth/client foundation, webhook listener platform, Teams pipeline plugin runtime, and Teams outbound delivery via the existing adapter — Tchuekam can now read and post to Teams. (salvages of #21408–#21411) ([#21922](https://github.com/Tchuekam/tchuekam-desktop/pull/21922), [#21969](https://github.com/Tchuekam/tchuekam-desktop/pull/21969), [#22007](https://github.com/Tchuekam/tchuekam-desktop/pull/22007), [#22024](https://github.com/Tchuekam/tchuekam-desktop/pull/22024))
 
 - **`/handoff` actually transfers the session live** — the agent's active session moves to a different model / persona / profile mid-conversation, with messages, tool history, and context preserved. ([#23395](https://github.com/Tchuekam/tchuekam-desktop/pull/23395))
 
@@ -39,25 +39,25 @@
 
 - **Unified `video_generate` with pluggable provider backends** — single tool, any backend. Drop in a new video provider as a plugin, no core changes. ([#25126](https://github.com/Tchuekam/tchuekam-desktop/pull/25126))
 
-- **`computer_use` cua-driver backend** — proper focus-safe ops, non-Anthropic provider support, refresh on `hermes update`. Computer-use is no longer locked to a single SDK. (re-salvage of #16936) ([#21967](https://github.com/Tchuekam/tchuekam-desktop/pull/21967), [#24063](https://github.com/Tchuekam/tchuekam-desktop/pull/24063))
+- **`computer_use` cua-driver backend** — proper focus-safe ops, non-Anthropic provider support, refresh on `tchuekam update`. Computer-use is no longer locked to a single SDK. (re-salvage of #16936) ([#21967](https://github.com/Tchuekam/tchuekam-desktop/pull/21967), [#24063](https://github.com/Tchuekam/tchuekam-desktop/pull/24063))
 
-- **xAI Grok OAuth provider — SuperGrok via subscription** — sign in with your xAI account, talk to Grok models from Hermes. ([#26534](https://github.com/Tchuekam/tchuekam-desktop/pull/26534))
+- **xAI Grok OAuth provider — SuperGrok via subscription** — sign in with your xAI account, talk to Grok models from Tchuekam. ([#26534](https://github.com/Tchuekam/tchuekam-desktop/pull/26534))
 
 - **Clarify with buttons — native inline keyboards on Telegram + Discord** — the `clarify` tool renders multi-choice prompts as platform-native buttons instead of typed responses. ([#24199](https://github.com/Tchuekam/tchuekam-desktop/pull/24199), [#25485](https://github.com/Tchuekam/tchuekam-desktop/pull/25485))
 
-- **Discord channel history backfill (default on)** — Hermes reads recent channel history when joining a thread so it actually knows what's been said. ([#25984](https://github.com/Tchuekam/tchuekam-desktop/pull/25984))
+- **Discord channel history backfill (default on)** — Tchuekam reads recent channel history when joining a thread so it actually knows what's been said. ([#25984](https://github.com/Tchuekam/tchuekam-desktop/pull/25984))
 
 - **Watchers skill — RSS / HTTP JSON / GitHub polling via cron `no_agent` mode** — skill recipes that wire change-detection sources directly into cron's script-only watchdog mode. ([#21881](https://github.com/Tchuekam/tchuekam-desktop/pull/21881))
 
-- **Zed ACP Registry integration + uvx distribution** — Hermes is in the Zed registry, installable via `uvx` (no npm). Plus `hermes acp --setup-browser` bootstraps browser tools for registry installs. (salvage of [#25908](https://github.com/Tchuekam/tchuekam-desktop/pull/25908)) ([#26079](https://github.com/Tchuekam/tchuekam-desktop/pull/26079), [#26120](https://github.com/Tchuekam/tchuekam-desktop/pull/26120), [#26234](https://github.com/Tchuekam/tchuekam-desktop/pull/26234))
+- **Zed ACP Registry integration + uvx distribution** — Tchuekam is in the Zed registry, installable via `uvx` (no npm). Plus `tchuekam acp --setup-browser` bootstraps browser tools for registry installs. (salvage of [#25908](https://github.com/Tchuekam/tchuekam-desktop/pull/25908)) ([#26079](https://github.com/Tchuekam/tchuekam-desktop/pull/26079), [#26120](https://github.com/Tchuekam/tchuekam-desktop/pull/26120), [#26234](https://github.com/Tchuekam/tchuekam-desktop/pull/26234))
 
 - **OpenRouter Pareto Code router** — wire a new OpenRouter router with `min_coding_score` knob. Pick the cheapest model that meets your quality bar. ([#22838](https://github.com/Tchuekam/tchuekam-desktop/pull/22838))
 
 - **Optional codex app-server runtime for OpenAI/Codex models** — drives the OpenAI Codex CLI under the hood for OpenAI/Codex paths, with session reuse, wedge retirement, and OAuth refresh classification. ([#24182](https://github.com/Tchuekam/tchuekam-desktop/pull/24182), [#25769](https://github.com/Tchuekam/tchuekam-desktop/pull/25769))
 
-- **`hermes-skills/huggingface` as a trusted default tap** — community skills index from huggingface.co/skills is available by default in the Skills Hub. ([#26219](https://github.com/Tchuekam/tchuekam-desktop/pull/26219))
+- **`tchuekam-skills/huggingface` as a trusted default tap** — community skills index from huggingface.co/skills is available by default in the Skills Hub. ([#26219](https://github.com/Tchuekam/tchuekam-desktop/pull/26219))
 
-- **9 new optional skills** — Hyperliquid (perp/spot trading via SDK + REST) (@kshitijk4poor & Hermes), Yahoo Finance market data, api-testing (REST/GraphQL debug), unified EVM multi-chain skill (folds #25291 + #2010 + base/), darwinian-evolver, osint-investigation (closes #355), pinggy-tunnel, watchers (RSS/HTTP/GitHub via cron), Notion overhaul for the Developer Platform (May 2026). ([#23582](https://github.com/Tchuekam/tchuekam-desktop/pull/23582), [#23583](https://github.com/Tchuekam/tchuekam-desktop/pull/23583), [#23590](https://github.com/Tchuekam/tchuekam-desktop/pull/23590), [#25299](https://github.com/Tchuekam/tchuekam-desktop/pull/25299), [#26760](https://github.com/Tchuekam/tchuekam-desktop/pull/26760), [#26729](https://github.com/Tchuekam/tchuekam-desktop/pull/26729), [#26765](https://github.com/Tchuekam/tchuekam-desktop/pull/26765), [#21881](https://github.com/Tchuekam/tchuekam-desktop/pull/21881), [#26612](https://github.com/Tchuekam/tchuekam-desktop/pull/26612))
+- **9 new optional skills** — Hyperliquid (perp/spot trading via SDK + REST) (@kshitijk4poor & Tchuekam), Yahoo Finance market data, api-testing (REST/GraphQL debug), unified EVM multi-chain skill (folds #25291 + #2010 + base/), darwinian-evolver, osint-investigation (closes #355), pinggy-tunnel, watchers (RSS/HTTP/GitHub via cron), Notion overhaul for the Developer Platform (May 2026). ([#23582](https://github.com/Tchuekam/tchuekam-desktop/pull/23582), [#23583](https://github.com/Tchuekam/tchuekam-desktop/pull/23583), [#23590](https://github.com/Tchuekam/tchuekam-desktop/pull/23590), [#25299](https://github.com/Tchuekam/tchuekam-desktop/pull/25299), [#26760](https://github.com/Tchuekam/tchuekam-desktop/pull/26760), [#26729](https://github.com/Tchuekam/tchuekam-desktop/pull/26729), [#26765](https://github.com/Tchuekam/tchuekam-desktop/pull/26765), [#21881](https://github.com/Tchuekam/tchuekam-desktop/pull/21881), [#26612](https://github.com/Tchuekam/tchuekam-desktop/pull/26612))
 
 - **API server exposes run approval events** — long-running runs surface approval requests over the API stream, no more silent stalls. (salvage of [#20311](https://github.com/Tchuekam/tchuekam-desktop/pull/20311)) ([#21899](https://github.com/Tchuekam/tchuekam-desktop/pull/21899))
 
@@ -78,7 +78,7 @@
 
 ### Bootstrap & installer
 - **Native Windows support (early beta)** — first-class native Windows path across CLI / gateway / TUI / tools ([#21561](https://github.com/Tchuekam/tchuekam-desktop/pull/21561))
-- **PyPI wheel packaging — `pip install hermes-agent && hermes`** (salvage of #26350) ([#26593](https://github.com/Tchuekam/tchuekam-desktop/pull/26593))
+- **PyPI wheel packaging — `pip install tchuekam-agent && tchuekam`** (salvage of #26350) ([#26593](https://github.com/Tchuekam/tchuekam-desktop/pull/26593))
 - **Recognise Shift+Enter as a newline key** + Windows docs (salvage #21545) ([#22130](https://github.com/Tchuekam/tchuekam-desktop/pull/22130))
 - **Preserve Ctrl+C for Windows foreground runs** (@helix4u) ([#22752](https://github.com/Tchuekam/tchuekam-desktop/pull/22752))
 - **Stop spamming cwd-missing + tirith-spawn warnings on every terminal call** ([#26618](https://github.com/Tchuekam/tchuekam-desktop/pull/26618))
@@ -92,16 +92,16 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 ## 🚀 Performance Wave
 
 ### Cold start
-- **Cut ~19s from `hermes` cold start** — skills cache + lazy Feishu + no Nous HTTP at startup ([#22138](https://github.com/Tchuekam/tchuekam-desktop/pull/22138))
+- **Cut ~19s from `tchuekam` cold start** — skills cache + lazy Feishu + no Giantech Empire HTTP at startup ([#22138](https://github.com/Tchuekam/tchuekam-desktop/pull/22138))
 - **Skip eager plugin discovery on known built-in subcommands** ([#22120](https://github.com/Tchuekam/tchuekam-desktop/pull/22120))
-- **Cache Nous auth + .env loads** — `hermes tools` All Platforms from 14s to <1.5s ([#25341](https://github.com/Tchuekam/tchuekam-desktop/pull/25341))
+- **Cache Giantech Empire auth + .env loads** — `tchuekam tools` All Platforms from 14s to <1.5s ([#25341](https://github.com/Tchuekam/tchuekam-desktop/pull/25341))
 - **Skip welcome banner on `chat -q` single-query mode** ([#22904](https://github.com/Tchuekam/tchuekam-desktop/pull/22904))
 - **Defer heavy google-cloud imports in google_chat to first adapter use** ([#22681](https://github.com/Tchuekam/tchuekam-desktop/pull/22681))
 - **Defer QQAdapter and YuanbaoAdapter imports via PEP 562** ([#22790](https://github.com/Tchuekam/tchuekam-desktop/pull/22790))
 - **Defer httpx import in teams to first webhook call** ([#22831](https://github.com/Tchuekam/tchuekam-desktop/pull/22831))
 - **Defer fal_client import to first generation request** ([#22859](https://github.com/Tchuekam/tchuekam-desktop/pull/22859))
 - **models.dev cache-first lookup, skip network when disk cache is fresh** ([#22808](https://github.com/Tchuekam/tchuekam-desktop/pull/22808))
-- **Parallelize API connectivity checks in `hermes doctor` and disable IMDS** ([#22766](https://github.com/Tchuekam/tchuekam-desktop/pull/22766))
+- **Parallelize API connectivity checks in `tchuekam doctor` and disable IMDS** ([#22766](https://github.com/Tchuekam/tchuekam-desktop/pull/22766))
 
 ### Runtime
 - **180x faster `browser_console` evaluations** — route through supervisor's persistent CDP WebSocket ([#23226](https://github.com/Tchuekam/tchuekam-desktop/pull/23226))
@@ -109,7 +109,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 - **Accumulate length-continuation prefix via list+join** ([#26237](https://github.com/Tchuekam/tchuekam-desktop/pull/26237))
 
 ### Prompt caching
-- **Cross-session 1h prefix cache for Claude on Anthropic / OpenRouter / Nous Portal** ([#23828](https://github.com/Tchuekam/tchuekam-desktop/pull/23828))
+- **Cross-session 1h prefix cache for Claude on Anthropic / OpenRouter / Tchuekam Portal** ([#23828](https://github.com/Tchuekam/tchuekam-desktop/pull/23828))
 - **Hit prefix cache in background review fork** (salvage #17276 + #25427) ([#25434](https://github.com/Tchuekam/tchuekam-desktop/pull/25434))
 
 ---
@@ -117,7 +117,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 ## 📦 Installation & Distribution
 
 ### PyPI + supply-chain
-- **PyPI wheel packaging — `pip install hermes-agent && hermes`** (salvage of #26350) ([#26593](https://github.com/Tchuekam/tchuekam-desktop/pull/26593))
+- **PyPI wheel packaging — `pip install tchuekam-agent && tchuekam`** (salvage of #26350) ([#26593](https://github.com/Tchuekam/tchuekam-desktop/pull/26593))
 - **Supply-chain advisory checker + lazy-install framework + tiered install fallback** ([#24220](https://github.com/Tchuekam/tchuekam-desktop/pull/24220))
 - **Use `--extra all` not `--all-extras`; drop lazy-covered extras from `[all]`** ([#24515](https://github.com/Tchuekam/tchuekam-desktop/pull/24515))
 - **Skip browser download when system chromium exists** (@helix4u) ([#25317](https://github.com/Tchuekam/tchuekam-desktop/pull/25317))
@@ -128,12 +128,12 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 
 ### Docker
 - **Bootstrap auth.json from env on first boot** ([#21880](https://github.com/Tchuekam/tchuekam-desktop/pull/21880))
-- **Drop manual @hermes/ink build, rely on esbuild bundle** — slimmer image
+- **Drop manual @tchuekam/ink build, rely on esbuild bundle** — slimmer image
 
 ### ACP / Zed
 - **Zed ACP Registry integration** (salvage of #25908) ([#26079](https://github.com/Tchuekam/tchuekam-desktop/pull/26079))
 - **Switch to uvx distribution, drop npm launcher** ([#26120](https://github.com/Tchuekam/tchuekam-desktop/pull/26120))
-- **`hermes acp --setup-browser` bootstraps browser tools for registry installs** ([#26234](https://github.com/Tchuekam/tchuekam-desktop/pull/26234))
+- **`tchuekam acp --setup-browser` bootstraps browser tools for registry installs** ([#26234](https://github.com/Tchuekam/tchuekam-desktop/pull/26234))
 
 ---
 
@@ -141,7 +141,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 
 ### Sessions & handoff
 - **`/handoff` actually transfers the session live** ([#23395](https://github.com/Tchuekam/tchuekam-desktop/pull/23395))
-- **Expose `HERMES_SESSION_ID` env var to agent tools** (@alt-glitch) ([#23847](https://github.com/Tchuekam/tchuekam-desktop/pull/23847))
+- **Expose `TCHUEKAM_SESSION_ID` env var to agent tools** (@alt-glitch) ([#23847](https://github.com/Tchuekam/tchuekam-desktop/pull/23847))
 
 ### Goals (Ralph loop)
 - **`/subgoal` — user-added criteria appended to active `/goal`** ([#25449](https://github.com/Tchuekam/tchuekam-desktop/pull/25449))
@@ -170,18 +170,18 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 - **Optional codex app-server runtime for OpenAI/Codex models** ([#24182](https://github.com/Tchuekam/tchuekam-desktop/pull/24182))
 - **Codex-runtime: retire wedged sessions + post-tool watchdog + OAuth refresh classify** ([#25769](https://github.com/Tchuekam/tchuekam-desktop/pull/25769))
 - **Codex-runtime: skip unavailable plugins during migration** ([#25437](https://github.com/Tchuekam/tchuekam-desktop/pull/25437))
-- **Codex-runtime: de-dup `[plugins.X]` tables and stop leaking HERMES_HOME into config.toml** (#26250) (@kshitijk4poor) ([#26260](https://github.com/Tchuekam/tchuekam-desktop/pull/26260))
+- **Codex-runtime: de-dup `[plugins.X]` tables and stop leaking TCHUEKAM_HOME into config.toml** (#26250) (@kshitijk4poor) ([#26260](https://github.com/Tchuekam/tchuekam-desktop/pull/26260))
 - **Pass `reasoning.effort` to xAI Responses API** ([#22807](https://github.com/Tchuekam/tchuekam-desktop/pull/22807))
 - **Custom provider: prompt and persist explicit `api_mode`** ([#25068](https://github.com/Tchuekam/tchuekam-desktop/pull/25068))
 - **Rename Alibaba Cloud → Qwen Cloud, reorder picker** ([#24835](https://github.com/Tchuekam/tchuekam-desktop/pull/24835))
 - **Restore gpt-5.3-codex-spark for ChatGPT Pro** (salvage #18286 + #19530, fixes #16172) (@kshitijk4poor) ([#22991](https://github.com/Tchuekam/tchuekam-desktop/pull/22991))
 - **Inject tool-use enforcement for GLM models** ([#24715](https://github.com/Tchuekam/tchuekam-desktop/pull/24715))
-- **Use Nous Portal as model metadata authority** (@rob-maron) ([#24502](https://github.com/Tchuekam/tchuekam-desktop/pull/24502))
-- **Unified `client=hermes-client-v<version>` tag on every Portal request** ([#24779](https://github.com/Tchuekam/tchuekam-desktop/pull/24779))
+- **Use Tchuekam Portal as model metadata authority** (@rob-maron) ([#24502](https://github.com/Tchuekam/tchuekam-desktop/pull/24502))
+- **Unified `client=tchuekam-client-v<version>` tag on every Portal request** ([#24779](https://github.com/Tchuekam/tchuekam-desktop/pull/24779))
 - **Prevent stale Ollama credentials after provider switch** (@kshitijk4poor) ([#21703](https://github.com/Tchuekam/tchuekam-desktop/pull/21703))
 - **Auxiliary client: rotate pooled auth after quota failures** (salvage #22779) ([#22792](https://github.com/Tchuekam/tchuekam-desktop/pull/22792))
 - **Auxiliary client: skip providers without credentials immediately** (#25395) ([#25487](https://github.com/Tchuekam/tchuekam-desktop/pull/25487))
-- **Auth: send Nous refresh token via header** (@shannonsands) ([#21578](https://github.com/Tchuekam/tchuekam-desktop/pull/21578))
+- **Auth: send Giantech Empire refresh token via header** (@shannonsands) ([#21578](https://github.com/Tchuekam/tchuekam-desktop/pull/21578))
 - **MiniMax: harden OAuth dashboard and runtime** ([#24165](https://github.com/Tchuekam/tchuekam-desktop/pull/24165))
 
 ### OpenAI-compatible proxy
@@ -275,7 +275,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 
 ### Computer use
 - **`computer_use` cua-driver backend + focus-safe ops + non-Anthropic provider fix** (re-salvage #16936) ([#21967](https://github.com/Tchuekam/tchuekam-desktop/pull/21967))
-- **Refresh cua-driver on `hermes update` + add `install --upgrade`** ([#24063](https://github.com/Tchuekam/tchuekam-desktop/pull/24063))
+- **Refresh cua-driver on `tchuekam update` + add `install --upgrade`** ([#24063](https://github.com/Tchuekam/tchuekam-desktop/pull/24063))
 
 ### LSP & write-time diagnostics
 - **Semantic diagnostics from real language servers in `write_file`/`patch`** ([#24168](https://github.com/Tchuekam/tchuekam-desktop/pull/24168))
@@ -325,7 +325,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 - **Run any LLM call from inside a plugin via `ctx.llm`** ([#23194](https://github.com/Tchuekam/tchuekam-desktop/pull/23194))
 - **`tool_override` flag for replacing built-in tools** (closes #11049) ([#26759](https://github.com/Tchuekam/tchuekam-desktop/pull/26759))
 - **`standalone_sender_fn` for out-of-process cron delivery** (@kshitijk4poor) ([#22461](https://github.com/Tchuekam/tchuekam-desktop/pull/22461))
-- **`HERMES_PLUGINS_DEBUG=1` surfaces plugin discovery logs** ([#22684](https://github.com/Tchuekam/tchuekam-desktop/pull/22684))
+- **`TCHUEKAM_PLUGINS_DEBUG=1` surfaces plugin discovery logs** ([#22684](https://github.com/Tchuekam/tchuekam-desktop/pull/22684))
 - **Hindsight-client as optional dependency** (@alt-glitch) ([#21818](https://github.com/Tchuekam/tchuekam-desktop/pull/21818))
 
 ### Profile & distribution
@@ -338,7 +338,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 - **Routing intent — `deliver=all` fans out to every connected channel** ([#21495](https://github.com/Tchuekam/tchuekam-desktop/pull/21495))
 - **Support name-based lookup for job operations** ([#26231](https://github.com/Tchuekam/tchuekam-desktop/pull/26231))
 - **Blank Cron dashboard tab + partial-record crashes** (salvage #21042 + #22330) (@kshitijk4poor) ([#22389](https://github.com/Tchuekam/tchuekam-desktop/pull/22389))
-- **Do not seed `HERMES_SESSION_*` contextvars from cron origin** (salvage of #22356) (@kshitijk4poor) ([#22382](https://github.com/Tchuekam/tchuekam-desktop/pull/22382))
+- **Do not seed `TCHUEKAM_SESSION_*` contextvars from cron origin** (salvage of #22356) (@kshitijk4poor) ([#22382](https://github.com/Tchuekam/tchuekam-desktop/pull/22382))
 - **Scan assembled prompt including skill content for prompt injection** (#3968)
 
 ---
@@ -346,14 +346,14 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 ## 🧩 Skills Ecosystem
 
 ### Skills Hub
-- **`hermes-skills/huggingface` as a trusted default tap** (closes #2549) ([#26219](https://github.com/Tchuekam/tchuekam-desktop/pull/26219))
+- **`tchuekam-skills/huggingface` as a trusted default tap** (closes #2549) ([#26219](https://github.com/Tchuekam/tchuekam-desktop/pull/26219))
 - **Show per-skill pages in the left sidebar** ([#26646](https://github.com/Tchuekam/tchuekam-desktop/pull/26646))
 - **Richer info panels on the Skills Hub** ([#22905](https://github.com/Tchuekam/tchuekam-desktop/pull/22905))
 - **Refuse `skill_view` name collisions instead of guessing** (closes #6136 @polkn)
 
 ### Curator
 - **Show rename map in user-visible summary** ([#22910](https://github.com/Tchuekam/tchuekam-desktop/pull/22910))
-- **Hint at `hermes curator pin` in the rename block** ([#23212](https://github.com/Tchuekam/tchuekam-desktop/pull/23212))
+- **Hint at `tchuekam curator pin` in the rename block** ([#23212](https://github.com/Tchuekam/tchuekam-desktop/pull/23212))
 
 ### New optional skills
 - **Hyperliquid** — perp/spot trading via SDK + REST (salvage of #1952) ([#23583](https://github.com/Tchuekam/tchuekam-desktop/pull/23583))
@@ -386,7 +386,7 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 ### Reliability — notable bug closures
 - **SQLite: fall back to `journal_mode=DELETE` on NFS/SMB/FUSE** (fixes `/resume` on network mounts) (@kshitijk4poor) ([#22043](https://github.com/Tchuekam/tchuekam-desktop/pull/22043))
 - **Codex-runtime: retire wedged sessions + post-tool watchdog + OAuth refresh classify** ([#25769](https://github.com/Tchuekam/tchuekam-desktop/pull/25769))
-- **Codex-runtime: de-dup `[plugins.X]` tables and stop leaking HERMES_HOME** (#26250) (@kshitijk4poor) ([#26260](https://github.com/Tchuekam/tchuekam-desktop/pull/26260))
+- **Codex-runtime: de-dup `[plugins.X]` tables and stop leaking TCHUEKAM_HOME** (#26250) (@kshitijk4poor) ([#26260](https://github.com/Tchuekam/tchuekam-desktop/pull/26260))
 - **Daytona: migrate legacy-sandbox lookup to cursor-based `list()`** ([#24587](https://github.com/Tchuekam/tchuekam-desktop/pull/24587))
 - **MCP: stop retrying initial MCP auth failures** (#25624) ([#25776](https://github.com/Tchuekam/tchuekam-desktop/pull/25776))
 - **Gateway: enable text-intercept for multi-choice clarify fallback** (#25587) ([#25778](https://github.com/Tchuekam/tchuekam-desktop/pull/25778))
@@ -434,11 +434,11 @@ A long tail of native-Windows fixes shipped alongside the beta — taskkill-base
 
 ### Top community contributors
 - **@kshitijk4poor** — 38 PRs · Telegram cadence/streaming/topic routing, security hardening (sudo, SSRF, kanban_comment, dashboard auth), codex-runtime hygiene, NovitaAI provider, profile/banner fixes, Feishu update cards, gateway QOL across the board
-- **@alt-glitch** — 13 PRs · Markdown-table TUI rendering, `HERMES_SESSION_ID` env var, hindsight-client optional dep, Nix `extraDependencyGroups`
+- **@alt-glitch** — 13 PRs · Markdown-table TUI rendering, `TCHUEKAM_SESSION_ID` env var, hindsight-client optional dep, Nix `extraDependencyGroups`
 - **@OutThisLife** (Brooklyn Nicholson) — 12 PRs · TUI turn segmentation, attach-to-gateway, markdown link titles, embedded TUI via dashboard gateway, Ink cursor sync, scroll/Esc during prompts
 - **@austinpickett** — 8 PRs · `/sessions` slash command, personality switching preserves session, cron modals, dashboard analytics
 - **@helix4u** — 5 PRs · Google Chat setup, browser install skip on system chromium, Windows Ctrl+C preservation
-- **@rob-maron** — 4 PRs · Nous Portal as model metadata authority, provider polish
+- **@rob-maron** — 4 PRs · Tchuekam Portal as model metadata authority, provider polish
 - **@stephenschoettler** — 3 PRs · CI stabilization
 - **@ethernet8023** — 3 PRs · platform/gateway work
 

@@ -64,7 +64,7 @@ CREATE TABLE mydataset.products (
       connection_id => 'us.example_connection',
       endpoint => 'text-embedding-005'
     ))
-    STORED OPTIONS( asynchronous = TRUE )
+    STORED OPTIONS( asynchrotchuekam = TRUE )
 );
 
 # Get all really fun toy products.

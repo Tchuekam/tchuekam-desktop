@@ -1,19 +1,19 @@
-# Hermes Desktop ☤
+# Tchuekam Desktop ☤
 
 <p align="center">
   <a href="https://docs.tchuekam.com/download"><img src="https://img.shields.io/badge/Download-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-FFD700?style=for-the-badge" alt="Download"></a>
   <a href="https://docs.tchuekam.com/docs/"><img src="https://img.shields.io/badge/Docs-docs.tchuekam.com-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/Giantech EmpireResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://github.com/Tchuekam/tchuekam-desktop/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
 </p>
 
-**The native desktop app for [Hermes Agent](../../README.md) — the self-improving AI agent from [Nous Research](https://nousresearch.com).** Same agent, same skills, same memory as the CLI and gateway, in a polished native window — chat with streaming tool output, side-by-side previews, a file browser, voice, and settings, no terminal required. Available for **macOS, Windows, and Linux**.
+**The native desktop app for [Tchuekam Agent](../../README.md) — the self-improving AI agent from [Giantech Empire](https://tchuekamresearch.com).** Same agent, same skills, same memory as the CLI and gateway, in a polished native window — chat with streaming tool output, side-by-side previews, a file browser, voice, and settings, no terminal required. Available for **macOS, Windows, and Linux**.
 
 <table>
-<tr><td><b>Chat with the full agent</b></td><td>Streaming responses, live tool activity, structured tool summaries, and the same conversation history as every other Hermes surface.</td></tr>
+<tr><td><b>Chat with the full agent</b></td><td>Streaming responses, live tool activity, structured tool summaries, and the same conversation history as every other Tchuekam surface.</td></tr>
 <tr><td><b>Side-by-side previews</b></td><td>Render web pages, files, and tool outputs in a right-hand pane while you keep chatting.</td></tr>
 <tr><td><b>File browser</b></td><td>Explore and preview the working directory without leaving the app.</td></tr>
-<tr><td><b>Voice</b></td><td>Talk to Hermes and hear it back.</td></tr>
+<tr><td><b>Voice</b></td><td>Talk to Tchuekam and hear it back.</td></tr>
 <tr><td><b>Settings & onboarding</b></td><td>Manage providers, models, tools, and credentials from a real UI. First-run setup gets you to your first message in seconds.</td></tr>
 <tr><td><b>Stays current</b></td><td>Built-in updates pull the latest agent and rebuild the app in place.</td></tr>
 </table>
@@ -22,7 +22,7 @@
 
 ## Install
 
-### Install with Hermes (recommended)
+### Install with Tchuekam (recommended)
 
 Add `--include-desktop` to the [one-line installer](../../README.md#quick-install) and it sets up the agent and builds the desktop app in one go:
 
@@ -30,17 +30,17 @@ Add `--include-desktop` to the [one-line installer](../../README.md#quick-instal
 curl -fsSL https://raw.githubusercontent.com/Tchuekam/tchuekam-desktop/main/scripts/install.sh | bash -s -- --include-desktop
 ```
 
-Already have the Hermes CLI? Just run:
+Already have the Tchuekam CLI? Just run:
 
 ```bash
-hermes desktop
+tchuekam desktop
 ```
 
-It builds and launches the GUI against your existing install — same config, keys, sessions, and skills. On first launch Hermes walks you through picking a provider and model; nothing else to configure.
+It builds and launches the GUI against your existing install — same config, keys, sessions, and skills. On first launch Tchuekam walks you through picking a provider and model; nothing else to configure.
 
 ### Prebuilt installers
 
-When a release ships desktop installers they're attached to its [direct download page](https://docs.tchuekam.com/download) — `.dmg` (macOS), `.exe` / `.msi` (Windows), `.AppImage` / `.deb` / `.rpm` (Linux). These are published manually, so the install-with-Hermes path above is the most reliable way to get the latest.
+When a release ships desktop installers they're attached to its [direct download page](https://docs.tchuekam.com/download) — `.dmg` (macOS), `.exe` / `.msi` (Windows), `.AppImage` / `.deb` / `.rpm` (Linux). These are published manually, so the install-with-Tchuekam path above is the most reliable way to get the latest.
 
 ---
 
@@ -49,7 +49,7 @@ When a release ships desktop installers they're attached to its [direct download
 The app checks for updates in the background and offers a one-click update when one is ready. You can also update any time from the CLI:
 
 ```bash
-hermes update
+tchuekam update
 ```
 
 ---
@@ -76,8 +76,8 @@ npm run dev          # Vite renderer + Electron, which boots the Python backend
 Point the app at a specific source checkout, or sandbox it away from your real config:
 
 ```bash
-HERMES_DESKTOP_HERMES_ROOT=/path/to/clone npm run dev
-HERMES_HOME=/tmp/throwaway npm run dev
+TCHUEKAM_DESKTOP_TCHUEKAM_ROOT=/path/to/clone npm run dev
+TCHUEKAM_HOME=/tmp/throwaway npm run dev
 npm run dev:fake-boot   # exercise the startup overlay with deterministic delays
 ```
 
@@ -94,7 +94,7 @@ Installers are built and uploaded to GitHub Releases manually. macOS/Windows sig
 
 ### How it works
 
-The packaged app ships only the Electron shell. On first launch it installs the Hermes Agent runtime into `HERMES_HOME` (`~/.hermes`, or `%LOCALAPPDATA%\hermes` on Windows) — the **same layout a CLI install uses**, so the two are interchangeable. The renderer (React, in `src/`) talks to a `hermes dashboard --tui` backend over the standard gateway APIs and reuses the embedded TUI rather than reimplementing chat. The install, backend-resolution, and self-update logic all live in `electron/main.cjs`.
+The packaged app ships only the Electron shell. On first launch it installs the Tchuekam Agent runtime into `TCHUEKAM_HOME` (`~/.tchuekam`, or `%LOCALAPPDATA%\tchuekam` on Windows) — the **same layout a CLI install uses**, so the two are interchangeable. The renderer (React, in `src/`) talks to a `tchuekam dashboard --tui` backend over the standard gateway APIs and reuses the embedded TUI rather than reimplementing chat. The install, backend-resolution, and self-update logic all live in `electron/main.cjs`.
 
 ### Verification
 
@@ -109,36 +109,36 @@ npm run test:desktop:all
 
 ### Troubleshooting
 
-Boot logs land in `HERMES_HOME/logs/desktop.log` (includes backend output and recent Python tracebacks) — check it first if the app reports a boot failure.
+Boot logs land in `TCHUEKAM_HOME/logs/desktop.log` (includes backend output and recent Python tracebacks) — check it first if the app reports a boot failure.
 
 **macOS / Linux:**
 
 ```bash
 # Force a clean first-launch setup
-rm "$HOME/.hermes/hermes-agent/.hermes-bootstrap-complete"
+rm "$HOME/.tchuekam/tchuekam-agent/.tchuekam-bootstrap-complete"
 # Rebuild a broken Python venv
-rm -rf "$HOME/.hermes/hermes-agent/venv"
+rm -rf "$HOME/.tchuekam/tchuekam-agent/venv"
 # Reset a stuck macOS microphone prompt (macOS only)
-tccutil reset Microphone com.nousresearch.hermes
+tccutil reset Microphone com.tchuekamresearch.tchuekam
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
 # Force a clean first-launch setup
-Remove-Item "$env:LOCALAPPDATA\hermes\hermes-agent\.hermes-bootstrap-complete"
+Remove-Item "$env:LOCALAPPDATA\tchuekam\tchuekam-agent\.tchuekam-bootstrap-complete"
 # Rebuild a broken Python venv
-Remove-Item -Recurse -Force "$env:LOCALAPPDATA\hermes\hermes-agent\venv"
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\tchuekam\tchuekam-agent\venv"
 ```
 
-> The default Hermes home on Windows is `%LOCALAPPDATA%\hermes`. Set the `HERMES_HOME` env var if you've relocated it.
+> The default Tchuekam home on Windows is `%LOCALAPPDATA%\tchuekam`. Set the `TCHUEKAM_HOME` env var if you've relocated it.
 
 ---
 
 ## Community
 
-- 💬 [Discord](https://discord.gg/NousResearch)
-- 📖 [Documentation](https://hermes-agent.nousresearch.com/docs/)
+- 💬 [Discord](https://discord.gg/Giantech EmpireResearch)
+- 📖 [Documentation](https://tchuekam-agent.tchuekamresearch.com/docs/)
 - 🐛 [Issues](https://github.com/Tchuekam/tchuekam-desktop/issues)
 
 ---
@@ -147,4 +147,4 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\hermes\hermes-agent\venv"
 
 MIT — see [LICENSE](../../LICENSE).
 
-Built by [Nous Research](https://nousresearch.com).
+Built by [Giantech Empire](https://tchuekamresearch.com).

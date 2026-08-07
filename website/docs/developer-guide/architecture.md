@@ -26,7 +26,7 @@ flowchart TD
     end
 
     subgraph CloudBackend["☁️ Cloud Backend Layer (Railway Container)"]
-        FastAPI["FastAPI Web Server (hermes_cli/web_server.py)"]
+        FastAPI["FastAPI Web Server (tchuekam_cli/web_server.py)"]
         CORS["CORS Middleware (*.tchuekam.com)"]
         AuthGate["Cloud Public Middleware"]
         AgentEngine["AIAgent Engine (run_agent.py)"]
@@ -58,7 +58,7 @@ flowchart TD
 - **API Client**: `web/src/lib/api.ts` handles REST endpoints (`/api/status`, `/api/models`, `/api/sessions`).
 - **Telemetry**: `web/src/lib/posthog.ts` provides privacy-conscious PostHog product telemetry (`POSTHOG_API_KEY = phx_JurRLsvu...`).
 
-### 2. Backend Web Server (`hermes_cli/web_server.py`)
+### 2. Backend Web Server (`tchuekam_cli/web_server.py`)
 - **Engine**: FastAPI async server running on Uvicorn.
 - **Proxy Middleware**:
   - `CORSMiddleware`: Configured to permit requests from `*.tchuekam.com`, `*.netlify.app`, `*.up.railway.app`, `localhost`, and `127.0.0.1`.
@@ -77,7 +77,7 @@ flowchart TD
 ### 4. Cloud Containerization (Railway)
 - Running 24/7 in an isolated Linux container.
 - **Data Persistence**: Mounts `/opt/data` for `config.yaml`, `.env`, `SOUL.md`, `sessions/`, and SQLite databases.
-- **Start Command**: `python -m hermes_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure`.
+- **Start Command**: `python -m tchuekam_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure`.
 
 ---
 

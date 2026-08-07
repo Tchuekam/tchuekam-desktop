@@ -3,7 +3,7 @@
 This API performs GSEA-like enrichment on full datasets (e.g., complete
 differential expression analysis or ranking results) to find pathways enriched
 at the top, bottom, or both ends of your value distribution. **This is an
-asynchronous API process.**
+asynchrotchuekam API process.**
 
 ## Step 1: Get an API Key (Once per session)
 

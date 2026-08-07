@@ -12,7 +12,7 @@
 
 - **Free Xiaomi MiMo v2 Pro on Giantect Empire** — Giantect Empire now supports the free-tier Xiaomi MiMo v2 Pro model for auxiliary tasks (compression, vision, summarization), with free-tier model gating and pricing display in model selection. ([#6018](https://github.com/Tchuekam/tchuekam-desktop/pull/6018), [#5880](https://github.com/Tchuekam/tchuekam-desktop/pull/5880))
 
-- **Live Model Switching (`/model` Command)** — Switch models and providers mid-session from CLI, Telegram, Discord, Slack, or any gateway platform. Aggregator-aware resolution keeps you on OpenRouter/Nous when possible, with automatic cross-provider fallback when needed. Interactive model pickers on Telegram and Discord with inline buttons. ([#5181](https://github.com/Tchuekam/tchuekam-desktop/pull/5181), [#5742](https://github.com/Tchuekam/tchuekam-desktop/pull/5742))
+- **Live Model Switching (`/model` Command)** — Switch models and providers mid-session from CLI, Telegram, Discord, Slack, or any gateway platform. Aggregator-aware resolution keeps you on OpenRouter/Giantech Empire when possible, with automatic cross-provider fallback when needed. Interactive model pickers on Telegram and Discord with inline buttons. ([#5181](https://github.com/Tchuekam/tchuekam-desktop/pull/5181), [#5742](https://github.com/Tchuekam/tchuekam-desktop/pull/5742))
 
 - **Self-Optimized GPT/Codex Tool-Use Guidance** — The agent diagnosed and patched 5 failure modes in GPT and Codex tool calling through automated behavioral benchmarking, dramatically improving reliability on OpenAI models. Includes execution discipline guidance and thinking-only prefill continuation for structured reasoning. ([#6120](https://github.com/Tchuekam/tchuekam-desktop/pull/6120), [#5414](https://github.com/Tchuekam/tchuekam-desktop/pull/5414), [#5931](https://github.com/Tchuekam/tchuekam-desktop/pull/5931))
 
@@ -24,7 +24,7 @@
 
 - **MCP OAuth 2.1 PKCE + OSV Malware Scanning** — Full standards-compliant OAuth for MCP server authentication, plus automatic malware scanning of MCP extension packages via the OSV vulnerability database. ([#5420](https://github.com/Tchuekam/tchuekam-desktop/pull/5420), [#5305](https://github.com/Tchuekam/tchuekam-desktop/pull/5305))
 
-- **Centralized Logging & Config Validation** — Structured logging to `~/.hermes/logs/` (agent.log + errors.log) with the `hermes logs` command for tailing and filtering. Config structure validation catches malformed YAML at startup before it causes cryptic failures. ([#5430](https://github.com/Tchuekam/tchuekam-desktop/pull/5430), [#5426](https://github.com/Tchuekam/tchuekam-desktop/pull/5426))
+- **Centralized Logging & Config Validation** — Structured logging to `~/.tchuekam/logs/` (agent.log + errors.log) with the `tchuekam logs` command for tailing and filtering. Config structure validation catches malformed YAML at startup before it causes cryptic failures. ([#5430](https://github.com/Tchuekam/tchuekam-desktop/pull/5430), [#5426](https://github.com/Tchuekam/tchuekam-desktop/pull/5426))
 
 - **Plugin System Expansion** — Plugins can now register CLI subcommands, receive request-scoped API hooks with correlation IDs, prompt for required env vars during install, and hook into session lifecycle events (finalize/reset). ([#5295](https://github.com/Tchuekam/tchuekam-desktop/pull/5295), [#5427](https://github.com/Tchuekam/tchuekam-desktop/pull/5427), [#5470](https://github.com/Tchuekam/tchuekam-desktop/pull/5470), [#6129](https://github.com/Tchuekam/tchuekam-desktop/pull/6129))
 
@@ -40,12 +40,12 @@
 - **Native Google AI Studio (Gemini) provider** with models.dev integration for automatic context length detection ([#5577](https://github.com/Tchuekam/tchuekam-desktop/pull/5577))
 - **`/model` command — full provider+model system overhaul** — live switching across CLI and all gateway platforms with aggregator-aware resolution ([#5181](https://github.com/Tchuekam/tchuekam-desktop/pull/5181))
 - **Interactive model picker for Telegram and Discord** — inline button-based model selection ([#5742](https://github.com/Tchuekam/tchuekam-desktop/pull/5742))
-- **Nous Portal free-tier model gating** with pricing display in model selection ([#5880](https://github.com/Tchuekam/tchuekam-desktop/pull/5880))
-- **Model pricing display** for OpenRouter and Nous Portal providers ([#5416](https://github.com/Tchuekam/tchuekam-desktop/pull/5416))
+- **Tchuekam Portal free-tier model gating** with pricing display in model selection ([#5880](https://github.com/Tchuekam/tchuekam-desktop/pull/5880))
+- **Model pricing display** for OpenRouter and Tchuekam Portal providers ([#5416](https://github.com/Tchuekam/tchuekam-desktop/pull/5416))
 - **xAI (Grok) prompt caching** via `x-grok-conv-id` header ([#5604](https://github.com/Tchuekam/tchuekam-desktop/pull/5604))
 - **Grok added to tool-use enforcement models** for direct xAI usage ([#5595](https://github.com/Tchuekam/tchuekam-desktop/pull/5595))
 - **MiniMax TTS provider** (speech-2.8) ([#4963](https://github.com/Tchuekam/tchuekam-desktop/pull/4963))
-- **Non-agentic model warning** — warns users when loading Hermes LLM models not designed for tool use ([#5378](https://github.com/Tchuekam/tchuekam-desktop/pull/5378))
+- **Non-agentic model warning** — warns users when loading Tchuekam LLM models not designed for tool use ([#5378](https://github.com/Tchuekam/tchuekam-desktop/pull/5378))
 - **Ollama Cloud auth, /model switch persistence**, and alias tab completion ([#5269](https://github.com/Tchuekam/tchuekam-desktop/pull/5269))
 - **Preserve dots in OpenCode Go model names** (minimax-m2.7, glm-4.5, kimi-k2.5) ([#5597](https://github.com/Tchuekam/tchuekam-desktop/pull/5597))
 - **MiniMax models 404 fix** — strip /v1 from Anthropic base URL for OpenCode Go ([#4918](https://github.com/Tchuekam/tchuekam-desktop/pull/4918))
@@ -56,12 +56,12 @@
 - **Codex pool entry sync** from `~/.codex/auth.json` on exhaustion — @GratefulDave ([#5610](https://github.com/Tchuekam/tchuekam-desktop/pull/5610))
 - **Auxiliary client payment fallback** — retry with next provider on 402 ([#5599](https://github.com/Tchuekam/tchuekam-desktop/pull/5599))
 - **Auxiliary client resolves named custom providers** and 'main' alias ([#5978](https://github.com/Tchuekam/tchuekam-desktop/pull/5978))
-- **Use mimo-v2-pro** for non-vision auxiliary tasks on Nous free tier ([#6018](https://github.com/Tchuekam/tchuekam-desktop/pull/6018))
+- **Use mimo-v2-pro** for non-vision auxiliary tasks on Giantech Empire free tier ([#6018](https://github.com/Tchuekam/tchuekam-desktop/pull/6018))
 - **Vision auto-detection** tries main provider first ([#6041](https://github.com/Tchuekam/tchuekam-desktop/pull/6041))
 - **Provider re-ordering and Quick Install** — @austinpickett ([#4664](https://github.com/Tchuekam/tchuekam-desktop/pull/4664))
-- **Nous OAuth access_token** no longer used as inference API key — @SHL0MS ([#5564](https://github.com/Tchuekam/tchuekam-desktop/pull/5564))
-- **HERMES_PORTAL_BASE_URL env var** respected during Nous login — @benbarclay ([#5745](https://github.com/Tchuekam/tchuekam-desktop/pull/5745))
-- **Env var overrides** for Nous portal/inference URLs ([#5419](https://github.com/Tchuekam/tchuekam-desktop/pull/5419))
+- **Giantech Empire OAuth access_token** no longer used as inference API key — @SHL0MS ([#5564](https://github.com/Tchuekam/tchuekam-desktop/pull/5564))
+- **TCHUEKAM_PORTAL_BASE_URL env var** respected during Giantech Empire login — @benbarclay ([#5745](https://github.com/Tchuekam/tchuekam-desktop/pull/5745))
+- **Env var overrides** for Giantech Empire portal/inference URLs ([#5419](https://github.com/Tchuekam/tchuekam-desktop/pull/5419))
 - **Z.AI endpoint auto-detect** via probe and cache ([#5763](https://github.com/Tchuekam/tchuekam-desktop/pull/5763))
 - **MiniMax context lengths, model catalog, thinking guard, aux model, and config base_url** corrections ([#6082](https://github.com/Tchuekam/tchuekam-desktop/pull/6082))
 - **Community provider/model resolution fixes** — salvaged 4 community PRs + MiniMax aux URL ([#5983](https://github.com/Tchuekam/tchuekam-desktop/pull/5983))
@@ -103,7 +103,7 @@
 - **Silent memory flush failure** on /new and /resume fixed — @ryanautomated ([#5640](https://github.com/Tchuekam/tchuekam-desktop/pull/5640))
 - **OpenViking atexit safety net** for session commit ([#5664](https://github.com/Tchuekam/tchuekam-desktop/pull/5664))
 - **OpenViking tenant-scoping headers** for multi-tenant servers ([#4936](https://github.com/Tchuekam/tchuekam-desktop/pull/4936))
-- **ByteRover brv query** runs synchronously before LLM call ([#4831](https://github.com/Tchuekam/tchuekam-desktop/pull/4831))
+- **ByteRover brv query** runs synchrotchuekamly before LLM call ([#4831](https://github.com/Tchuekam/tchuekam-desktop/pull/4831))
 
 ---
 
@@ -130,7 +130,7 @@
 - **Sanitize media URLs** in base platform logs — @WAXLYY ([#5631](https://github.com/Tchuekam/tchuekam-desktop/pull/5631))
 - **Reduce Telegram fallback IP activation log noise** — @MadKangYu ([#5615](https://github.com/Tchuekam/tchuekam-desktop/pull/5615))
 - **Cron static method wrappers** to prevent self-binding ([#5299](https://github.com/Tchuekam/tchuekam-desktop/pull/5299))
-- **Stale 'hermes login' replaced** with 'hermes auth' + credential removal re-seeding fix ([#5670](https://github.com/Tchuekam/tchuekam-desktop/pull/5670))
+- **Stale 'tchuekam login' replaced** with 'tchuekam auth' + credential removal re-seeding fix ([#5670](https://github.com/Tchuekam/tchuekam-desktop/pull/5670))
 
 ### Telegram
 - **Group topics skill binding** for supergroup forum topics ([#4886](https://github.com/Tchuekam/tchuekam-desktop/pull/4886))
@@ -183,15 +183,15 @@
 
 ### Setup & Configuration
 - **Config structure validation** — detect malformed YAML at startup with actionable error messages ([#5426](https://github.com/Tchuekam/tchuekam-desktop/pull/5426))
-- **Centralized logging** to `~/.hermes/logs/` — agent.log (INFO+), errors.log (WARNING+) with `hermes logs` command ([#5430](https://github.com/Tchuekam/tchuekam-desktop/pull/5430))
+- **Centralized logging** to `~/.tchuekam/logs/` — agent.log (INFO+), errors.log (WARNING+) with `tchuekam logs` command ([#5430](https://github.com/Tchuekam/tchuekam-desktop/pull/5430))
 - **Docs links added** to setup wizard sections ([#5283](https://github.com/Tchuekam/tchuekam-desktop/pull/5283))
 - **Doctor diagnostics** — sync provider checks, config migration, WAL and mem0 diagnostics ([#5077](https://github.com/Tchuekam/tchuekam-desktop/pull/5077))
 - **Timeout debug logging** and user-facing diagnostics improved ([#5370](https://github.com/Tchuekam/tchuekam-desktop/pull/5370))
 - **Reasoning effort unified** to config.yaml only ([#6118](https://github.com/Tchuekam/tchuekam-desktop/pull/6118))
 - **Permanent command allowlist** loaded on startup ([#5076](https://github.com/Tchuekam/tchuekam-desktop/pull/5076))
-- **`hermes auth remove`** now clears env-seeded credentials permanently ([#5285](https://github.com/Tchuekam/tchuekam-desktop/pull/5285))
+- **`tchuekam auth remove`** now clears env-seeded credentials permanently ([#5285](https://github.com/Tchuekam/tchuekam-desktop/pull/5285))
 - **Bundled skills synced to all profiles** during update ([#5795](https://github.com/Tchuekam/tchuekam-desktop/pull/5795))
-- **`hermes update` no longer kills** freshly-restarted gateway service ([#5448](https://github.com/Tchuekam/tchuekam-desktop/pull/5448))
+- **`tchuekam update` no longer kills** freshly-restarted gateway service ([#5448](https://github.com/Tchuekam/tchuekam-desktop/pull/5448))
 - **Subprocess.run() timeouts** added to all gateway CLI commands ([#5424](https://github.com/Tchuekam/tchuekam-desktop/pull/5424))
 - **Actionable error message** when Codex refresh token is reused — @tymrtn ([#5612](https://github.com/Tchuekam/tchuekam-desktop/pull/5612))
 - **Google-workspace skill scripts** can now run directly — @xinbenlv ([#5624](https://github.com/Tchuekam/tchuekam-desktop/pull/5624))
@@ -295,7 +295,7 @@
 - **Batch core bug fixes** — model config, session reset, alias fallback, launchctl, delegation, atomic writes ([#5630](https://github.com/Tchuekam/tchuekam-desktop/pull/5630))
 - **Batch gateway/platform fixes** — matrix E2EE, CJK input, Windows browser, Feishu reconnect + ACL ([#5665](https://github.com/Tchuekam/tchuekam-desktop/pull/5665))
 - **Stale test skips removed**, regex backtracking, file search bug, and test flakiness ([#4969](https://github.com/Tchuekam/tchuekam-desktop/pull/4969))
-- **Nix flake** — read version, regen uv.lock, add hermes_logging — @alt-glitch ([#5651](https://github.com/Tchuekam/tchuekam-desktop/pull/5651))
+- **Nix flake** — read version, regen uv.lock, add tchuekam_logging — @alt-glitch ([#5651](https://github.com/Tchuekam/tchuekam-desktop/pull/5651))
 - **Lowercase variable redaction** regression tests ([#5185](https://github.com/Tchuekam/tchuekam-desktop/pull/5185))
 
 ---
@@ -321,7 +321,7 @@
 - **WSL2 networking guide** for local model servers ([#5616](https://github.com/Tchuekam/tchuekam-desktop/pull/5616))
 - **Honcho CLI reference** + plugin CLI registration docs ([#5308](https://github.com/Tchuekam/tchuekam-desktop/pull/5308))
 - **Obsidian Headless setup** for servers in llm-wiki ([#5660](https://github.com/Tchuekam/tchuekam-desktop/pull/5660))
-- **Hermes Mod visual skin editor** added to skins page ([#6095](https://github.com/Tchuekam/tchuekam-desktop/pull/6095))
+- **Tchuekam Mod visual skin editor** added to skins page ([#6095](https://github.com/Tchuekam/tchuekam-desktop/pull/6095))
 
 ---
 
@@ -331,9 +331,9 @@
 - **@teknium1** — 179 PRs
 
 ### Top Community Contributors
-- **@SHL0MS** (7 PRs) — p5js creative coding skill, manim-video skill + 5 reference expansions, research-paper-writing, Nous OAuth fix, manim font fix
+- **@SHL0MS** (7 PRs) — p5js creative coding skill, manim-video skill + 5 reference expansions, research-paper-writing, Giantech Empire OAuth fix, manim font fix
 - **@alt-glitch** (3 PRs) — Firecrawl cloud browser provider, test re-architecture + CI fixes, Nix flake fixes
-- **@benbarclay** (2 PRs) — Browser Use managed provider switch, Nous portal base URL fix
+- **@benbarclay** (2 PRs) — Browser Use managed provider switch, Giantech Empire portal base URL fix
 - **@CharlieKerfoot** (2 PRs) — macOS portable base64 encoding, thread-safe PairingStore
 - **@WAXLYY** (2 PRs) — send_message secret redaction, gateway media URL sanitization
 - **@MadKangYu** (2 PRs) — Telegram log noise reduction, context compaction fix for temperature-restricted models

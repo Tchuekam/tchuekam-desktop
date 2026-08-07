@@ -2,11 +2,11 @@
 name: ffmpeg-video-editor
 description: "Command-line video editing, concatenation, stream multiplexing, and format conversion with FFmpeg."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Video, FFmpeg, Editing, Transcoding, Subtitles, Audio, GIF]
     related_skills: [remotion-video, ai-video-generation, manim-video]
 ---

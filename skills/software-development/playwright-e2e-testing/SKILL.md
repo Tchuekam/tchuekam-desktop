@@ -2,11 +2,11 @@
 name: playwright-e2e-testing
 description: "End-to-end web browser automation, visual regression testing, and E2E test suite generation using Playwright."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Testing, Playwright, E2E, Browser-Automation, Quality-Assurance, Fullstack]
     related_skills: [fullstack-nextjs-vite, building-data-apps, popular-web-designs]
 ---

@@ -14,8 +14,8 @@ Pick the row that matches your goal:
 
 | Goal | Command / Action | Result |
 |---|---|---|
-| **Local Interactive Chat** | `python run_agent.py` or `hermes` / `hermes --tui` | Interactive CLI or TUI session |
-| **Web Dashboard (Local)** | `npm run dev` in `web/` or `python -m hermes_cli.main dashboard` | Local web app on `http://localhost:9119` |
+| **Local Interactive Chat** | `python run_agent.py` or `tchuekam` / `tchuekam --tui` | Interactive CLI or TUI session |
+| **Web Dashboard (Local)** | `npm run dev` in `web/` or `python -m tchuekam_cli.main dashboard` | Local web app on `http://localhost:9119` |
 | **Cloud Deployment** | Deploy to Railway + Netlify | Production 24/7 web agent on `agent.tchuekam.com` |
 | **Docker Container** | `docker compose up -d` | Containerized agent backend |
 
@@ -84,7 +84,7 @@ Start the Web Dashboard locally:
 ```bash
 # Build web assets and start backend server
 npm run build --prefix web
-python -m hermes_cli.main dashboard --host 0.0.0.0 --port 9119 --insecure
+python -m tchuekam_cli.main dashboard --host 0.0.0.0 --port 9119 --insecure
 ```
 
 Open your browser at `http://localhost:9119` or `http://localhost:5173` (Vite dev server).
@@ -117,7 +117,7 @@ Expected JSON response:
 To deploy to Railway & Netlify for 24/7 cloud execution:
 
 1. **Backend (Railway)**: Deploy the container using Railway CLI or GitHub integration (`f3cdfe86-2594-4de2-b212-de85873595e2`).
-2. **Frontend & Proxy (Netlify)**: Deploy static files from `hermes_cli/web_dist` with proxy rule in `netlify.toml`:
+2. **Frontend & Proxy (Netlify)**: Deploy static files from `tchuekam_cli/web_dist` with proxy rule in `netlify.toml`:
 
 ```toml
 [[redirects]]

@@ -2,11 +2,11 @@
 name: ai-video-generation
 description: "Generative AI Text-to-Video and Image-to-Video creation API integrations (HunyuanVideo, Runway Gen-3, Luma, Kling AI)."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [AI-Video, Generative-AI, Replicate, Text-to-Video, Image-to-Video, Creative]
     related_skills: [remotion-video, ffmpeg-video-editor, comfyui]
 ---

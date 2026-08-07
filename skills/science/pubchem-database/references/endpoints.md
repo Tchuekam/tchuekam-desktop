@@ -22,7 +22,7 @@ How you are identifying the target record(s):
 - `smiles/<smiles>`: Exact SMILES match
 - `inchikey/<inchikey>`: Exact InChIKey match
 - `formula/<formula>`: Exact molecular formula
-- Search namespaces (use `fast` prefix for synchronous):
+- Search namespaces (use `fast` prefix for synchrotchuekam):
   - `fastsubstructure/smiles/<smiles>`
   - `fastsimilarity_2d/smiles/<smiles>`
   - `fastidentity/smiles/<smiles>`

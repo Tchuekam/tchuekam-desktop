@@ -31,7 +31,7 @@ setTelemetryOptOut(true);
 ```
 
 #### Via Environment Variable:
-Set `HERMES_TELEMETRY_OPT_OUT=1` in your `.env` file.
+Set `TCHUEKAM_TELEMETRY_OPT_OUT=1` in your `.env` file.
 
 ---
 

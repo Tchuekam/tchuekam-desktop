@@ -25,7 +25,7 @@ RUN npm run build
 
 # Stage 2: Production Runtime
 FROM python:3.11-slim AS runner
-WORKDIR /opt/hermes
+WORKDIR /opt/tchuekam
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,14 +38,14 @@ RUN python -m venv .venv && \
     .venv/bin/pip install --no-cache-dir -e .
 
 # Copy built frontend static assets from web-builder
-COPY --from=web-builder /app/hermes_cli/web_dist ./hermes_cli/web_dist
+COPY --from=web-builder /app/tchuekam_cli/web_dist ./tchuekam_cli/web_dist
 
 # Persistent volume mount point
 VOLUME ["/opt/data"]
-ENV HERMES_HOME=/opt/data
+ENV TCHUEKAM_HOME=/opt/data
 EXPOSE 9119
 
-CMD ["/opt/hermes/.venv/bin/python", "-m", "hermes_cli.main", "dashboard", "--host", "0.0.0.0", "--port", "9119", "--insecure"]
+CMD ["/opt/tchuekam/.venv/bin/python", "-m", "tchuekam_cli.main", "dashboard", "--host", "0.0.0.0", "--port", "9119", "--insecure"]
 ```
 
 ---
@@ -67,7 +67,7 @@ services:
     ports:
       - "9119:9119"
     environment:
-      - HERMES_HOME=/opt/data
+      - TCHUEKAM_HOME=/opt/data
       - PORT=9119
       - POSTHOG_API_KEY=phx_JurRLsvuQkiD4awJxMybMws47BSpuThTQteQSTwkK6YhdkTy
     volumes:
@@ -97,7 +97,7 @@ venv
 node_modules
 ui-tui/node_modules
 web/node_modules
-hermes_cli/web_dist
+tchuekam_cli/web_dist
 website
 docs
 ```

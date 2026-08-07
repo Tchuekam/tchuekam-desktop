@@ -2,11 +2,11 @@
 name: aider-coding-assistant
 description: "Git-aware multi-file pair programming and autonomous code refactoring using Aider CLI."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Coding-Agent, Aider, Git, Refactoring, Pair-Programming, Automation]
     related_skills: [claude-code, codex, opencode, github-pr-workflow]
 ---

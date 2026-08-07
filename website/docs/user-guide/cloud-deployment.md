@@ -44,7 +44,7 @@ npx @railway/cli up --service 17385b66-4231-4e96-bcf7-b2a136ce6ad9
 | `RAILWAY_ENVIRONMENT` | Active environment flag | `production` |
 | `PORT` | Container HTTP bind port | `9119` (or assigned by Railway) |
 | `POSTHOG_API_KEY` | PostHog product telemetry key | `phx_JurRLsvuQkiD4aw...` |
-| `HERMES_HOME` | Application state root | `/opt/data` |
+| `TCHUEKAM_HOME` | Application state root | `/opt/data` |
 
 ---
 
@@ -55,7 +55,7 @@ In `netlify.toml`, configure the proxy rule rewrite:
 ```toml
 [build]
   command = "npm run build"
-  publish = "hermes_cli/web_dist"
+  publish = "tchuekam_cli/web_dist"
 
 [[redirects]]
   from = "/api/*"
@@ -72,14 +72,14 @@ In `netlify.toml`, configure the proxy rule rewrite:
 ### Deploy Command
 
 ```bash
-npx netlify-cli deploy --dir hermes_cli/web_dist --prod
+npx netlify-cli deploy --dir tchuekam_cli/web_dist --prod
 ```
 
 ---
 
 ## 3. CORS & Security Best Practices
 
-In `hermes_cli/web_server.py`, ensure cross-origin access is permitted for your domains:
+In `tchuekam_cli/web_server.py`, ensure cross-origin access is permitted for your domains:
 
 ```python
 app.add_middleware(

@@ -1,4 +1,4 @@
-# Hermes Agent v0.4.0 (v2026.3.23)
+# Tchuekam Agent v0.4.0 (v2026.3.23)
 
 **Release Date:** March 23, 2026
 
@@ -8,7 +8,7 @@
 
 ## ✨ Highlights
 
-- **OpenAI-compatible API server** — Expose Hermes as an `/v1/chat/completions` endpoint with a new `/api/jobs` REST API for cron job management, hardened with input limits, field whitelists, SQLite-backed response persistence, and CORS origin protection ([#1756](https://github.com/Tchuekam/tchuekam-desktop/pull/1756), [#2450](https://github.com/Tchuekam/tchuekam-desktop/pull/2450), [#2456](https://github.com/Tchuekam/tchuekam-desktop/pull/2456), [#2451](https://github.com/Tchuekam/tchuekam-desktop/pull/2451), [#2472](https://github.com/Tchuekam/tchuekam-desktop/pull/2472))
+- **OpenAI-compatible API server** — Expose Tchuekam as an `/v1/chat/completions` endpoint with a new `/api/jobs` REST API for cron job management, hardened with input limits, field whitelists, SQLite-backed response persistence, and CORS origin protection ([#1756](https://github.com/Tchuekam/tchuekam-desktop/pull/1756), [#2450](https://github.com/Tchuekam/tchuekam-desktop/pull/2450), [#2456](https://github.com/Tchuekam/tchuekam-desktop/pull/2456), [#2451](https://github.com/Tchuekam/tchuekam-desktop/pull/2451), [#2472](https://github.com/Tchuekam/tchuekam-desktop/pull/2472))
 
 - **6 new messaging platform adapters** — Signal, DingTalk, SMS (Twilio), Mattermost, Matrix, and Webhook adapters join Telegram, Discord, and WhatsApp. Gateway auto-reconnects failed platforms with exponential backoff ([#2206](https://github.com/Tchuekam/tchuekam-desktop/pull/2206), [#1685](https://github.com/Tchuekam/tchuekam-desktop/pull/1685), [#1688](https://github.com/Tchuekam/tchuekam-desktop/pull/1688), [#1683](https://github.com/Tchuekam/tchuekam-desktop/pull/1683), [#2166](https://github.com/Tchuekam/tchuekam-desktop/pull/2166), [#2584](https://github.com/Tchuekam/tchuekam-desktop/pull/2584))
 
@@ -16,7 +16,7 @@
 
 - **4 new inference providers** — GitHub Copilot (OAuth + token validation), Alibaba Cloud / DashScope, Kilo Code, and OpenCode Zen/Go ([#1924](https://github.com/Tchuekam/tchuekam-desktop/pull/1924), [#1879](https://github.com/Tchuekam/tchuekam-desktop/pull/1879) by @mchzimm, [#1673](https://github.com/Tchuekam/tchuekam-desktop/pull/1673), [#1666](https://github.com/Tchuekam/tchuekam-desktop/pull/1666), [#1650](https://github.com/Tchuekam/tchuekam-desktop/pull/1650))
 
-- **MCP server management CLI** — `hermes mcp` commands for installing, configuring, and authenticating MCP servers with full OAuth 2.1 PKCE flow ([#2465](https://github.com/Tchuekam/tchuekam-desktop/pull/2465))
+- **MCP server management CLI** — `tchuekam mcp` commands for installing, configuring, and authenticating MCP servers with full OAuth 2.1 PKCE flow ([#2465](https://github.com/Tchuekam/tchuekam-desktop/pull/2465))
 
 - **Gateway prompt caching** — Cache AIAgent instances per session, preserving Anthropic prompt cache across turns for dramatic cost reduction on long conversations ([#2282](https://github.com/Tchuekam/tchuekam-desktop/pull/2282), [#2284](https://github.com/Tchuekam/tchuekam-desktop/pull/2284), [#2361](https://github.com/Tchuekam/tchuekam-desktop/pull/2361))
 
@@ -54,7 +54,7 @@
 ### CLI Polish
 - Fix: prevent 'Press ENTER to continue...' on exit ([#2555](https://github.com/Tchuekam/tchuekam-desktop/pull/2555))
 - Fix: flush stdout during agent loop to prevent macOS display freeze ([#1654](https://github.com/Tchuekam/tchuekam-desktop/pull/1654))
-- Fix: show human-readable error when `hermes setup` hits permissions error ([#2196](https://github.com/Tchuekam/tchuekam-desktop/pull/2196))
+- Fix: show human-readable error when `tchuekam setup` hits permissions error ([#2196](https://github.com/Tchuekam/tchuekam-desktop/pull/2196))
 - Fix: `/stop` command crash + UnboundLocalError in streaming media delivery ([#2463](https://github.com/Tchuekam/tchuekam-desktop/pull/2463))
 - Fix: allow custom/local endpoints without API key ([#2556](https://github.com/Tchuekam/tchuekam-desktop/pull/2556))
 - Fix: Kitty keyboard protocol Shift+Enter for Ghostty/WezTerm (attempted + reverted due to prompt_toolkit crash) ([#2345](https://github.com/Tchuekam/tchuekam-desktop/pull/2345), [#2349](https://github.com/Tchuekam/tchuekam-desktop/pull/2349))
@@ -67,11 +67,11 @@
 - **Merge nested YAML sections** instead of replacing on config update ([#2213](https://github.com/Tchuekam/tchuekam-desktop/pull/2213))
 - Fix: config.yaml provider key overrides env var silently ([#2272](https://github.com/Tchuekam/tchuekam-desktop/pull/2272))
 - Fix: log warning instead of silently swallowing config.yaml errors ([#2683](https://github.com/Tchuekam/tchuekam-desktop/pull/2683))
-- Fix: disabled toolsets re-enable themselves after `hermes tools` ([#2268](https://github.com/Tchuekam/tchuekam-desktop/pull/2268))
+- Fix: disabled toolsets re-enable themselves after `tchuekam tools` ([#2268](https://github.com/Tchuekam/tchuekam-desktop/pull/2268))
 - Fix: platform default toolsets silently override tool deselection ([#2624](https://github.com/Tchuekam/tchuekam-desktop/pull/2624))
 - Fix: honor bare YAML `approvals.mode: off` ([#2620](https://github.com/Tchuekam/tchuekam-desktop/pull/2620))
-- Fix: `hermes update` use `.[all]` extras with fallback ([#1728](https://github.com/Tchuekam/tchuekam-desktop/pull/1728))
-- Fix: `hermes update` prompt before resetting working tree on stash conflicts ([#2390](https://github.com/Tchuekam/tchuekam-desktop/pull/2390))
+- Fix: `tchuekam update` use `.[all]` extras with fallback ([#1728](https://github.com/Tchuekam/tchuekam-desktop/pull/1728))
+- Fix: `tchuekam update` prompt before resetting working tree on stash conflicts ([#2390](https://github.com/Tchuekam/tchuekam-desktop/pull/2390))
 - Fix: use git pull --rebase in update/install to avoid divergent branch error ([#2274](https://github.com/Tchuekam/tchuekam-desktop/pull/2274))
 - Fix: add zprofile fallback and create zshrc on fresh macOS installs ([#2320](https://github.com/Tchuekam/tchuekam-desktop/pull/2320))
 - Fix: remove `ANTHROPIC_BASE_URL` env var to avoid collisions ([#1675](https://github.com/Tchuekam/tchuekam-desktop/pull/1675))
@@ -99,7 +99,7 @@
 - Tie `api_mode` to provider config instead of env var ([#1656](https://github.com/Tchuekam/tchuekam-desktop/pull/1656))
 - Fix: prevent Anthropic token leaking to third-party `anthropic_messages` providers ([#2389](https://github.com/Tchuekam/tchuekam-desktop/pull/2389))
 - Fix: prevent Anthropic fallback from inheriting non-Anthropic `base_url` ([#2388](https://github.com/Tchuekam/tchuekam-desktop/pull/2388))
-- Fix: `auxiliary_is_nous` flag never resets — leaked Nous tags to other providers ([#1713](https://github.com/Tchuekam/tchuekam-desktop/pull/1713))
+- Fix: `auxiliary_is_tchuekam` flag never resets — leaked Giantech Empire tags to other providers ([#1713](https://github.com/Tchuekam/tchuekam-desktop/pull/1713))
 - Fix: Anthropic `tool_choice 'none'` still allowed tool calls ([#1714](https://github.com/Tchuekam/tchuekam-desktop/pull/1714))
 - Fix: Mistral parser nested JSON fallback extraction ([#2335](https://github.com/Tchuekam/tchuekam-desktop/pull/2335))
 - Fix: MiniMax 401 auth resolved by defaulting to `anthropic_messages` ([#2103](https://github.com/Tchuekam/tchuekam-desktop/pull/2103))
@@ -140,7 +140,7 @@
 
 ### Session & Memory
 - **Session search** and management slash commands ([#2198](https://github.com/Tchuekam/tchuekam-desktop/pull/2198))
-- **Auto session titles** and `.hermes.md` project config ([#1712](https://github.com/Tchuekam/tchuekam-desktop/pull/1712))
+- **Auto session titles** and `.tchuekam.md` project config ([#1712](https://github.com/Tchuekam/tchuekam-desktop/pull/1712))
 - Fix: concurrent memory writes silently drop entries — added file locking ([#1726](https://github.com/Tchuekam/tchuekam-desktop/pull/1726))
 - Fix: search all sources by default in `session_search` ([#1892](https://github.com/Tchuekam/tchuekam-desktop/pull/1892))
 - Fix: handle hyphenated FTS5 queries and preserve quoted literals ([#1776](https://github.com/Tchuekam/tchuekam-desktop/pull/1776))
@@ -235,7 +235,7 @@
 ### MCP Enhancements
 - **MCP server management CLI** + OAuth 2.1 PKCE auth ([#2465](https://github.com/Tchuekam/tchuekam-desktop/pull/2465))
 - **Expose MCP servers as standalone toolsets** ([#1907](https://github.com/Tchuekam/tchuekam-desktop/pull/1907))
-- **Interactive MCP tool configuration** in `hermes tools` ([#1694](https://github.com/Tchuekam/tchuekam-desktop/pull/1694))
+- **Interactive MCP tool configuration** in `tchuekam tools` ([#1694](https://github.com/Tchuekam/tchuekam-desktop/pull/1694))
 - Fix: MCP-OAuth port mismatch, path traversal, and shared handler state ([#2552](https://github.com/Tchuekam/tchuekam-desktop/pull/2552))
 - Fix: preserve MCP tool registrations across session resets ([#2124](https://github.com/Tchuekam/tchuekam-desktop/pull/2124))
 - Fix: concurrent file access crash + duplicate MCP registration ([#2154](https://github.com/Tchuekam/tchuekam-desktop/pull/2154))
@@ -292,14 +292,14 @@
 - **Base blockchain** optional skill ([#1643](https://github.com/Tchuekam/tchuekam-desktop/pull/1643))
 - **3D-model-viewer** optional skill ([#2226](https://github.com/Tchuekam/tchuekam-desktop/pull/2226))
 - **FastMCP** optional skill ([#2113](https://github.com/Tchuekam/tchuekam-desktop/pull/2113))
-- **Hermes-agent-setup** skill ([#1905](https://github.com/Tchuekam/tchuekam-desktop/pull/1905))
+- **Tchuekam-agent-setup** skill ([#1905](https://github.com/Tchuekam/tchuekam-desktop/pull/1905))
 
 ---
 
 ## 🔌 Plugin System Enhancements
 
-- **TUI extension hooks** — Build custom CLIs on top of Hermes ([#2333](https://github.com/Tchuekam/tchuekam-desktop/pull/2333))
-- **`hermes plugins install/remove/list`** commands ([#2337](https://github.com/Tchuekam/tchuekam-desktop/pull/2337))
+- **TUI extension hooks** — Build custom CLIs on top of Tchuekam ([#2333](https://github.com/Tchuekam/tchuekam-desktop/pull/2333))
+- **`tchuekam plugins install/remove/list`** commands ([#2337](https://github.com/Tchuekam/tchuekam-desktop/pull/2337))
 - **Slash command registration** for plugins ([#2359](https://github.com/Tchuekam/tchuekam-desktop/pull/2359))
 - **`session:end` lifecycle event** hook ([#1725](https://github.com/Tchuekam/tchuekam-desktop/pull/1725))
 - Fix: require opt-in for project plugin discovery ([#2215](https://github.com/Tchuekam/tchuekam-desktop/pull/2215))
@@ -328,7 +328,7 @@
 - Safely handle non-string inputs in redacting formatter ([#2392](https://github.com/Tchuekam/tchuekam-desktop/pull/2392), [#1700](https://github.com/Tchuekam/tchuekam-desktop/pull/1700))
 - ACP: preserve session provider on model switch, persist sessions to disk ([#2380](https://github.com/Tchuekam/tchuekam-desktop/pull/2380), [#2071](https://github.com/Tchuekam/tchuekam-desktop/pull/2071))
 - API server: persist ResponseStore to SQLite across restarts ([#2472](https://github.com/Tchuekam/tchuekam-desktop/pull/2472))
-- Fix: `fetch_nous_models` always TypeError from positional args ([#1699](https://github.com/Tchuekam/tchuekam-desktop/pull/1699))
+- Fix: `fetch_tchuekam_models` always TypeError from positional args ([#1699](https://github.com/Tchuekam/tchuekam-desktop/pull/1699))
 - Fix: resolve merge conflict markers in cli.py breaking startup ([#2347](https://github.com/Tchuekam/tchuekam-desktop/pull/2347))
 - Fix: `minisweagent_path.py` missing from wheel ([#2098](https://github.com/Tchuekam/tchuekam-desktop/pull/2098) by @JiwaniZakir)
 
@@ -350,7 +350,7 @@
 
 - Resolve all consistently failing tests ([#2488](https://github.com/Tchuekam/tchuekam-desktop/pull/2488))
 - Replace `FakePath` with `monkeypatch` for Python 3.12 compat ([#2444](https://github.com/Tchuekam/tchuekam-desktop/pull/2444))
-- Align Hermes setup and full-suite expectations ([#1710](https://github.com/Tchuekam/tchuekam-desktop/pull/1710))
+- Align Tchuekam setup and full-suite expectations ([#1710](https://github.com/Tchuekam/tchuekam-desktop/pull/1710))
 
 ---
 

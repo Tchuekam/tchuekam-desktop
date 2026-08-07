@@ -2,11 +2,11 @@
 name: multimodal-video-pipeline
 description: "Combined visual, acoustic, and textual video intelligence pipeline for video Q&A, chaptering, and timestamped summaries."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Multimodal, Video-Pipeline, Video-QA, Summarization, Audio-Visual, Intelligence]
     related_skills: [video-understanding-and-vision, audio-transcription-and-whisper, ffmpeg-video-editor]
 ---

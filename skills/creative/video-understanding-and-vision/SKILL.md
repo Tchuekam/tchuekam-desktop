@@ -2,11 +2,11 @@
 name: video-understanding-and-vision
 description: "Multimodal visual analysis of video files, keyframe sampling, action recognition, and on-screen OCR using Gemini Vision API and OpenCV/FFmpeg."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Video-Vision, Vision, Multimodal, OCR, Keyframes, OpenCV, Gemini-Vision]
     related_skills: [audio-transcription-and-whisper, multimodal-video-pipeline, ffmpeg-video-editor]
 ---

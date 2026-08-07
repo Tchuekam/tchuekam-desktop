@@ -2,11 +2,11 @@
 name: fullstack-nextjs-vite
 description: "Modern full-stack web application creation (Next.js 15 App Router, React 19, Vite, Server Actions, API routes)."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Web-App, Next.js, React, Vite, TypeScript, Fullstack, UI]
     related_skills: [premium-design-intelligence, building-data-apps, playwright-e2e-testing]
 ---

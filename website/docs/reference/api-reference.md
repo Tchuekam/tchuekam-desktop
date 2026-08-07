@@ -24,7 +24,7 @@ Returns agent system version, release date, and gateway status.
 {
   "version": "0.15.1",
   "release_date": "2026.5.29",
-  "hermes_home": "/opt/data",
+  "tchuekam_home": "/opt/data",
   "config_path": "/opt/data/config.yaml",
   "env_path": "/opt/data/.env",
   "config_version": 26,
@@ -69,7 +69,7 @@ Returns AI model metadata and context window details.
 ### 4. `GET /api/sessions`
 Returns a list of active conversation sessions.
 
-- **Auth Required**: Yes (`X-Hermes-Session-Token` or `--insecure` mode)
+- **Auth Required**: Yes (`X-Tchuekam-Session-Token` or `--insecure` mode)
 - **Response `200 OK`**:
 ```json
 {
@@ -89,7 +89,7 @@ Returns a list of active conversation sessions.
 ### 5. `GET /api/auth/me`
 Returns current authenticated user or session profile information.
 
-- **Auth Required**: Yes (`X-Hermes-Session-Token`)
+- **Auth Required**: Yes (`X-Tchuekam-Session-Token`)
 - **Response `200 OK`**:
 ```json
 {

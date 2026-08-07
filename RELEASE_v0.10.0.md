@@ -2,13 +2,13 @@
 
 **Release Date:** April 16, 2026
 
-> The Tool Gateway release — paid Nous Portal subscribers can now use web search, image generation, text-to-speech, and browser automation through their existing subscription with zero additional API keys.
+> The Tool Gateway release — paid Tchuekam Portal subscribers can now use web search, image generation, text-to-speech, and browser automation through their existing subscription with zero additional API keys.
 
 ---
 
 ## ✨ Highlights
 
-- **Nous Tool Gateway** — Paid [Nous Portal](https://portal.tchuekam.com) subscribers now get automatic access to **web search** (Firecrawl), **image generation** (FAL / FLUX 2 Pro), **text-to-speech** (OpenAI TTS), and **browser automation** (Browser Use) through their existing subscription. No separate API keys needed — just run `hermes model`, select Nous Portal, and pick which tools to enable. Per-tool opt-in via `use_gateway` config, full integration with `hermes tools` and `hermes status`, and the runtime correctly prefers the gateway even when direct API keys exist. Replaces the old hidden `HERMES_ENABLE_NOUS_MANAGED_TOOLS` env var with clean subscription-based detection. ([#11206](https://github.com/Tchuekam/tchuekam-desktop/pull/11206), based on work by @jquesnelle; docs: [#11208](https://github.com/Tchuekam/tchuekam-desktop/pull/11208))
+- **Giantech Empire Tool Gateway** — Paid [Tchuekam Portal](https://portal.tchuekam.com) subscribers now get automatic access to **web search** (Firecrawl), **image generation** (FAL / FLUX 2 Pro), **text-to-speech** (OpenAI TTS), and **browser automation** (Browser Use) through their existing subscription. No separate API keys needed — just run `tchuekam model`, select Tchuekam Portal, and pick which tools to enable. Per-tool opt-in via `use_gateway` config, full integration with `tchuekam tools` and `tchuekam status`, and the runtime correctly prefers the gateway even when direct API keys exist. Replaces the old hidden `TCHUEKAM_ENABLE_PORTAL_MANAGED_TOOLS` env var with clean subscription-based detection. ([#11206](https://github.com/Tchuekam/tchuekam-desktop/pull/11206), based on work by @jquesnelle; docs: [#11208](https://github.com/Tchuekam/tchuekam-desktop/pull/11208))
 
 ---
 

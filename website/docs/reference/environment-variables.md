@@ -29,8 +29,8 @@ This page lists all environment variables recognized by **Tchuekam Agent**, cate
 |---|---|---|---|
 | `PORT` | Container bind port for FastAPI server | `9119` | `9119` |
 | `RAILWAY_ENVIRONMENT` | Railway cloud environment identifier | *(unset)* | `production` |
-| `HERMES_HOME` | Directory path for persistent configuration & state | `~/.hermes` | `/opt/data` |
-| `HERMES_ALLOW_PUBLIC` | Bypasses local loopback gate for public binds | `false` | `true` |
+| `TCHUEKAM_HOME` | Directory path for persistent configuration & state | `~/.tchuekam` | `/opt/data` |
+| `TCHUEKAM_ALLOW_PUBLIC` | Bypasses local loopback gate for public binds | `false` | `true` |
 
 ---
 
@@ -39,4 +39,4 @@ This page lists all environment variables recognized by **Tchuekam Agent**, cate
 | Variable Name | Description | Default |
 |---|---|---|
 | `POSTHOG_API_KEY` | PostHog product telemetry API key | `phx_JurRLsvuQkiD4aw...` |
-| `HERMES_TELEMETRY_OPT_OUT` | Disables telemetry collection when set to `1` | `0` |
+| `TCHUEKAM_TELEMETRY_OPT_OUT` | Disables telemetry collection when set to `1` | `0` |

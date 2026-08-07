@@ -1,9 +1,9 @@
-# Hermes Agent v0.15.1 (v2026.5.29)
+# Tchuekam Agent v0.15.1 (v2026.5.29)
 
 **Release Date:** May 29, 2026
 **Since v0.15.0:** 28 commits · 21 merged PRs · hotfix release · 9 contributors
 
-> **The Patch Release.** A same-day hotfix for v0.15.0. Headline fix: the dashboard infinite-reload loop that hit anyone running v0.15.0 in loopback mode (Docker, hosted Hermes, fresh installs). A handful of other v0.15.0 follow-ups go along for the ride — kanban worker SIGTERM, `/model` picker unification, `/yolo` session bypass, the full 19,932-entry skills.sh catalog, `.md` media delivery restoration, gateway probe-stepdown safety, web-URL redaction passthrough, kanban worker vision on referenced images, hindsight observation-default. Docker users get an explicit `--insecure` opt-in env var (no more bind-host inference), MCP server bare-command PATH resolution, and arm64 PR-build cache fixes.
+> **The Patch Release.** A same-day hotfix for v0.15.0. Headline fix: the dashboard infinite-reload loop that hit anyone running v0.15.0 in loopback mode (Docker, hosted Tchuekam, fresh installs). A handful of other v0.15.0 follow-ups go along for the ride — kanban worker SIGTERM, `/model` picker unification, `/yolo` session bypass, the full 19,932-entry skills.sh catalog, `.md` media delivery restoration, gateway probe-stepdown safety, web-URL redaction passthrough, kanban worker vision on referenced images, hindsight observation-default. Docker users get an explicit `--insecure` opt-in env var (no more bind-host inference), MCP server bare-command PATH resolution, and arm64 PR-build cache fixes.
 
 ---
 
@@ -11,7 +11,7 @@
 
 - **Dashboard 401 reload loop fixed** — In loopback mode the dashboard's identity probe (`/api/auth/me`) returns 401 by design, but v0.15.0's stale-token reload guard treated every 401 as a rotated session token and full-page-reloaded to pick up a fresh one. Every successful sibling call cleared the one-shot reload guard, so the page reload-looped forever (Firefox: "Navigated to /sessions" storm; Chrome: React re-render storm). Fix adds an `allowUnauthorized` opt-out to `fetchJSON` that skips only the loopback stale-token reload — 401 still throws so `AuthWidget` swallows it, gated-mode `login_url` redirects are unaffected. Closes [#34206](https://github.com/Tchuekam/tchuekam-desktop/issues/34206), [#34202](https://github.com/Tchuekam/tchuekam-desktop/issues/34202). ([#30698](https://github.com/Tchuekam/tchuekam-desktop/pull/30698) — @austinpickett)
 
-- **Docker dashboard `--insecure` is now an explicit env opt-in, never derived from bind host** — Previously the Docker entrypoint inferred `--insecure` when the dashboard bound to a non-loopback host. That conflated "I want LAN access" with "I want to disable the same-origin guard." The fix splits them: bind host is bind host, and disabling the dashboard's loopback auth requires an explicit `HERMES_DASHBOARD_INSECURE=1`. Existing setups that genuinely wanted insecure binding must now set the env var. ([#34188](https://github.com/Tchuekam/tchuekam-desktop/pull/34188), [#34204](https://github.com/Tchuekam/tchuekam-desktop/pull/34204) — @benbarclay)
+- **Docker dashboard `--insecure` is now an explicit env opt-in, never derived from bind host** — Previously the Docker entrypoint inferred `--insecure` when the dashboard bound to a non-loopback host. That conflated "I want LAN access" with "I want to disable the same-origin guard." The fix splits them: bind host is bind host, and disabling the dashboard's loopback auth requires an explicit `TCHUEKAM_DASHBOARD_INSECURE=1`. Existing setups that genuinely wanted insecure binding must now set the env var. ([#34188](https://github.com/Tchuekam/tchuekam-desktop/pull/34188), [#34204](https://github.com/Tchuekam/tchuekam-desktop/pull/34204) — @benbarclay)
 
 - **MCP bare command resolution under Docker** — MCP servers configured with bare commands (`npx`, `npm`, `node`) now resolve against `/usr/local/bin` so they actually launch inside the Docker image where those binaries live. v0.15.0 left these failing silently in containers when the agent's effective PATH didn't include the Node toolchain location. ([#34186](https://github.com/Tchuekam/tchuekam-desktop/pull/34186) — @benbarclay)
 
@@ -53,7 +53,7 @@
 ### CLI
 
 - **`/yolo` mid-session enables the per-session bypass** instead of just toggling the env var (which the running agent had already snapshotted) ([#33931](https://github.com/Tchuekam/tchuekam-desktop/pull/33931) — @kshitijk4poor)
-- **`/model` and `hermes model` show the same list**, plus disk cache for picker startup ([#33867](https://github.com/Tchuekam/tchuekam-desktop/pull/33867))
+- **`/model` and `tchuekam model` show the same list**, plus disk cache for picker startup ([#33867](https://github.com/Tchuekam/tchuekam-desktop/pull/33867))
 
 ### Skills
 
@@ -74,14 +74,14 @@
 
 ## 📚 Documentation
 
-- **`--no-supervise` / `HERMES_GATEWAY_NO_SUPERVISE` documented** in the reference docs (follow-up to [#33583](https://github.com/Tchuekam/tchuekam-desktop/pull/33583)) ([#33751](https://github.com/Tchuekam/tchuekam-desktop/pull/33751) — @r266-tech)
+- **`--no-supervise` / `TCHUEKAM_GATEWAY_NO_SUPERVISE` documented** in the reference docs (follow-up to [#33583](https://github.com/Tchuekam/tchuekam-desktop/pull/33583)) ([#33751](https://github.com/Tchuekam/tchuekam-desktop/pull/33751) — @r266-tech)
 
 ---
 
 ## 🛠️ Infrastructure
 
 - **Vercel deploy workflow accepts `workflow_dispatch`** so docs deploys can be manually triggered ([#34081](https://github.com/Tchuekam/tchuekam-desktop/pull/34081))
-- **`@nous-research/ui` bumped to 0.18.2** (Nix `npmDepsHash` also updated to match) ([#34193](https://github.com/Tchuekam/tchuekam-desktop/pull/34193) follow-ups — @austinpickett)
+- **`@giantech-empire/ui` bumped to 0.18.2** (Nix `npmDepsHash` also updated to match) ([#34193](https://github.com/Tchuekam/tchuekam-desktop/pull/34193) follow-ups — @austinpickett)
 
 ---
 
@@ -91,7 +91,7 @@
 - @teknium1
 
 ### Community
-- @austinpickett — dashboard 401 reload-loop fix (the headline), `@nous-research/ui` bump, Nix `npmDepsHash` updates
+- @austinpickett — dashboard 401 reload-loop fix (the headline), `@giantech-empire/ui` bump, Nix `npmDepsHash` updates
 - @benbarclay — Docker `--insecure` opt-in, MCP bare-command resolution, dashboard test repair
 - @kshitijk4poor — `/yolo` session bypass, completed-turn memory context salvage, hindsight follow-up docs
 - @nicoloboschi — hindsight `recall_types` observation default

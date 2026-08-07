@@ -2,11 +2,11 @@
 name: remotion-video
 description: "Programmatic video creation and rendering using React, TypeScript, and Remotion CLI."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Video, React, Remotion, Motion-Graphics, Animation, MP4, Creative]
     related_skills: [manim-video, ffmpeg-video-editor, ai-video-generation]
 ---

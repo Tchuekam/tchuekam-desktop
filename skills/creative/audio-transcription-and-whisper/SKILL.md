@@ -2,11 +2,11 @@
 name: audio-transcription-and-whisper
 description: "Audio track demuxing from video, Whisper speech-to-text transcription with timestamps, and multi-language translation."
 version: 1.0.0
-author: Hermes Agent + Antigravity
+author: Tchuekam Agent + Antigravity
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  tchuekam:
     tags: [Audio, Whisper, Speech-to-Text, Transcription, Demuxing, Translation, STT]
     related_skills: [video-understanding-and-vision, multimodal-video-pipeline, ffmpeg-video-editor]
 ---
