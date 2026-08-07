@@ -25,7 +25,7 @@ export const EMPTY_SELECT_VALUE = '__hermes_empty__'
 export const CONTROL_TEXT = 'text-[0.8125rem]'
 
 export const PROVIDER_GROUPS: ProviderPrefix[] = [
-  { prefix: 'NOUS_', name: 'Nous Portal', priority: 0 },
+  { prefix: 'NOUS_', name: 'Tchuekam Portal', priority: 0 },
   { prefix: 'ANTHROPIC_', name: 'Anthropic', priority: 1 },
   { prefix: 'DASHSCOPE_', name: 'DashScope (Qwen)', priority: 2 },
   { prefix: 'HERMES_QWEN_', name: 'DashScope (Qwen)', priority: 2 },

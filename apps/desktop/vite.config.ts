@@ -62,6 +62,7 @@ export default defineConfig({
       '**/build/**',
       '**/release/**',
       'electron/**',
+      'src/app/image-studio/open-generative-ai/tests/**',
       '**/.{idea,git,cache,output,temp}/**'
     ]
   }

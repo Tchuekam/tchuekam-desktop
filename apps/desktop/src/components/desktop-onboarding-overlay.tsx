@@ -103,7 +103,7 @@ const API_KEY_OPTIONS: ApiKeyOption[] = [
 ]
 
 const PROVIDER_DISPLAY: Record<string, { order: number; title: string }> = {
-  nous: { order: 0, title: 'Nous Portal' },
+  nous: { order: 0, title: 'Tchuekam Portal' },
   anthropic: { order: 1, title: 'Anthropic Claude' },
   'openai-codex': { order: 2, title: 'OpenAI Codex / ChatGPT' },
   'minimax-oauth': { order: 3, title: 'MiniMax' },

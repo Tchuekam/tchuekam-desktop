@@ -236,12 +236,12 @@ function StreamingHarness() {
 
     const second = window.setTimeout(() => {
       setMessages([userMessage(), assistantMessage('first chunk second chunk')])
-    }, 500)
+    }, 1000)
 
     const complete = window.setTimeout(() => {
       setMessages([userMessage(), assistantMessage('first chunk second chunk', false)])
       setIsRunning(false)
-    }, 700)
+    }, 1200)
 
     return () => {
       window.clearTimeout(first)
@@ -351,7 +351,7 @@ describe('assistant-ui streaming renderer', () => {
     expect(container.textContent).not.toContain('second chunk')
     expect(screen.queryByRole('status', { name: 'TchuekaM is loading a response' })).toBeNull()
 
-    await wait(500)
+    await wait(1000)
 
     await waitFor(() => {
       expect(container.textContent).toContain('first chunk second chunk')
