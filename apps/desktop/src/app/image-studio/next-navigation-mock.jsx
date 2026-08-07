@@ -3,10 +3,40 @@ import React from 'react'
 export function useRouter() {
   return {
     push: (url) => {
-      if (typeof window !== 'undefined') window.location.hash = url
+      if (typeof window === 'undefined' || !url) return
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        if (window.hermesDesktop?.openExternal) {
+          void window.hermesDesktop.openExternal(url)
+        } else {
+          window.open(url, '_blank', 'noopener,noreferrer')
+        }
+        return
+      }
+      const tabId = url.split('/studio/')[1] || url.split('tab=')[1]
+      const isDesktopEnv = window.location.pathname.startsWith('/image-studio')
+      const targetUrl = tabId
+        ? (isDesktopEnv ? `/image-studio?tab=${tabId}` : `/studio/${tabId}`)
+        : (isDesktopEnv ? window.location.pathname : url)
+      window.history.pushState(null, '', targetUrl)
+      window.dispatchEvent(new Event('popstate'))
     },
     replace: (url) => {
-      if (typeof window !== 'undefined') window.location.hash = url
+      if (typeof window === 'undefined' || !url) return
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        if (window.hermesDesktop?.openExternal) {
+          void window.hermesDesktop.openExternal(url)
+        } else {
+          window.open(url, '_blank', 'noopener,noreferrer')
+        }
+        return
+      }
+      const tabId = url.split('/studio/')[1] || url.split('tab=')[1]
+      const isDesktopEnv = window.location.pathname.startsWith('/image-studio')
+      const targetUrl = tabId
+        ? (isDesktopEnv ? `/image-studio?tab=${tabId}` : `/studio/${tabId}`)
+        : (isDesktopEnv ? window.location.pathname : url)
+      window.history.replaceState(null, '', targetUrl)
+      window.dispatchEvent(new Event('popstate'))
     },
     prefetch: () => {},
     back: () => {

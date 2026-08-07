@@ -425,7 +425,7 @@ export default function StandaloneShell() {
     pushNotification({ type: 'error', tabId, label: tab?.label || tabId, message });
   }, [pushNotification]);
 
-  const makeGenerationStartCallback = useCallback((tabId) => () => {
+  const handleGenerationStart = useCallback((tabId) => {
     setGenerationCounts((previous) => ({
       ...previous,
       [tabId]: (previous[tabId] || 0) + 1,
@@ -459,6 +459,13 @@ export default function StandaloneShell() {
   // Popstate event listener to sync tab state with URL on back/forward navigation
   useEffect(() => {
     const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const searchParams = new URLSearchParams(window.location.search);
+      const tabParam = searchParams.get('tab');
+      if (tabParam && TABS.find(t => t.id === tabParam)) {
+        setActiveTab(tabParam);
+        return;
+      }
       const path = window.location.pathname;
       const segments = path.split('/').filter(Boolean);
       const tabId = segments[1] || 'image';
@@ -471,9 +478,55 @@ export default function StandaloneShell() {
   }, []);
 
   const handleTabChange = useCallback((tabId) => {
-    window.history.pushState(null, '', `/studio/${tabId}`);
+    if (typeof window !== 'undefined') {
+      const isDesktopEnv = window.location.pathname.startsWith('/image-studio');
+      const targetUrl = isDesktopEnv ? `/image-studio?tab=${tabId}` : `/studio/${tabId}`;
+      window.history.pushState(null, '', targetUrl);
+    }
     setActiveTab(tabId);
   }, []);
+
+  // Intercept all raw anchor clicks in the studio to prevent navigating away from Electron route
+  useEffect(() => {
+    const handleAnchorClick = (e) => {
+      const anchor = e.target.closest('a');
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+
+      if (href === '#' || href.startsWith('#') || href === '') {
+        e.preventDefault();
+        return;
+      }
+
+      if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
+        e.preventDefault();
+        if (typeof window !== 'undefined' && window.hermesDesktop?.openExternal) {
+          void window.hermesDesktop.openExternal(href);
+        } else if (typeof window !== 'undefined') {
+          window.open(href, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
+
+      if (href.startsWith('/studio/') || href.startsWith('/image-studio')) {
+        e.preventDefault();
+        const tabId = href.split('/studio/')[1] || href.split('tab=')[1];
+        if (tabId) {
+          handleTabChange(tabId);
+        }
+        return;
+      }
+
+      if (href.startsWith('/')) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('click', handleAnchorClick, true);
+    return () => document.removeEventListener('click', handleAnchorClick, true);
+  }, [handleTabChange]);
 
   const handleOpenNotification = useCallback((notification) => {
     handleTabChange(notification.tabId);
