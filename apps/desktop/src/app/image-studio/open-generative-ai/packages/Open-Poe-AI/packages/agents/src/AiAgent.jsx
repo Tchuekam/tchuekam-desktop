@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
+import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { IoSend, IoChevronBack, IoColorPalette, IoAdd, IoHeart, IoHeartOutline, IoChatbubbleEllipsesSharp } from "react-icons/io5";

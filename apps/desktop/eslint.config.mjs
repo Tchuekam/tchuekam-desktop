@@ -117,6 +117,45 @@ export default [
     }
   },
   {
+    // The bundled studio (src/app/image-studio/**) is .jsx, which flat config
+    // does not pick up by default — it was linted by nothing at all, which is
+    // how `makeGenerationStartCallback` (crashed the whole studio) and a
+    // missing `toast` import shipped. Correctness rules only: the tree is
+    // vendored, so the stylistic/sorting rules above would be pure noise.
+    files: ['**/*.jsx'],
+    ignores: ['**/node_modules/**', '**/dist/**'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: { ...globals.browser, ...globals.node },
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      sourceType: 'module'
+    },
+    // react-hooks is registered so the tree's inline
+    // `eslint-disable-next-line react-hooks/exhaustive-deps` comments resolve
+    // instead of erroring with "Definition for rule was not found".
+    plugins: { react: reactPlugin, 'react-hooks': hooksPlugin },
+    rules: {
+      'no-undef': 'error',
+      // The rules below come from js.configs.recommended and flag stylistic
+      // patterns that are pervasive in this vendored tree (48 pre-existing
+      // hits). Restyling third-party code isn't the goal here — keeping
+      // `npm run lint` green while no-undef stays enforced is.
+      'no-case-declarations': 'off',
+      'no-empty': 'off',
+      'no-extra-boolean-cast': 'off',
+      'no-prototype-builtins': 'off',
+      'no-useless-escape': 'off',
+      // Off to match the .ts/.tsx block above — unused locals are style, and on
+      // vendored code they drown out the correctness signal we actually want.
+      'no-unused-vars': 'off',
+      // Without these, every component referenced only inside JSX reads as an
+      // unused variable and buries the real no-undef signal.
+      'react/jsx-uses-react': 'error',
+      'react/jsx-uses-vars': 'error'
+    },
+    settings: { react: { version: 'detect' } }
+  },
+  {
     ignores: ['*.config.*']
   }
 ]

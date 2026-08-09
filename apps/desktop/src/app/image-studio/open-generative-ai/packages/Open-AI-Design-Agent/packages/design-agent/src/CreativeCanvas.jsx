@@ -33,7 +33,17 @@ import { HiOutlineArrowUpTray, HiOutlineTrash } from "react-icons/hi2";
 import Image from "next/image";
 
 
-const API = "/api/v1/creative-agent";
+// Mirrors the convention in packages/studio/src/muapi.js: under an http(s)
+// origin we go through the host app's /api proxy (Next re-issues the call
+// server-side, so api.muapi.ai CORS never applies). Electron's packaged
+// renderer runs on file://, where no proxy exists, so it calls upstream
+// directly. Without this the desktop build 404s every design-agent request.
+const DIRECT_UPSTREAM =
+  typeof window === "undefined" || !window.location?.protocol?.startsWith("http");
+const UPSTREAM_ORIGIN = "https://api.muapi.ai";
+const API = DIRECT_UPSTREAM
+  ? `${UPSTREAM_ORIGIN}/api/v1/creative-agent`
+  : "/api/v1/creative-agent";
 
 const formatTime = (dateStr) => {
   if (!dateStr) return "";
@@ -159,7 +169,13 @@ export default function CreativeCanvas({
       return { "x-agent-embed-code": embedCode };
     }
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    if (!token) return {};
+    // The /api proxy route reads the Bearer token and re-sends it upstream as
+    // `x-api-key`. Calling api.muapi.ai directly (file:// renderer) skips that
+    // translation, so send the header muapi actually authenticates on.
+    return DIRECT_UPSTREAM
+      ? { "x-api-key": token }
+      : { Authorization: `Bearer ${token}` };
   }, [inEmbedMode, embedCode]);
 
   // Persist embed session_id across page reloads so the conversation resumes.
@@ -581,24 +597,33 @@ export default function CreativeCanvas({
       // 0. Make sure we have a session — uploaded assets must belong to one.
       const activeSessionId = await ensureSession();
 
-      // 1. Get signed URL
-      const { data: signData } = await axios.get("/api/v1/get_upload_url", {
-        params: { filename: file.name },
-        headers: getHeaders()
-      });
+      // 1. Get signed URL. On file:// there is no /api route to hit, so call the
+      // same upstream endpoint the Next proxy forwards to.
+      const { data: signData } = await axios.get(
+        DIRECT_UPSTREAM
+          ? `${UPSTREAM_ORIGIN}/app/get_file_upload_url`
+          : "/api/v1/get_upload_url",
+        {
+          params: { filename: file.name },
+          headers: getHeaders()
+        }
+      );
 
       const { url, fields } = signData;
-      
-      // Use the proxy for the actual binary upload to maintain consistency and avoid CORS issues
+
       const formData = new FormData();
-      formData.append("x-proxy-target-url", url);
+      // The /api/v1/upload-binary route strips this field and POSTs the rest to
+      // the signed URL. Posting straight to S3 does the same thing without the
+      // proxy hop, so only send the marker field when the proxy is in play.
+      if (!DIRECT_UPSTREAM) formData.append("x-proxy-target-url", url);
       Object.entries(fields).forEach(([key, value]) => {
         formData.append(key, value);
       });
       formData.append("file", file);
 
-      // 2. Upload via local proxy
-      await axios.post("/api/v1/upload-binary", formData, {
+      // 2. Upload the binary — direct to the signed S3 URL on file://, via the
+      // CORS-avoiding local proxy under http(s).
+      await axios.post(DIRECT_UPSTREAM ? url : "/api/v1/upload-binary", formData, {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (pe) => {
           setUploadProgress(Math.round((pe.loaded * 100) / pe.total));

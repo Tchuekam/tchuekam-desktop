@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ImageStudio, VideoStudio, ClippingStudio, VibeMotionStudio, LipSyncStudio, RecastStudio, CinemaStudio, AudioStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, AiInfluencerStudio, getUserBalance } from 'studio';
@@ -268,6 +268,26 @@ const persistNotifications = (notifications) => {
   }
 };
 
+// The desktop shell is hash-routed (`#/image-studio?tab=design-agent`, see
+// apps/desktop/src/main.tsx), while the Next app is path-routed
+// (`/studio/<tab>`). Read whichever one actually carries the route so tab
+// restore works in both without branching at every call site.
+const readRouteState = () => {
+  if (typeof window === 'undefined') return { query: '', segments: [] };
+
+  const hashRaw = window.location.hash.replace(/^#/, '');
+
+  if (hashRaw) {
+    const [hashPath, hashQuery = ''] = hashRaw.split('?');
+    return { query: hashQuery, segments: hashPath.split('/').filter(Boolean) };
+  }
+
+  return {
+    query: window.location.search.replace(/^\?/, ''),
+    segments: window.location.pathname.split('/').filter(Boolean)
+  };
+};
+
 export default function StandaloneShell() {
   let params = {};
   let router = { push: () => {}, replace: () => {} };
@@ -304,6 +324,15 @@ export default function StandaloneShell() {
     if (slug.includes('apps')) return 'apps';
     const firstSegment = slug[0];
     if (firstSegment && TABS.find(t => t.id === firstSegment)) return firstSegment;
+    // The desktop shell has no route slugs — it carries the active tab in the
+    // hash query (#/image-studio?tab=design-agent). Without this fallback the
+    // popstate handler below restores the tab on navigation but a reload always
+    // dropped back to 'image'.
+    const { query, segments } = readRouteState();
+    const tabParam = new URLSearchParams(query).get('tab');
+    if (tabParam && TABS.find(t => t.id === tabParam)) return tabParam;
+    const hashSegment = segments[segments.length - 1];
+    if (hashSegment && TABS.find(t => t.id === hashSegment)) return hashSegment;
     return 'image';
   };
   
@@ -425,7 +454,7 @@ export default function StandaloneShell() {
     pushNotification({ type: 'error', tabId, label: tab?.label || tabId, message });
   }, [pushNotification]);
 
-  const handleGenerationStart = useCallback((tabId) => {
+  const makeGenerationStartCallback = useCallback((tabId) => () => {
     setGenerationCounts((previous) => ({
       ...previous,
       [tabId]: (previous[tabId] || 0) + 1,
@@ -460,28 +489,45 @@ export default function StandaloneShell() {
   useEffect(() => {
     const handlePopState = () => {
       if (typeof window === 'undefined') return;
-      const searchParams = new URLSearchParams(window.location.search);
-      const tabParam = searchParams.get('tab');
+      const { query, segments } = readRouteState();
+      const tabParam = new URLSearchParams(query).get('tab');
       if (tabParam && TABS.find(t => t.id === tabParam)) {
         setActiveTab(tabParam);
         return;
       }
-      const path = window.location.pathname;
-      const segments = path.split('/').filter(Boolean);
-      const tabId = segments[1] || 'image';
+      const tabId = segments[segments.length - 1] || 'image';
       if (TABS.find(t => t.id === tabId)) {
         setActiveTab(tabId);
       }
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    // Hash edits don't emit popstate on their own, and the desktop shell's
+    // whole route lives in the hash.
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
   }, []);
+
+  // Captured once at mount. Re-deriving this on every tab change was a one-way
+  // trap: the first `/studio/*` push made it false forever, so the desktop
+  // shell could never route back and a reload dropped the user out entirely.
+  const isDesktopShellRef = useRef(
+    typeof window !== 'undefined' && window.location.hash.replace(/^#/, '').startsWith('/image-studio')
+  );
 
   const handleTabChange = useCallback((tabId) => {
     if (typeof window !== 'undefined') {
-      const isDesktopEnv = window.location.pathname.startsWith('/image-studio');
-      const targetUrl = isDesktopEnv ? `/image-studio?tab=${tabId}` : `/studio/${tabId}`;
-      window.history.pushState(null, '', targetUrl);
+      if (isDesktopShellRef.current) {
+        // Preserve any other hash-query state (e.g. the design agent's
+        // ?session=) instead of clobbering the whole query.
+        const params = new URLSearchParams(readRouteState().query);
+        params.set('tab', tabId);
+        window.history.pushState(null, '', `#/image-studio?${params.toString()}`);
+      } else {
+        window.history.pushState(null, '', `/studio/${tabId}`);
+      }
     }
     setActiveTab(tabId);
   }, []);

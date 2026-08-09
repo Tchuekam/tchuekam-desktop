@@ -1,40 +1,37 @@
 import React from 'react'
 
-export default function Link({ href, children, onClick, ...props }) {
-  const handleClick = (e) => {
-    if (onClick) onClick(e)
-    if (e.defaultPrevented) return
+import { navigate, openExternal } from './next-navigation-mock'
 
+// Shares its URL translation with the navigation mock so a <Link> and a
+// router.push() to the same href always land on the same desktop route.
+export default function Link({ href, children, onClick, ...props }) {
+  const handleClick = e => {
+    if (onClick) {
+      onClick(e)
+    }
+
+    if (e.defaultPrevented) {
+      return
+    }
+
+    // In-page anchors keep their default behaviour.
     if (!href || href === '#' || href.startsWith('#')) {
       e.preventDefault()
+
       return
     }
 
     if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
       e.preventDefault()
-      if (typeof window !== 'undefined' && window.hermesDesktop?.openExternal) {
-        void window.hermesDesktop.openExternal(href)
-      } else if (typeof window !== 'undefined') {
-        window.open(href, '_blank', 'noopener,noreferrer')
-      }
+      openExternal(href)
+
       return
     }
 
-    if (href.startsWith('/studio/') || href.startsWith('/image-studio')) {
-      e.preventDefault()
-      const tabId = href.split('/studio/')[1] || href.split('tab=')[1]
-      if (tabId && typeof window !== 'undefined') {
-        const isDesktopEnv = window.location.pathname.startsWith('/image-studio')
-        const targetUrl = isDesktopEnv ? `/image-studio?tab=${tabId}` : `/studio/${tabId}`
-        window.history.pushState(null, '', targetUrl)
-        window.dispatchEvent(new Event('popstate'))
-      }
-      return
-    }
-
-    if (href.startsWith('/')) {
-      e.preventDefault()
-    }
+    // Everything else is in-app: the desktop shell only renders /image-studio,
+    // so translate rather than letting the browser follow a dead route.
+    e.preventDefault()
+    navigate(href, 'push')
   }
 
   return (
