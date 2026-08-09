@@ -75,6 +75,35 @@ const IS_WINDOWS = process.platform === 'win32'
 const IS_WSL = isWslEnvironment()
 const APP_ROOT = app.getAppPath()
 
+// Every instance picks its own port, spawns its own backend and mints its own
+// session token, so a second copy is never additive — it is a rival. The two
+// raced: one bound 9120, the other died on [Errno 10048] and retried onto 9121,
+// and the renderer was left handshaking against whichever backend it had been
+// handed. When that socket died mid-handshake (gui.log: "ws response send
+// failed ... method=setup.runtime_check") the connecting overlay had nothing to
+// fall back to and sat at CONNECTING indefinitely.
+//
+// Claim the lock before any other setup runs so the losing instance exits
+// without spawning a backend or touching shared state; it just raises the
+// window that is already running. HERMES_DESKTOP_ALLOW_MULTI is the escape
+// hatch for deliberately running two builds side by side in development.
+if (process.env.HERMES_DESKTOP_ALLOW_MULTI !== '1' && !app.requestSingleInstanceLock()) {
+  app.exit(0)
+}
+
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+
+  mainWindow.show()
+  mainWindow.focus()
+})
+
 // Remote displays (SSH X11 forwarding, VNC, RDP) make Chromium's GPU
 // compositor flicker — accelerated layers can't be presented cleanly over the
 // wire, so the window flashes during scroll/streaming/animation. Local
@@ -2613,8 +2642,13 @@ function closePreviewWatchers() {
   }
 }
 
+// A backend that dies is caught immediately by the backendStartFailed race in
+// startHermes(), so this deadline only ever governs one that is alive but slow
+// to bind — first run on a cold disk, an antivirus scanning the venv, a loaded
+// machine. 45s was under that: measured starts here ranged from 6s idle to 68s
+// under load, and every overshoot cost a spawned-but-abandoned backend.
 async function waitForHermes(baseUrl, token) {
-  const deadline = Date.now() + 45_000
+  const deadline = Date.now() + 120_000
   let lastError = null
 
   while (Date.now() < deadline) {
@@ -3231,12 +3265,40 @@ function resetBootProgressForReconnect() {
   )
 }
 
+// The backend we spawn is a launcher that forks the actual uvicorn server, so
+// killing only the PID we own leaves that child alive holding the port. Windows
+// makes this worse: TerminateProcess never cascades, so every quit orphaned a
+// listener that collided with the next launch ([Errno 10048] on 9120) and, once
+// a second backend won a different port, left the renderer talking to a stale
+// instance whose session token no longer matched. taskkill /T takes the tree.
+function killHermesProcess() {
+  const proc = hermesProcess
+
+  if (!proc || proc.killed || proc.pid == null) {
+    return
+  }
+
+  if (IS_WINDOWS) {
+    try {
+      execFileSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' })
+
+      return
+    } catch {
+      // taskkill missing or the tree already exited — fall through to the signal.
+    }
+  }
+
+  try {
+    proc.kill('SIGTERM')
+  } catch {
+    // Already gone — nothing left to signal.
+  }
+}
+
 function resetHermesConnection() {
   connectionPromise = null
 
-  if (hermesProcess && !hermesProcess.killed) {
-    hermesProcess.kill('SIGTERM')
-  }
+  killHermesProcess()
 
   hermesProcess = null
   resetBootProgressForReconnect()
@@ -3399,6 +3461,16 @@ async function startHermes() {
       },
       { allowDecrease: true }
     )
+
+    // Clearing the memo lets the renderer retry, but the backend this attempt
+    // spawned may still be alive and holding its port — waitForHermes timing
+    // out on a cold machine is the common case. Leaving it running made the
+    // retry pick a *different* port and mint a *different* session token, so
+    // the renderer ended up handshaking against a backend it was never told
+    // about: [Errno 10048] on the original port, 401s on authenticated calls,
+    // and a connecting overlay that never resolved. Reap before retrying.
+    killHermesProcess()
+    hermesProcess = null
     connectionPromise = null
     throw error
   })
@@ -4299,9 +4371,7 @@ app.on('before-quit', () => {
   flushDesktopLogBufferSync()
   closePreviewWatchers()
 
-  if (hermesProcess && !hermesProcess.killed) {
-    hermesProcess.kill('SIGTERM')
-  }
+  killHermesProcess()
 })
 
 app.on('window-all-closed', () => {
