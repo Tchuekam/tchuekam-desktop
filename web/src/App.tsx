@@ -82,6 +82,7 @@ import ChannelsPage from "@/pages/ChannelsPage";
 import WebhooksPage from "@/pages/WebhooksPage";
 import SystemPage from "@/pages/SystemPage";
 import ChatPage from "@/pages/ChatPage";
+import BioComputePlaygroundPage from "@/pages/BioComputePlaygroundPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -125,6 +126,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": RootRedirect,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
+  "/biocompute": BioComputePlaygroundPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
   "/cron": CronPage,
@@ -157,6 +159,11 @@ const BUILTIN_NAV_REST: NavItem[] = [
     icon: MessageSquare,
   },
   {
+    path: "/biocompute",
+    label: "BioCompute",
+    icon: Activity,
+  },
+  {
     path: "/analytics",
     labelKey: "analytics",
     label: "Analytics",
@@ -187,6 +194,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
     icon: BookOpen,
   },
 ];
+
 
 const ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
   Activity,

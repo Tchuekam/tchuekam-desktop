@@ -15,6 +15,7 @@ from tchuekam_backend.api.v1.invitations import router as invitations_router
 from tchuekam_backend.api.v1.profiles import router as profiles_router
 from tchuekam_backend.api.v1.api_keys import router as api_keys_router
 from tchuekam_backend.api.v1.files import router as files_router
+from tchuekam_backend.api.v1.biocompute import router as biocompute_router
 from tchuekam_backend.api.ws.notifications import router as ws_router
 
 api_router = APIRouter()
@@ -34,6 +35,8 @@ api_router.include_router(invitations_router)
 api_router.include_router(profiles_router)
 api_router.include_router(api_keys_router)
 api_router.include_router(files_router)
+api_router.include_router(biocompute_router)
 
 # WebSockets
 api_router.include_router(ws_router)
+
