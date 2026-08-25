@@ -1639,7 +1639,13 @@ function resolveWebDist() {
   const unpackedDist = path.join(unpackedPathFor(APP_ROOT), 'dist')
   if (directoryExists(unpackedDist)) return unpackedDist
 
-  return path.join(APP_ROOT, 'dist')
+  const appDist = path.join(APP_ROOT, 'dist')
+  if (directoryExists(appDist)) return appDist
+
+  const repoWebDist = path.resolve(APP_ROOT, '..', '..', 'hermes_cli', 'web_dist')
+  if (directoryExists(repoWebDist)) return repoWebDist
+
+  return appDist
 }
 
 function resolveRendererIndex() {
@@ -2653,11 +2659,11 @@ async function waitForHermes(baseUrl, token) {
 
   while (Date.now() < deadline) {
     try {
-      await fetchJson(`${baseUrl}/api/status`, token)
+      await fetchJson(`${baseUrl}/api/status`, token, { timeoutMs: 1000 })
       return
     } catch (error) {
       lastError = error
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise(resolve => setTimeout(resolve, 300))
     }
   }
 
@@ -3343,7 +3349,7 @@ async function startHermes() {
     await advanceBootProgress('backend.port', 'Finding an open local port', 16)
     const port = await pickPort()
     const token = crypto.randomBytes(32).toString('base64url')
-    const dashboardArgs = ['dashboard', '--no-open', '--tui', '--host', '127.0.0.1', '--port', String(port)]
+    const dashboardArgs = ['dashboard', '--no-open', '--skip-build', '--tui', '--host', '127.0.0.1', '--port', String(port)]
     await advanceBootProgress('backend.runtime', 'Resolving TchuekaM runtime', 28)
     const backend = await ensureRuntime(resolveHermesBackend(dashboardArgs))
     const hermesCwd = resolveHermesCwd()

@@ -1055,6 +1055,8 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Option
     return None
 
 
+_OLLAMA_NEGATIVE_CACHE: Dict[Tuple[str, str], float] = {}
+
 def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Optional[int]:
     """Query an Ollama server's native ``/api/show`` for context length.
 
@@ -1080,12 +1082,19 @@ def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Opti
     if server_url.endswith("/v1"):
         server_url = server_url[:-3]
 
+    cache_key = (model, server_url)
+    now = time.time()
+    last_fail = _OLLAMA_NEGATIVE_CACHE.get(cache_key)
+    if last_fail is not None and now - last_fail < 60.0:
+        return None
+
     headers = _auth_headers(api_key)
 
     try:
-        with httpx.Client(timeout=5.0, headers=headers) as client:
+        with httpx.Client(timeout=httpx.Timeout(2.0, connect=1.0), headers=headers) as client:
             resp = client.post(f"{server_url}/api/show", json={"name": model})
             if resp.status_code != 200:
+                _OLLAMA_NEGATIVE_CACHE[cache_key] = now
                 return None
             data = resp.json()
 
@@ -1704,24 +1713,19 @@ def get_model_context_length(
         ctx = _resolve_endpoint_context_length(model, base_url, api_key=api_key)
         if ctx is not None:
             return ctx
-    # 5e. Ollama native /api/show probe — runs for ANY provider with a
-    # base_url, not just ollama-cloud.  Ollama-compatible servers expose
-    # this endpoint regardless of hostname (local Ollama, Ollama Cloud,
-    # custom Ollama hosting).  The OpenAI-compat /v1/models endpoint
-    # correctly omits context_length per the OpenAI schema, but /api/show
-    # returns the authoritative GGUF model_info.context_length.
-    # For non-Ollama servers (OpenAI, Anthropic, etc.), the POST returns
-    # 404/405 quickly.  Results are cached, so the hit is per-model+URL,
-    # once per hour.
-    if base_url:
-        ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
-        if ctx is not None:
-            save_context_length(model, base_url, ctx)
-            return ctx
+    # 5e. Fast in-memory models.dev lookup for known providers.
     if effective_provider:
         from agent.models_dev import lookup_models_dev_context
         ctx = lookup_models_dev_context(effective_provider, model)
         if ctx:
+            return ctx
+
+    # 5f. Ollama native /api/show probe — runs for Ollama providers or
+    # unknown providers with a custom base_url.
+    if base_url:
+        ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
+        if ctx is not None:
+            save_context_length(model, base_url, ctx)
             return ctx
 
     # 6. OpenRouter live API metadata — provider-unaware fallback.

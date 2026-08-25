@@ -9,6 +9,7 @@ import hmac
 import os
 import re
 import secrets
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Set, Tuple
@@ -16,8 +17,20 @@ from typing import Any, Dict, Optional, Set, Tuple
 import jwt
 from tchuekam_backend.core.config import settings
 
-# In-memory revocation blacklist for instant JWT invalidation
-_REVOKED_JTI_BLACKLIST: Set[str] = set()
+# Liste noire de révocation en mémoire, pour invalidation immédiate d'un JWT.
+#
+# Limite connue : elle est locale au processus. Elle est vidée à chaque
+# redémarrage et n'est pas partagée entre workers uvicorn, elle ne peut donc
+# pas constituer l'unique mécanisme de révocation. La révocation durable
+# s'appuie sur ``UserSession.is_revoked`` et sur la comparaison du
+# ``refresh_token_hash`` persisté (voir ``AuthService.refresh_access_token``) ;
+# cette liste ne fait qu'accélérer le rejet au sein du processus courant.
+#
+# JTI -> horodatage d'expiration (epoch). Les entrées périmées sont purgées
+# pour éviter une croissance non bornée.
+_REVOKED_JTI_BLACKLIST: Dict[str, float] = {}
+_REVOCATION_LOCK = threading.Lock()
+_REVOCATION_SWEEP_THRESHOLD = 10_000
 
 # Try importing argon2 or bcrypt for primary enterprise hashing
 try:
@@ -58,6 +71,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return hmac.compare_digest(computed_key, expected_key)
     except Exception:
         return False
+
+
+#: Hash de leurre calculé paresseusement, utilisé pour égaliser le temps de
+#: réponse lorsqu'aucun utilisateur ne correspond à l'email fourni.
+_DUMMY_PASSWORD_HASH: Optional[str] = None
+
+
+def dummy_verify_password(plain_password: str) -> None:
+    """Effectue le même travail cryptographique qu'une vérification réelle.
+
+    Sans cela, une connexion avec un email inconnu retourne sans jamais dériver
+    de clé, alors qu'un email connu paie le coût d'Argon2/PBKDF2. L'écart de
+    latence (mesuré à ~290 ms contre ~50 ms, sans recouvrement) constitue un
+    oracle d'énumération des comptes : il permet de déterminer d'une seule
+    requête si une adresse est enregistrée. Le limiteur anti-force-brute est
+    indexé par email et ne freine donc pas ce balayage.
+    """
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
+    verify_password(plain_password, _DUMMY_PASSWORD_HASH)
 
 
 def validate_password_complexity(password: str) -> Tuple[bool, Optional[str]]:
@@ -149,12 +183,36 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
     return payload
 
 
-def revoke_jti(jti: str) -> None:
-    """Ajoute un ID unique de jeton (JTI) à la liste noire de révocation."""
-    if jti:
-        _REVOKED_JTI_BLACKLIST.add(jti)
+def revoke_jti(jti: str, expires_at: Optional[float] = None) -> None:
+    """Ajoute un ID unique de jeton (JTI) à la liste noire de révocation.
+
+    Chaque entrée porte une date d'expiration : au-delà, le jeton est de toute
+    façon rejeté par la vérification de signature, et le conserver ne ferait
+    que faire croître l'ensemble sans limite (fuite mémoire alimentée par le
+    trafic). À défaut de date connue, on retient l'entrée le temps de vie
+    maximal d'un refresh token.
+    """
+    if not jti:
+        return
+    if expires_at is None:
+        expires_at = time.time() + settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
+    with _REVOCATION_LOCK:
+        _REVOKED_JTI_BLACKLIST[jti] = expires_at
+        now = time.time()
+        if len(_REVOKED_JTI_BLACKLIST) > _REVOCATION_SWEEP_THRESHOLD:
+            for stale in [j for j, exp in _REVOKED_JTI_BLACKLIST.items() if exp <= now]:
+                del _REVOKED_JTI_BLACKLIST[stale]
 
 
 def is_jti_revoked(jti: str) -> bool:
-    """Vérifie si un JTI est dans la liste noire."""
-    return jti in _REVOKED_JTI_BLACKLIST
+    """Vérifie si un JTI est dans la liste noire et toujours pertinent."""
+    if not jti:
+        return False
+    with _REVOCATION_LOCK:
+        expires_at = _REVOKED_JTI_BLACKLIST.get(jti)
+        if expires_at is None:
+            return False
+        if expires_at <= time.time():
+            del _REVOKED_JTI_BLACKLIST[jti]
+            return False
+        return True

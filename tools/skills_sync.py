@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 HERMES_HOME = get_hermes_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
+SYNC_STAMP_FILE = SKILLS_DIR / ".bundled_sync_stamp"
 
 # Marker file written by `hermes profile create --no-skills` (named profiles)
 # and by the installer's `--no-skills` flag (the default ~/.hermes profile).
@@ -48,6 +49,18 @@ MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 # hermes_cli.profiles.NO_BUNDLED_SKILLS_MARKER (kept as a literal here to
 # avoid importing the CLI layer into this low-level sync module).
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
+
+
+def _get_bundled_latest_mtime(bundled_dir: Path) -> float:
+    """Fast directory mtime probe of bundled skills."""
+    try:
+        mtimes = [bundled_dir.stat().st_mtime]
+        for p in bundled_dir.iterdir():
+            if p.is_dir():
+                mtimes.append(p.stat().st_mtime)
+        return max(mtimes)
+    except OSError:
+        return 0.0
 
 
 def _get_bundled_dir() -> Path:
@@ -451,7 +464,7 @@ def _backfill_optional_provenance(quiet: bool = False) -> List[str]:
     return backfilled
 
 
-def sync_skills(quiet: bool = False) -> dict:
+def sync_skills(quiet: bool = False, force: bool = False) -> dict:
     """
     Sync bundled skills into ~/.hermes/skills/ using the manifest.
 
@@ -480,6 +493,26 @@ def sync_skills(quiet: bool = False) -> dict:
             "user_modified": [], "cleaned": [], "suppressed": [], "total_bundled": 0,
             "optional_provenance_backfilled": [],
         }
+
+    # Fast-path for silent startup sync: if bundled source directory mtime and
+    # the existing manifest have not changed since the last successful sync,
+    # skip the multi-second disk hashing loop entirely.
+    if not force and quiet and MANIFEST_FILE.exists() and SYNC_STAMP_FILE.exists():
+        try:
+            stamp = json.loads(SYNC_STAMP_FILE.read_text(encoding="utf-8"))
+            if (
+                stamp.get("bundled_path") == str(bundled_dir)
+                and stamp.get("bundled_mtime") == _get_bundled_latest_mtime(bundled_dir)
+                and stamp.get("manifest_mtime") == MANIFEST_FILE.stat().st_mtime
+            ):
+                total = stamp.get("total_bundled", 0)
+                return {
+                    "copied": [], "updated": [], "skipped": total,
+                    "user_modified": [], "cleaned": [], "suppressed": [], "total_bundled": total,
+                    "optional_provenance_backfilled": [],
+                }
+        except Exception:
+            pass
 
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     manifest = _read_manifest()
@@ -613,6 +646,16 @@ def sync_skills(quiet: bool = False) -> dict:
                 logger.debug("Could not copy %s: %s", desc_md, e)
 
     _write_manifest(manifest)
+    try:
+        stamp_data = {
+            "bundled_path": str(bundled_dir),
+            "bundled_mtime": _get_bundled_latest_mtime(bundled_dir),
+            "manifest_mtime": MANIFEST_FILE.stat().st_mtime if MANIFEST_FILE.exists() else 0.0,
+            "total_bundled": len(bundled_skills),
+        }
+        SYNC_STAMP_FILE.write_text(json.dumps(stamp_data), encoding="utf-8")
+    except Exception:
+        pass
     optional_provenance_backfilled = _backfill_optional_provenance(quiet=quiet)
 
     return {

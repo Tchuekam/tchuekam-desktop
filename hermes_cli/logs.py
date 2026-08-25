@@ -262,6 +262,8 @@ def _read_tail(
 
     When filters are active, we read more raw lines to find enough matches.
     """
+    if num_lines <= 0:
+        return []
     if has_filters:
         # Read more lines to ensure we get enough after filtering.
         # For large files, read last 10K lines and filter down.
@@ -283,6 +285,8 @@ def _read_last_n_lines(path: Path, n: int) -> list:
     For files under 1MB, reads the whole file (fast, simple).
     For larger files, reads chunks from the end.
     """
+    if n <= 0:
+        return []
     try:
         size = path.stat().st_size
         if size == 0:

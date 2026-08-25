@@ -90,14 +90,29 @@ class FileService:
 
         return file_record
 
-    def get_file(self, file_id: str) -> FileRecord:
+    def get_file(self, file_id: str, requester_id: str) -> FileRecord:
+        """Charge un fichier en appliquant le contrôle de propriété.
+
+        ``requester_id`` est un paramètre obligatoire : le rendre optionnel
+        laisserait un futur appelant réintroduire silencieusement la faille
+        IDOR en omettant l'argument. Un fichier appartenant à un autre
+        utilisateur est traité comme introuvable (404 plutôt que 403) afin de
+        ne pas divulguer l'existence d'identifiants valides à un attaquant qui
+        les énumère.
+        """
+        if not requester_id:
+            raise NotFoundError("Fichier introuvable.")
         record = self.repo.get_by_id(file_id)
         if not record:
             raise NotFoundError("Fichier introuvable.")
+        # ``uploaded_by_id`` est nullable (ON DELETE SET NULL) : un fichier
+        # orphelin n'appartient plus à personne et reste donc inaccessible.
+        if record.uploaded_by_id is None or record.uploaded_by_id != requester_id:
+            raise NotFoundError("Fichier introuvable.")
         return record
 
-    def delete_file(self, file_id: str) -> bool:
-        record = self.get_file(file_id)
+    def delete_file(self, file_id: str, requester_id: str) -> bool:
+        record = self.get_file(file_id, requester_id=requester_id)
         if os.path.exists(record.storage_path):
             try:
                 os.remove(record.storage_path)

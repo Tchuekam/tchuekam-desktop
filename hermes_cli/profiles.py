@@ -844,27 +844,17 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> Optional[dict
             "user_modified": [],
             "skipped_opt_out": True,
         }
-    project_root = Path(__file__).parent.parent.resolve()
     try:
-        result = subprocess.run(
-            [sys.executable, "-c",
-             "import json; from tools.skills_sync import sync_skills; "
-             "r = sync_skills(quiet=True); print(json.dumps(r))"],
-            env={**os.environ, "HERMES_HOME": str(profile_dir)},
-            cwd=str(project_root),
-            capture_output=True, text=True, timeout=60,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return json.loads(result.stdout.strip())
-        if not quiet:
-            print(f"⚠ Skill seeding returned exit code {result.returncode}")
-            if result.stderr.strip():
-                print(f"  {result.stderr.strip()[:200]}")
-        return None
-    except subprocess.TimeoutExpired:
-        if not quiet:
-            print("⚠ Skill seeding timed out (60s)")
-        return None
+        old_home = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = str(profile_dir)
+        try:
+            from tools.skills_sync import sync_skills
+            return sync_skills(quiet=quiet)
+        finally:
+            if old_home is not None:
+                os.environ["HERMES_HOME"] = old_home
+            else:
+                os.environ.pop("HERMES_HOME", None)
     except Exception as e:
         if not quiet:
             print(f"⚠ Skill seeding failed: {e}")
@@ -992,11 +982,17 @@ def delete_profile(name: str, yes: bool = False) -> Path:
             else:
                 raise
 
+        target_dir = profile_dir
+        if sys.platform == "win32":
+            p_str = str(profile_dir.resolve())
+            if not p_str.startswith("\\\\?\\") and not p_str.startswith("\\\\"):
+                target_dir = Path(f"\\\\?\\{p_str}")
+
         # ``onexc`` was added in 3.12; fall back to ``onerror`` on 3.11.
         try:
-            shutil.rmtree(profile_dir, onexc=_make_writable)
+            shutil.rmtree(target_dir, onexc=_make_writable)
         except TypeError:
-            shutil.rmtree(profile_dir, onerror=_make_writable)
+            shutil.rmtree(target_dir, onerror=_make_writable)
         print(f"✓ Removed {profile_dir}")
     except Exception as e:
         print(f"⚠ Could not remove {profile_dir}: {e}")

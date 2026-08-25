@@ -15991,7 +15991,8 @@ class GatewayRunner:
 
             path = resolve_config_path()
             try:
-                mtime_ns = path.stat().st_mtime_ns
+                st = path.stat()
+                mtime_ns = (st.st_mtime_ns, st.st_size)
             except OSError:
                 mtime_ns = None
             memo_key = (str(path), mtime_ns)

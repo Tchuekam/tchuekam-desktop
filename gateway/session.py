@@ -733,7 +733,8 @@ class SessionStore:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         sessions_file = self.sessions_dir / "sessions.json"
 
-        data = {key: entry.to_dict() for key, entry in self._entries.items()}
+        with self._lock:
+            data = {key: entry.to_dict() for key, entry in self._entries.items()}
         fd, tmp_path = tempfile.mkstemp(
             dir=str(self.sessions_dir), suffix=".tmp", prefix=".sessions_"
         )

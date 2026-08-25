@@ -1105,11 +1105,12 @@ class SessionDB:
         if not session_id:
             return None
         now = time.time()
-        row = self._conn.execute(
-            "SELECT holder FROM compression_locks "
-            "WHERE session_id = ? AND expires_at >= ?",
-            (session_id, now),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT holder FROM compression_locks "
+                "WHERE session_id = ? AND expires_at >= ?",
+                (session_id, now),
+            ).fetchone()
         if row is None:
             return None
         return row["holder"] if isinstance(row, sqlite3.Row) else row[0]
@@ -3879,7 +3880,8 @@ class SessionDB:
     def _fts_table_exists(self, name: str) -> bool:
         """True if an FTS5 virtual table is queryable in this DB."""
         try:
-            self._conn.execute(f"SELECT 1 FROM {name} LIMIT 0")
+            with self._lock:
+                self._conn.execute(f"SELECT 1 FROM {name} LIMIT 0")
             return True
         except sqlite3.OperationalError:
             return False
@@ -4072,12 +4074,13 @@ class SessionDB:
         no handoff record.
         """
         try:
-            cur = self._conn.execute(
-                "SELECT handoff_state, handoff_platform, handoff_error "
-                "FROM sessions WHERE id = ?",
-                (session_id,),
-            )
-            row = cur.fetchone()
+            with self._lock:
+                cur = self._conn.execute(
+                    "SELECT handoff_state, handoff_platform, handoff_error "
+                    "FROM sessions WHERE id = ?",
+                    (session_id,),
+                )
+                row = cur.fetchone()
             if not row:
                 return None
             return {
@@ -4094,12 +4097,13 @@ class SessionDB:
         Used by the gateway's handoff watcher.
         """
         try:
-            cur = self._conn.execute(
-                "SELECT * FROM sessions "
-                "WHERE handoff_state = 'pending' "
-                "ORDER BY started_at ASC"
-            )
-            return [dict(r) for r in cur.fetchall()]
+            with self._lock:
+                cur = self._conn.execute(
+                    "SELECT * FROM sessions "
+                    "WHERE handoff_state = 'pending' "
+                    "ORDER BY started_at ASC"
+                )
+                return [dict(r) for r in cur.fetchall()]
         except Exception:
             return []
 

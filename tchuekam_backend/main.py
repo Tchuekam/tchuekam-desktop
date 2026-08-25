@@ -56,10 +56,19 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(StructuredLoggingAndSecurityHeadersMiddleware)
 
 # 3. Configuration CORS
+#
+# Garde-fou : Starlette, avec ``allow_origins=["*"]`` ET
+# ``allow_credentials=True``, renvoie l'origine de la requête accompagnée de
+# ``Access-Control-Allow-Credentials: true`` — n'importe quel site peut alors
+# lire des réponses authentifiées. Les deux sont donc mutuellement exclusifs :
+# si une configuration réintroduit le joker, on désactive les credentials
+# plutôt que d'ouvrir l'API.
+_cors_origins = list(settings.ALLOWED_ORIGINS)
+_cors_allow_credentials = "*" not in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

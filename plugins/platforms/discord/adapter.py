@@ -6205,6 +6205,11 @@ def _is_connected(config) -> bool:
     return bool((gateway_mod.get_env_value("DISCORD_BOT_TOKEN") or "").strip())
 
 
+def check_discord_requirements() -> bool:
+    """Return True if discord library and bot token requirements are met."""
+    return bool(DISCORD_AVAILABLE and os.getenv("DISCORD_BOT_TOKEN"))
+
+
 def _build_adapter(config):
     """Factory wrapper that constructs DiscordAdapter from a PlatformConfig."""
     return DiscordAdapter(config)

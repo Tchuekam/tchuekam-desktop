@@ -21,7 +21,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ def _module_registers_tools(module_path: Path) -> bool:
     """
     try:
         source = module_path.read_text(encoding="utf-8")
+        if "registry.register" not in source:
+            return False
         tree = ast.parse(source, filename=str(module_path))
     except (OSError, SyntaxError):
         return False
@@ -54,9 +56,23 @@ def _module_registers_tools(module_path: Path) -> bool:
     return any(_is_registry_register_call(stmt) for stmt in tree.body)
 
 
+_DISCOVERED_MODULES_CACHE: Dict[str, Tuple[float, List[str]]] = {}
+
+
 def discover_builtin_tools(tools_dir: Optional[Path] = None) -> List[str]:
     """Import built-in self-registering tool modules and return their module names."""
     tools_path = Path(tools_dir) if tools_dir is not None else Path(__file__).resolve().parent
+    cache_key = str(tools_path)
+    try:
+        dir_mtime = tools_path.stat().st_mtime
+    except OSError:
+        dir_mtime = 0.0
+
+    if cache_key in _DISCOVERED_MODULES_CACHE:
+        cached_mtime, cached_imported = _DISCOVERED_MODULES_CACHE[cache_key]
+        if cached_mtime == dir_mtime and cached_imported:
+            return cached_imported
+
     module_names = [
         f"tools.{path.stem}"
         for path in sorted(tools_path.glob("*.py"))
@@ -71,6 +87,8 @@ def discover_builtin_tools(tools_dir: Optional[Path] = None) -> List[str]:
             imported.append(mod_name)
         except Exception as e:
             logger.warning("Could not import tool module %s: %s", mod_name, e)
+
+    _DISCOVERED_MODULES_CACHE[cache_key] = (dir_mtime, imported)
     return imported
 
 

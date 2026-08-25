@@ -2,6 +2,7 @@
 Service d'authentification principal : Inscription, Connexion, Rafraîchissement et Révocation.
 """
 
+import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from tchuekam_backend.core.security import (
     create_access_token,
     create_refresh_token,
     decode_jwt_token,
+    dummy_verify_password,
     hash_password,
     revoke_jti,
     validate_password_complexity,
@@ -82,7 +84,16 @@ class AuthService:
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Authentifie un utilisateur et émet des jetons JWT."""
         user = self.user_repo.get_by_email(email)
-        if not user or not user.password_hash or not verify_password(password, user.password_hash):
+        if not user or not user.password_hash:
+            # Compte inexistant : on effectue tout de même une vérification de
+            # mot de passe contre un hash de leurre afin que la latence de la
+            # réponse ne révèle pas si l'adresse est enregistrée.
+            dummy_verify_password(password)
+            authenticated = False
+        else:
+            authenticated = verify_password(password, user.password_hash)
+
+        if not authenticated:
             self.audit_repo.log("FAILED_SIGN_IN", resource=email, ip_address=ip_address)
             log_security_event("FAILED_SIGN_IN", resource=email, ip_address=ip_address, status="FAILED")
             return False, "Identifiants invalides.", None
@@ -147,13 +158,39 @@ class AuthService:
             if not session or session.is_revoked:
                 return False, "Session révoquée ou inexistante.", None
 
+            # Rotation *durable* : le jeton présenté doit être celui actuellement
+            # enregistré pour la session. La liste noire de JTI vit en mémoire :
+            # elle est vidée à chaque redémarrage et n'est pas partagée entre
+            # workers uvicorn, si bien qu'un ancien jeton déjà consommé
+            # redevenait exploitable pendant toute sa fenêtre de validité
+            # (7 jours). Le hash est déjà persisté à chaque émission ; il suffit
+            # de le comparer.
+            from tchuekam_backend.core.security import hash_token
+            presented = hash_token(refresh_token)
+            stored = session.refresh_token_hash or ""
+            if not hmac.compare_digest(presented, stored):
+                # Un jeton valide mais périmé qui resurgit signale un vol :
+                # on invalide toute la session plutôt que de la laisser vivre.
+                self.session_repo.revoke_session(session.id)
+                self.audit_repo.log(
+                    "REFRESH_TOKEN_REUSE_DETECTED", user_id=user_id, ip_address=ip_address
+                )
+                log_security_event(
+                    "REFRESH_TOKEN_REUSE_DETECTED",
+                    user_id=user_id,
+                    ip_address=ip_address,
+                    status="ALERT",
+                )
+                return False, "Session révoquée ou inexistante.", None
+
             user = self.user_repo.get_by_id(user_id)
             if not user or not user.is_active:
                 return False, "Utilisateur inactif.", None
 
-            # Révocation de l'ancien JTI (rotation)
+            # Révocation de l'ancien JTI (rotation) — défense immédiate au sein
+            # du processus courant, complémentaire au contrôle de hash ci-dessus.
             if old_jti:
-                revoke_jti(old_jti)
+                revoke_jti(old_jti, expires_at=payload.get("exp"))
 
             # Rôles et réémission
             roles = [r.name for r in self.user_repo.get_user_roles(user.id)]
@@ -192,5 +229,4 @@ class AuthService:
         if jti:
             revoke_jti(jti)
         count = self.session_repo.revoke_all_user_sessions(user_id)
-        self.audit_repo.log("USER_LOGOUT_ALL_DEVICES", user_id=user_id, details={"count": count})
-        return count
+        self.audit_repo.log("USER_LOGOUT_ALL_DEVICES", user_id=user_id, details={"count": 

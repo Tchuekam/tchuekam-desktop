@@ -83,7 +83,11 @@ except ImportError:
             f"Install with: {sys.executable} -m pip install 'fastapi' 'uvicorn[standard]'"
         )
 
-WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
+_custom_web_dist = os.environ.get("HERMES_WEB_DIST")
+if _custom_web_dist and Path(_custom_web_dist).exists():
+    WEB_DIST = Path(_custom_web_dist)
+else:
+    WEB_DIST = Path(__file__).parent / "web_dist"
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -321,7 +325,7 @@ async def auth_middleware(request: Request, call_next):
     # When the OAuth gate is active, cookie-based auth (gated_auth_middleware
     # above) is authoritative.  The legacy _SESSION_TOKEN path is loopback-only
     # and is skipped here so the gate's session attachment isn't overridden.
-    if getattr(request.app.state, "auth_required", False) or getattr(request.app.state, "allow_public", False) or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"):
+    if getattr(request.app.state, "auth_required", False) or getattr(request.app.state, "allow_public", False):
         return await call_next(request)
     path = request.url.path
     if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
@@ -6853,13 +6857,22 @@ async def _broadcast_event(app: Any, channel: str, payload: str) -> None:
     async with event_lock:
         subs = list(event_channels.get(channel, ()))
 
+    dead_subs = []
     for sub in subs:
         try:
             await sub.send_text(payload)
         except Exception:
-            # Subscriber went away mid-send; the /api/events finally clause
-            # will remove it from the registry on its next iteration.
-            _log.warning("broadcast send failed for subscriber on %s", channel, exc_info=True)
+            dead_subs.append(sub)
+            _log.debug("broadcast send failed for subscriber on %s (subscriber disconnected)", channel)
+
+    if dead_subs:
+        async with event_lock:
+            cur_subs = event_channels.get(channel)
+            if cur_subs is not None:
+                for dead in dead_subs:
+                    cur_subs.discard(dead)
+                if not cur_subs:
+                    event_channels.pop(channel, None)
 
 
 def _channel_or_close_code(ws: WebSocket) -> Optional[str]:
@@ -8403,7 +8416,7 @@ async def download_installer_file(target: str):
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
-    cdn_url = "https://release-assets.githubusercontent.com/github-production-release-asset/1279862078/fec85fe0-b8e8-4fec-9852-9fa547cf7fd7?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-07-25T09%3A52%3A38Z&rscd=attachment%3B+filename%3DTchueKAM-Setup.exe&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-07-25T08%3A52%3A13Z&ske=2026-07-25T09%3A52%3A38Z&sks=b&skv=2018-11-09&sig=leGSO4wRvZMjJj7h752kpz%2BpFr0E8Y82M%2F4AMrZkTcE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc4NDk3NDQwMCwibmJmIjoxNzg0OTcwODAwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vKzv17rysnr6ISLs_jWZugnfD8gQLCpxVnYRbn6zPsA&response-content-disposition=attachment%3B%20filename%3DTchueKAM-Setup.exe&response-content-type=application%2Foctet-stream"
+    cdn_url = f"https://github.com/Tchuekam/tchuekam-agent/releases/latest/download/{filename}"
     return RedirectResponse(url=cdn_url, status_code=302)
 
 

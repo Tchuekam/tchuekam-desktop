@@ -40,7 +40,7 @@ def get_file_metadata(
 ):
     """Récupère les métadonnées d'un fichier."""
     file_service = FileService(db)
-    record = file_service.get_file(file_id)
+    record = file_service.get_file(file_id, requester_id=current_user.id)
     return APIResponse(
         message="Métadonnées du fichier récupérées.",
         data=FileRecordResponseSchema.model_validate(record),
@@ -55,7 +55,7 @@ def download_file(
 ):
     """Télécharge le fichier de manière sécurisée."""
     file_service = FileService(db)
-    record = file_service.get_file(file_id)
+    record = file_service.get_file(file_id, requester_id=current_user.id)
     return FileResponse(
         path=record.storage_path,
         media_type=record.mime_type,
@@ -71,7 +71,7 @@ def delete_file(
 ):
     """Supprime un fichier enregistré."""
     file_service = FileService(db)
-    file_service.delete_file(file_id)
+    file_service.delete_file(file_id, requester_id=current_user.id)
     return APIResponse(
         message="Fichier supprimé avec succès.",
         data={"file_id": file_id},

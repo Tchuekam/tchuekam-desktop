@@ -3,9 +3,56 @@ Configuration centralisée du backend TchueKAM.
 """
 
 import os
+import secrets
 from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+#: Environnements considérés comme non-production (secrets éphémères tolérés).
+_DEV_ENVIRONMENTS = {"development", "dev", "local", "test", "testing"}
+
+
+def _is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "development").strip().lower() not in _DEV_ENVIRONMENTS
+
+
+def _resolve_jwt_secret() -> str:
+    """Retourne le secret JWT, en échouant au démarrage s'il manque en production."""
+    secret = os.getenv("TCHUEKAM_JWT_SECRET_KEY", "").strip()
+    if secret:
+        if _is_production() and len(secret) < 32:
+            raise RuntimeError(
+                "TCHUEKAM_JWT_SECRET_KEY doit contenir au moins 32 caractères en production."
+            )
+        return secret
+    if _is_production():
+        raise RuntimeError(
+            "TCHUEKAM_JWT_SECRET_KEY est obligatoire lorsque ENVIRONMENT n'est pas un "
+            "environnement de développement. Générez-en un avec "
+            "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"` puis "
+            "définissez-le dans l'environnement de déploiement."
+        )
+    # Développement uniquement : secret éphémère, jamais committé.
+    return secrets.token_urlsafe(48)
+
+
+def _resolve_allowed_origins() -> List[str]:
+    """Origines CORS autorisées.
+
+    ``["*"]`` combiné à ``allow_credentials=True`` fait renvoyer par Starlette
+    l'origine de la requête accompagnée de ``Access-Control-Allow-Credentials:
+    true`` : n'importe quel site peut alors émettre des requêtes authentifiées
+    et en lire la réponse. On exige donc une liste explicite.
+    """
+    raw = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        if origins:
+            return origins
+    frontend = os.getenv("FRONTEND_URL", "https://tchuekam.com").strip()
+    if _is_production():
+        return [frontend]
+    return [frontend, "http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"]
 
 
 class Settings(BaseSettings):
@@ -26,10 +73,15 @@ class Settings(BaseSettings):
     )
     
     # Sécurité & JWT
-    JWT_SECRET_KEY: str = os.getenv(
-        "TCHUEKAM_JWT_SECRET_KEY",
-        "tchuekam_super_secret_jwt_key_2026_change_in_production_32_bytes_min!"
-    )
+    #
+    # Aucune valeur de repli n'est codée en dur : un secret committé dans un
+    # dépôt public permet à quiconque le lit de forger un jeton d'accès pour
+    # n'importe quel utilisateur, y compris un administrateur. Hors
+    # développement, l'absence de TCHUEKAM_JWT_SECRET_KEY est une erreur de
+    # démarrage (fail-closed). En développement, un secret aléatoire est
+    # généré à chaque démarrage — les jetons ne survivent pas à un
+    # redémarrage, ce qui est le comportement souhaité en local.
+    JWT_SECRET_KEY: str = _resolve_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -88,7 +140,7 @@ class Settings(BaseSettings):
     FACEBOOK_CLIENT_SECRET: Optional[str] = os.getenv("FACEBOOK_CLIENT_SECRET", None)
     
     # CORS & WebSockets
-    ALLOWED_ORIGINS: List[str] = ["*"]
+    ALLOWED_ORIGINS: List[str] = Field(default_factory=_resolve_allowed_origins)
     
     model_config = {"case_sensitive": True}
 

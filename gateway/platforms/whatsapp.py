@@ -836,7 +836,12 @@ class WhatsAppAdapter(BasePlatformAdapter):
                 await self._poll_task
             except (asyncio.CancelledError, Exception):
                 pass
-        self._poll_task = None
+        # Cancel any pending text batch flush tasks
+        for batch_task in list(self._pending_text_batch_tasks.values()):
+            if not batch_task.done():
+                batch_task.cancel()
+        self._pending_text_batch_tasks.clear()
+        self._pending_text_batches.clear()
 
         # Close the persistent HTTP session
         if self._http_session and not self._http_session.closed:
