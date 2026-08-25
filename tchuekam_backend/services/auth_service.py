@@ -229,4 +229,5 @@ class AuthService:
         if jti:
             revoke_jti(jti)
         count = self.session_repo.revoke_all_user_sessions(user_id)
-        self.audit_repo.log("USER_LOGOUT_ALL_DEVICES", user_id=user_id, details={"count": 
+        self.audit_repo.log("USER_LOGOUT_ALL_DEVICES", user_id=user_id, details={"count": count})
+        return count
