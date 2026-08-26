@@ -149,6 +149,9 @@ class Settings(BaseSettings):
     FACEBOOK_CLIENT_ID: Optional[str] = os.getenv("FACEBOOK_CLIENT_ID", None)
     FACEBOOK_CLIENT_SECRET: Optional[str] = os.getenv("FACEBOOK_CLIENT_SECRET", None)
     
+    # Telegram Bot Integration
+    TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN", os.getenv("telegramBot", None))
+    
     # CORS & WebSockets
     ALLOWED_ORIGINS: Union[List[str], str] = Field(default_factory=_resolve_allowed_origins)
 
