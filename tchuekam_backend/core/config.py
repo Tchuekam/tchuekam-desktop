@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+
+    # Exposition des jetons hors-bande (réinitialisation de mot de passe,
+    # vérification d'e-mail, invitation) dans le corps des réponses HTTP.
+    #
+    # Ces jetons sont la *preuve de possession* d'une boîte e-mail. Les
+    # renvoyer à l'appelant supprime cette preuve : un anonyme qui connaît une
+    # adresse peut demander un jeton de réinitialisation, le lire dans la
+    # réponse et prendre le contrôle du compte. Ils ne sont donc exposés qu'en
+    # développement, où aucun service d'e-mail n'est branché.
+    EXPOSE_SENSITIVE_TOKENS: bool = not _is_production()
     
     # Base de données
     DATABASE_URL: str = os.getenv(

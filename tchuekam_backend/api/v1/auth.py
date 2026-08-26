@@ -5,6 +5,7 @@ Endpoints REST pour l'Authentification et la Gestion des Jetons.
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from tchuekam_backend.core.config import settings
 from tchuekam_backend.core.database import get_db
 from tchuekam_backend.domain.schemas import (
     ForgotPasswordSchema,
@@ -39,12 +40,17 @@ def signup(payload: SignUpSchema, request: Request, db: Session = Depends(get_db
 
     # Génération du jeton de vérification d'email
     verify_token = user_service.create_email_verification_token(data["user_id"])
-    return {
+    response = {
         "message": msg,
         "user_id": data["user_id"],
         "email": data["email"],
-        "verification_token": verify_token,  # Fourni dans la réponse pour tests/intégration
     }
+    # Même raisonnement que pour /forgot-password : renvoyer le jeton de
+    # vérification revient à se vérifier soi-même sans jamais prouver qu'on
+    # contrôle l'adresse indiquée.
+    if settings.EXPOSE_SENSITIVE_TOKENS:
+        response["verification_token"] = verify_token
+    return response
 
 
 @router.post("/signin", response_model=TokenResponseSchema)
@@ -116,10 +122,19 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 def forgot_password(payload: ForgotPasswordSchema, db: Session = Depends(get_db)):
     user_service = UserService(db)
     success, msg, raw_token = user_service.create_password_reset_token(payload.email)
-    return {
-        "message": msg,
-        "reset_token": raw_token,  # Fourni pour environnement d'intégration API
+
+    # Réponse volontairement identique que l'adresse existe ou non : le
+    # contraire fournirait un oracle d'énumération des comptes.
+    response = {
+        "message": "Si un compte existe pour cette adresse, un e-mail de "
+                   "réinitialisation vient d'être envoyé.",
     }
+    # Le jeton n'est jamais renvoyé en production : il constitue à lui seul la
+    # preuve de possession de la boîte e-mail. L'exposer permettait à un
+    # anonyme connaissant l'adresse de s'emparer du compte en trois requêtes.
+    if raw_token and settings.EXPOSE_SENSITIVE_TOKENS:
+        response["reset_token"] = raw_token
+    return response
 
 
 @router.post("/reset-password")

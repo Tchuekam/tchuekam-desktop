@@ -54,6 +54,25 @@ class InvitationService:
         if not invitation or invitation.status != "PENDING":
             return False, "Invitation invalide ou déjà traitée."
 
+        # L'invitation est nominative : seul le titulaire de l'adresse invitée
+        # peut la consommer. Sans ce contrôle, toute personne qui obtient le
+        # jeton (e-mail transféré, boîte partagée, journal, historique) peut
+        # l'utiliser depuis son propre compte et hériter du rôle prévu pour
+        # quelqu'un d'autre — y compris OWNER ou ADMIN.
+        accepting_user = self.user_repo.get_by_id(user_id)
+        if not accepting_user:
+            return False, "Invitation invalide ou déjà traitée."
+        invited_email = (invitation.email or "").strip().lower()
+        accepting_email = (accepting_user.email or "").strip().lower()
+        if not invited_email or invited_email != accepting_email:
+            self.audit_repo.log(
+                "INVITATION_EMAIL_MISMATCH",
+                user_id=user_id,
+                org_id=invitation.org_id,
+                resource=invitation.email,
+            )
+            return False, "Cette invitation est destinée à une autre adresse e-mail."
+
         now = datetime.now(timezone.utc)
         expires_at = invitation.expires_at.replace(tzinfo=timezone.utc) if invitation.expires_at.tzinfo is None else invitation.expires_at
         if expires_at < now:

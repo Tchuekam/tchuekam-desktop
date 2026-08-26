@@ -6,6 +6,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from tchuekam_backend.core.config import settings
 from tchuekam_backend.core.database import get_db
 from tchuekam_backend.core.tenant_context import get_current_org, require_org_role
 from tchuekam_backend.domain.models import User, Organization
@@ -48,8 +49,13 @@ def invite_member(
         "status": invitation.status,
         "expires_at": invitation.expires_at,
         "created_at": invitation.created_at,
-        "token": token,  # Inclus pour environnement d'intégration / test API
     }
+    # Le jeton d'invitation doit parvenir à l'invité par e-mail. Le renvoyer
+    # dans la réponse le place dans les journaux d'accès, l'historique du
+    # navigateur et tout proxy intermédiaire ; il n'est donc exposé qu'en
+    # développement, faute de service d'e-mail branché.
+    if settings.EXPOSE_SENSITIVE_TOKENS:
+        res_dict["token"] = token
     return res_dict
 
 

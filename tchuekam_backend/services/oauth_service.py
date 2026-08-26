@@ -19,6 +19,14 @@ class BaseOAuthProvider(ABC):
 
     name: str
 
+    #: Un fournisseur « mock » ne contacte jamais l'IdP : il fabrique une
+    #: identité à partir du code d'autorisation fourni par l'appelant. C'est
+    #: acceptable en développement, jamais en production — sans quoi n'importe
+    #: qui obtient une session au nom de n'importe quel compte en choisissant
+    #: le bon ``code``. Les fournisseurs réels doivent laisser ce drapeau à
+    #: ``False``.
+    is_mock: bool = False
+
     @abstractmethod
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
         """Génère l'URL d'autorisation du fournisseur social."""
@@ -35,6 +43,7 @@ class BaseOAuthProvider(ABC):
 
 
 class MockGoogleOAuthProvider(BaseOAuthProvider):
+    is_mock = True
     name = "google"
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
@@ -52,6 +61,7 @@ class MockGoogleOAuthProvider(BaseOAuthProvider):
 
 
 class MockGitHubOAuthProvider(BaseOAuthProvider):
+    is_mock = True
     name = "github"
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
@@ -68,6 +78,7 @@ class MockGitHubOAuthProvider(BaseOAuthProvider):
 
 
 class MockAppleOAuthProvider(BaseOAuthProvider):
+    is_mock = True
     name = "apple"
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
@@ -84,6 +95,7 @@ class MockAppleOAuthProvider(BaseOAuthProvider):
 
 
 class MockMicrosoftOAuthProvider(BaseOAuthProvider):
+    is_mock = True
     name = "microsoft"
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
@@ -100,6 +112,7 @@ class MockMicrosoftOAuthProvider(BaseOAuthProvider):
 
 
 class MockFacebookOAuthProvider(BaseOAuthProvider):
+    is_mock = True
     name = "facebook"
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
@@ -139,10 +152,30 @@ class OAuthService:
         """Permet l'ajout dynamique de futurs fournisseurs OAuth."""
         self.providers[provider.name.lower()] = provider
 
-    def get_authorization_url(self, provider_name: str, redirect_uri: str, state: str) -> Tuple[bool, str]:
+    def _resolve_provider(self, provider_name: str) -> Tuple[Optional[BaseOAuthProvider], Optional[str]]:
+        """Retourne le fournisseur demandé, ou un message d'erreur.
+
+        Un fournisseur simulé est refusé hors développement : il n'interroge
+        jamais l'IdP et déduit l'identité du ``code`` transmis par l'appelant,
+        ce qui permet à un anonyme d'obtenir une session au nom d'un compte
+        existant. Tant qu'aucune implémentation réelle n'est enregistrée via
+        ``register_provider``, la connexion sociale est indisponible en
+        production plutôt qu'ouverte à tous.
+        """
         provider = self.providers.get(provider_name.lower())
         if not provider:
-            return False, f"Fournisseur OAuth '{provider_name}' non supporté."
+            return None, f"Fournisseur OAuth '{provider_name}' non supporté."
+        if getattr(provider, "is_mock", False) and not settings.EXPOSE_SENSITIVE_TOKENS:
+            return None, (
+                f"La connexion via '{provider_name}' n'est pas disponible : aucun "
+                "fournisseur d'identité réel n'est configuré sur ce déploiement."
+            )
+        return provider, None
+
+    def get_authorization_url(self, provider_name: str, redirect_uri: str, state: str) -> Tuple[bool, str]:
+        provider, error = self._resolve_provider(provider_name)
+        if error or provider is None:
+            return False, error or "Fournisseur OAuth indisponible."
         url = provider.get_authorization_url(redirect_uri, state)
         return True, url
 
@@ -157,9 +190,12 @@ class OAuthService:
         user_agent: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Traite le callback OAuth, crée/associe le compte utilisateur et émet les jetons JWT."""
-        provider = self.providers.get(provider_name.lower())
-        if not provider:
-            return False, f"Fournisseur OAuth '{provider_name}' non supporté.", None
+        provider, error = self._resolve_provider(provider_name)
+        if error or provider is None:
+            self.audit_repo.log(
+                "OAUTH_PROVIDER_UNAVAILABLE", resource=provider_name, ip_address=ip_address
+            )
+            return False, error or "Fournisseur OAuth indisponible.", None
 
         # 1. Obtenir les données utilisateur du fournisseur
         user_info = provider.get_user_info_from_code(code, redirect_uri)

@@ -11783,10 +11783,16 @@ def cmd_dashboard(args):
     from hermes_cli.web_server import start_server
 
     embedded_chat = args.tui or os.environ.get("HERMES_DASHBOARD_TUI") == "1"
+    # ``PORT`` / ``RAILWAY_ENVIRONMENT`` tell us how to *bind* (public host,
+    # platform-assigned port) — they must never decide whether to
+    # authenticate. Forcing ``insecure`` here used to hand every PaaS deploy
+    # an unauthenticated dashboard on 0.0.0.0, and it bypassed the fail-closed
+    # OAuth gate in ``web_server.start_server`` rather than configuring it.
+    # ``PORT`` is also set by plenty of local shells and container images, so
+    # the old behaviour disabled auth well outside the cloud.
+    # Disabling authentication now requires an explicit ``--insecure``.
     is_cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"))
-    if is_cloud:
-        setattr(args, "insecure", True)
-    
+
     port = args.port
     if port is None or is_cloud:
         if os.environ.get("PORT"):
@@ -11801,7 +11807,7 @@ def cmd_dashboard(args):
         host="0.0.0.0" if is_cloud else args.host,
         port=port,
         open_browser=not args.no_open and not is_cloud,
-        allow_public=getattr(args, "insecure", False) or is_cloud,
+        allow_public=getattr(args, "insecure", False),
         embedded_chat=embedded_chat,
     )
 

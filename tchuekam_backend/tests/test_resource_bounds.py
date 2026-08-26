@@ -5,6 +5,7 @@ fournies par le client (email, identifiant de jeton). Sans purge ni plafond,
 un attaquant les fait croître indéfiniment.
 """
 
+import sys
 import threading
 import time
 
@@ -36,26 +37,46 @@ def test_rate_limiter_enforces_hard_key_cap():
 
 
 def test_rate_limiter_is_thread_safe_under_concurrency():
-    """Le quota ne doit pas etre depasse par des requetes concurrentes."""
-    limiter = RateLimiter()
-    granted = []
-    lock = threading.Lock()
+    """Le quota ne doit pas etre depasse par des requetes concurrentes.
 
-    def attempt():
-        ok, _ = limiter.is_allowed("login:9.9.9.9:victim@example.com",
-                                   max_requests=5, window_seconds=300)
-        if ok:
-            with lock:
-                granted.append(1)
+    Les threads sont synchronises par une barriere et l'intervalle de bascule
+    de l'interpreteur est reduit : sans ces deux precautions le GIL serialise
+    de fait la section critique et le test passerait meme sur une
+    implementation non verrouillee (verifie : la version sans verrou accorde
+    jusqu'a 7 jetons pour un quota de 5 dans ces conditions).
+    """
+    previous_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        worst = 0
+        for _ in range(20):
+            limiter = RateLimiter()
+            granted = []
+            lock = threading.Lock()
+            barrier = threading.Barrier(40)
 
-    threads = [threading.Thread(target=attempt) for _ in range(60)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+            def attempt():
+                barrier.wait()
+                ok, _ = limiter.is_allowed(
+                    "login:9.9.9.9:victim@example.com",
+                    max_requests=5,
+                    window_seconds=300,
+                )
+                if ok:
+                    with lock:
+                        granted.append(1)
 
-    assert len(granted) == 5, (
-        f"Course critique: {len(granted)} tentatives autorisees au lieu de 5"
+            threads = [threading.Thread(target=attempt) for _ in range(40)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            worst = max(worst, len(granted))
+    finally:
+        sys.setswitchinterval(previous_interval)
+
+    assert worst == 5, (
+        f"Course critique: jusqu'a {worst} tentatives autorisees au lieu de 5"
     )
 
 
