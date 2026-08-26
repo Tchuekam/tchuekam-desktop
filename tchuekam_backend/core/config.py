@@ -4,8 +4,8 @@ Configuration centralisée du backend TchueKAM.
 
 import os
 import secrets
-from typing import List, Optional
-from pydantic import Field
+from typing import Any, List, Optional, Union
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 #: Environnements considérés comme non-production (secrets éphémères tolérés).
@@ -150,7 +150,25 @@ class Settings(BaseSettings):
     FACEBOOK_CLIENT_SECRET: Optional[str] = os.getenv("FACEBOOK_CLIENT_SECRET", None)
     
     # CORS & WebSockets
-    ALLOWED_ORIGINS: List[str] = Field(default_factory=_resolve_allowed_origins)
+    ALLOWED_ORIGINS: Union[List[str], str] = Field(default_factory=_resolve_allowed_origins)
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(x).strip() for x in parsed if str(x).strip()]
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        elif isinstance(v, list):
+            return [str(origin).strip() for origin in v if str(origin).strip()]
+        return _resolve_allowed_origins()
     
     model_config = {"case_sensitive": True}
 
