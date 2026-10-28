@@ -1,10 +1,14 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import path from 'path'
+
+import { rendererAliases } from './vite.aliases'
 
 export default defineConfig({
   base: './',
+  define: {
+    __HERMES_WEB__: 'false'
+  },
   plugins: [react(), tailwindcss()],
   build: {
     // Keep desktop packaging stable: Shiki ships many dynamic chunks by
@@ -16,23 +20,7 @@ export default defineConfig({
     }
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@hermes/shared': path.resolve(__dirname, '../shared/src'),
-      studio: path.resolve(__dirname, './src/app/image-studio/open-generative-ai/packages/studio/src/index.js'),
-      'workflow-builder': path.resolve(__dirname, './src/app/image-studio/open-generative-ai/packages/Vibe-Workflow/packages/workflow-builder/src/index.js'),
-      'ai-agent': path.resolve(__dirname, './src/app/image-studio/open-generative-ai/packages/Open-Poe-AI/packages/agents/src/index.js'),
-      'design-agent': path.resolve(__dirname, './src/app/image-studio/open-generative-ai/packages/Open-AI-Design-Agent/packages/design-agent/src/index.js'),
-      'next/navigation': path.resolve(__dirname, './src/app/image-studio/next-navigation-mock.jsx'),
-      'next/link': path.resolve(__dirname, './src/app/image-studio/next-link-mock.jsx'),
-      'next/image': path.resolve(__dirname, './src/app/image-studio/next-image-mock.jsx'),
-      'next/router': path.resolve(__dirname, './src/app/image-studio/next-navigation-mock.jsx'),
-      'next/dynamic': path.resolve(__dirname, './src/app/image-studio/next-dynamic-mock.jsx'),
-      react: path.resolve(__dirname, '../../node_modules/react'),
-      'react-dom': path.resolve(__dirname, '../../node_modules/react-dom'),
-      'react/jsx-dev-runtime': path.resolve(__dirname, '../../node_modules/react/jsx-dev-runtime.js'),
-      'react/jsx-runtime': path.resolve(__dirname, '../../node_modules/react/jsx-runtime.js')
-    },
+    alias: rendererAliases,
     dedupe: ['react', 'react-dom']
   },
   server: {

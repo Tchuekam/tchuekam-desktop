@@ -8,6 +8,7 @@ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { Codicon } from '@/components/ui/codicon'
+import { HAS_NATIVE_FS, IS_DESKTOP, IS_LOCKED_DEMO } from '@/lib/platform'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -545,18 +546,23 @@ export function DesktopController() {
 
   const overlays = (
     <>
-      <DesktopInstallOverlay />
-      {/* One PTY-backed terminal mounted forever; <TerminalSlot /> placeholders
-          decide where it shows. Toggling fullscreen never rebuilds the shell. */}
-      <PersistentTerminal cwd={currentCwd} onAddSelectionToChat={composer.addTerminalSelectionAttachment} />
+      {IS_DESKTOP ? (
+        <>
+          <DesktopInstallOverlay />
+          {/* One PTY-backed terminal mounted forever; <TerminalSlot />
+              placeholders decide where it shows. Toggling fullscreen never
+              rebuilds the shell. */}
+          <PersistentTerminal cwd={currentCwd} onAddSelectionToChat={composer.addTerminalSelectionAttachment} />
+        </>
+      ) : null}
 
       <ModelPickerOverlay gateway={gatewayRef.current || undefined} onSelect={selectModel} />
       <ModelVisibilityOverlay gateway={gatewayRef.current || undefined} onOpenProviders={openProviderSettings} />
-      <UpdatesOverlay />
+      {IS_DESKTOP ? <UpdatesOverlay /> : null}
       <GatewayConnectingOverlay />
       <BootFailureOverlay />
 
-      {settingsOpen && (
+      {settingsOpen && !IS_LOCKED_DEMO && (
         <Suspense fallback={null}>
           <SettingsView
             gateway={gatewayRef.current}
@@ -760,7 +766,7 @@ export function DesktopController() {
       </Pane>
       <Pane
         defaultOpen={false}
-        disabled={!chatOpen}
+        disabled={!chatOpen || !HAS_NATIVE_FS}
         id="file-browser"
         maxWidth={FILE_BROWSER_MAX_WIDTH}
         minWidth={FILE_BROWSER_MIN_WIDTH}
@@ -768,11 +774,16 @@ export function DesktopController() {
         side="right"
         width={FILE_BROWSER_DEFAULT_WIDTH}
       >
-        <RightSidebarPane
-          onActivateFile={composer.attachContextFilePath}
-          onActivateFolder={composer.attachContextFolderPath}
-          onChangeCwd={changeSessionCwd}
-        />
+        {/* The pane stays registered so the shell's width variables and
+            titlebar offsets keep their desktop geometry, but its contents read
+            the host filesystem over IPC — nothing to mount in a browser. */}
+        {HAS_NATIVE_FS ? (
+          <RightSidebarPane
+            onActivateFile={composer.attachContextFilePath}
+            onActivateFolder={composer.attachContextFolderPath}
+            onChangeCwd={changeSessionCwd}
+          />
+        ) : null}
       </Pane>
     </AppShell>
   )

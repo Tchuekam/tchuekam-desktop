@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { CommandCenterSection } from '@/app/command-center'
 import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
 import { Activity, AlertCircle, ChevronDown, Clock, Command, Hash, Loader2, Sparkles } from '@/lib/icons'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { formatModelStatusLabel } from '@/lib/model-status-label'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
@@ -224,14 +225,20 @@ export function useStatusbarItems({
         title: agentsOpen ? 'Close agents' : 'Open agents',
         variant: 'action'
       },
-      {
-        icon: <Clock className="size-3" />,
-        id: 'cron',
-        label: 'Cron',
-        title: 'Open cron jobs',
-        to: CRON_ROUTE,
-        variant: 'action'
-      }
+      // Mirrors the Automation entry hidden from the sidebar nav: scheduled
+      // jobs run on the deployment long after a visitor closes the tab.
+      ...(IS_LOCKED_DEMO
+        ? []
+        : [
+            {
+              icon: <Clock className="size-3" />,
+              id: 'cron',
+              label: 'Cron',
+              title: 'Open cron jobs',
+              to: CRON_ROUTE,
+              variant: 'action'
+            } as const
+          ])
     ],
     [
       agentsOpen,

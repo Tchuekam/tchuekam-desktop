@@ -3,7 +3,7 @@
   "productName": "Tchuekam",
   "private": true,
   "version": "0.15.3",
-  "description": "Tchuekam — the AI operating system for business.",
+  "description": "Tchuekam \u2014 the AI operating system for business.",
   "author": "TchueKAM",
   "homepage": "https://tchuekam.com",
   "type": "module",
@@ -13,10 +13,12 @@
     "dev:fake-boot": "cross-env HERMES_DESKTOP_BOOT_FAKE=1 HERMES_DESKTOP_BOOT_FAKE_STEP_MS=650 npm run dev",
     "dev:renderer": "node scripts/assert-root-install.cjs && vite --host 127.0.0.1 --port 5174",
     "dev:electron": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron .",
+    "dev:web": "vite --config vite.web.config.ts",
     "profile:main": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron --inspect=9229 .",
     "profile:main:cpu": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 NODE_OPTIONS=--cpu-prof HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron .",
     "start": "npm run build && electron .",
     "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc -b && vite build",
+    "build:web": "tsc -b && vite build --config vite.web.config.ts",
     "builder": "cross-env NODE_OPTIONS=--max-old-space-size=16384 electron-builder",
     "pack": "npm run build && npm run builder -- --dir",
     "dist": "npm run build && npm run builder",
@@ -40,7 +42,8 @@
     "fmt": "prettier --write 'src/**/*.{ts,tsx}' 'electron/**/*.{js,cjs}' 'vite.config.ts'",
     "fix": "npm run lint:fix && npm run fmt",
     "test:ui": "vitest run --environment jsdom",
-    "preview": "node scripts/assert-root-install.cjs && vite preview --host 127.0.0.1 --port 4174"
+    "preview": "node scripts/assert-root-install.cjs && vite preview --host 127.0.0.1 --port 4174",
+    "preview:web": "vite preview --config vite.web.config.ts"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.12.28",
@@ -236,7 +239,7 @@
     "linux": {
       "category": "Office",
       "maintainer": "TchueKAM <support@tchuekam.com>",
-      "synopsis": "Tchuekam — the AI operating system for business.",
+      "synopsis": "Tchuekam \u2014 the AI operating system for business.",
       "target": [
         "AppImage",
         "deb",

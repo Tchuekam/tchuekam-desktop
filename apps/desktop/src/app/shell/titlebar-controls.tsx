@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils'
 import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
 import { $fileBrowserOpen, $sidebarOpen, toggleFileBrowserOpen, toggleSidebarOpen } from '@/store/layout'
 
+import { IS_LOCKED_DEMO } from '@/lib/platform'
+
 import { PROFILES_ROUTE } from '../routes'
 
 import { titlebarButtonClass } from './titlebar'
@@ -115,6 +117,9 @@ export function TitlebarControls({
       onSelect: toggleHaptics
     },
     {
+      // Settings edits provider credentials and toolsets on the server, and
+      // profiles create new ones — neither belongs to a visitor's session.
+      hidden: IS_LOCKED_DEMO,
       icon: <Codicon name="settings-gear" />,
       id: 'settings',
       label: 'Open settings',
@@ -169,7 +174,7 @@ export function TitlebarControls({
         {visibleSystemToolsBeforeSettings.map(tool => (
           <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
         ))}
-        <ProfilesMenuButton navigate={navigate} />
+        {IS_LOCKED_DEMO ? null : <ProfilesMenuButton navigate={navigate} />}
         {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
         <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />
       </div>
