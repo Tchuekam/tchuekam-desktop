@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   $pinnedSessionIds,
@@ -79,7 +80,7 @@ import {
   SKILLS_ROUTE
 } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
-import type { SidebarNavItem } from '../../types'
+import type { SidebarNavId, SidebarNavItem } from '../../types'
 
 import { SidebarSessionRow } from './session-row'
 import { VirtualSessionList } from './virtual-session-list'
@@ -98,7 +99,12 @@ const navIcon =
   (Icon: typeof IconRobot) =>
   (props: { className?: string }) => <Icon stroke={1.5} {...props} />
 
-const SIDEBAR_NAV: SidebarNavItem[] = [
+// Messaging holds platform bot tokens and Automation schedules jobs that
+// outlive the visitor's tab — both configure the deployment rather than the
+// conversation, so a shared public build leaves them out.
+const DEMO_HIDDEN_NAV: ReadonlySet<SidebarNavId> = new Set<SidebarNavId>(['messaging', 'cron'])
+
+const ALL_SIDEBAR_NAV: SidebarNavItem[] = [
   {
     id: 'new-session',
     label: 'New session',
@@ -124,6 +130,10 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
   { id: 'cron', label: 'Automation', icon: navIcon(IconBolt), route: CRON_ROUTE },
   { id: 'artifacts', label: 'Artifacts', icon: navIcon(IconFiles), route: ARTIFACTS_ROUTE }
 ]
+
+const SIDEBAR_NAV: SidebarNavItem[] = IS_LOCKED_DEMO
+  ? ALL_SIDEBAR_NAV.filter(item => !DEMO_HIDDEN_NAV.has(item.id))
+  : ALL_SIDEBAR_NAV
 
 const WORKSPACE_PAGE = 5
 const WS_ID_PREFIX = 'workspace:'

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, FileText, Loader2, RefreshCw, Wrench } from '@/lib/icons'
+import { IS_DESKTOP } from '@/lib/platform'
 import { $desktopBoot } from '@/store/boot'
 import { $desktopOnboarding } from '@/store/onboarding'
 
@@ -26,7 +27,7 @@ export function BootFailureOverlay() {
   const suppressed = onboarding.flow.status !== 'idle' && onboarding.flow.status !== 'error'
 
   useEffect(() => {
-    if (!visible) {
+    if (!visible || !IS_DESKTOP) {
       return
     }
 
@@ -69,10 +70,13 @@ export function BootFailureOverlay() {
             <AlertTriangle className="size-5" />
           </div>
           <div>
-            <h2 className="text-[0.9375rem] font-semibold tracking-tight">TchuekaM couldn't start</h2>
+            <h2 className="text-[0.9375rem] font-semibold tracking-tight">
+              {IS_DESKTOP ? "TchuekaM couldn't start" : 'TchuekaM is unreachable'}
+            </h2>
             <p className="mt-1 text-[0.8125rem] leading-5 text-(--ui-text-tertiary)">
-              The background gateway didn't come up. Try one of the recovery steps below — nothing here deletes your
-              chats or settings.
+              {IS_DESKTOP
+                ? "The background gateway didn't come up. Try one of the recovery steps below — nothing here deletes your chats or settings."
+                : 'The browser could not reach the TchuekaM backend. It may be starting up, or briefly offline — retrying usually fixes it.'}
             </p>
           </div>
         </div>
@@ -88,22 +92,28 @@ export function BootFailureOverlay() {
                 {busy === 'retry' ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 Retry
               </Button>
-              <Button disabled={Boolean(busy)} onClick={() => void repair()} variant="outline">
-                {busy === 'repair' ? <Loader2 className="size-4 animate-spin" /> : <Wrench className="size-4" />}
-                Repair install
-              </Button>
-              <Button disabled={Boolean(busy)} onClick={() => void switchToLocalGateway()} variant="outline">
-                {busy === 'local' ? <Loader2 className="size-4 animate-spin" /> : null}
-                Use local gateway
-              </Button>
-              <Button onClick={openLogs} variant="ghost">
-                <FileText className="size-4" />
-                Open logs
-              </Button>
+              {IS_DESKTOP ? (
+                <>
+                  <Button disabled={Boolean(busy)} onClick={() => void repair()} variant="outline">
+                    {busy === 'repair' ? <Loader2 className="size-4 animate-spin" /> : <Wrench className="size-4" />}
+                    Repair install
+                  </Button>
+                  <Button disabled={Boolean(busy)} onClick={() => void switchToLocalGateway()} variant="outline">
+                    {busy === 'local' ? <Loader2 className="size-4 animate-spin" /> : null}
+                    Use local gateway
+                  </Button>
+                  <Button onClick={openLogs} variant="ghost">
+                    <FileText className="size-4" />
+                    Open logs
+                  </Button>
+                </>
+              ) : null}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Repair re-runs the installer and can take a few minutes on a fresh machine.
-            </p>
+            {IS_DESKTOP ? (
+              <p className="text-xs text-muted-foreground">
+                Repair re-runs the installer and can take a few minutes on a fresh machine.
+              </p>
+            ) : null}
           </div>
 
           {logs.length > 0 ? (

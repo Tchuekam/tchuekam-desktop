@@ -148,13 +148,30 @@ _reveal_timestamps: List[float] = []
 _REVEAL_MAX_PER_WINDOW = 5
 _REVEAL_WINDOW_SECONDS = 30
 
-# CORS: restrict to localhost origins only.  The web UI is intended to run
-# locally; binding to 0.0.0.0 with allow_origins=["*"] would let any website
-# read/modify config and secrets.
+# CORS: restrict to known first-party origins.  The web UI is normally served
+# from the same origin as this server; binding to 0.0.0.0 with
+# allow_origins=["*"] would let any website read/modify config and secrets.
+#
+# ``HERMES_DASHBOARD_ALLOWED_ORIGINS`` adds deployment-specific origins as a
+# comma-separated list (exact origins, e.g. "https://demo.example.com").  The
+# hosted web build needs this whenever the SPA and this server sit on different
+# hosts — a Vercel frontend talking to a Railway backend, say.
+
+_DASHBOARD_ORIGIN_REGEX = (
+    r"^https?://(.*\.tchuekam\.com|tchuekam\.com|.*\.netlify\.app|.*\.vercel\.app"
+    r"|.*\.up\.railway\.app|localhost|127\.0\.0\.1)(:\d+)?$"
+)
+
+_extra_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("HERMES_DASHBOARD_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(.*\.tchuekam\.com|tchuekam\.com|.*\.netlify\.app|.*\.up\.railway\.app|localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=_extra_origins,
+    allow_origin_regex=_DASHBOARD_ORIGIN_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
 )
