@@ -190,6 +190,19 @@ Build args let a deploy override the bundle's configuration:
 `VITE_HERMES_API_URL` (empty = same origin), `VITE_HERMES_DEMO`,
 `VITE_HERMES_APP_VERSION`.
 
+When it serves the page, the dashboard injects three globals into `index.html`,
+and the bundle prefers them over anything baked in at build time:
+
+| Global | Used for |
+|---|---|
+| `__HERMES_SESSION_TOKEN__` | `/api/*` and the gateway `?token=`. Minted per process, so a build-time copy goes stale on restart — which is why the injected value wins. |
+| `__HERMES_BASE_PATH__` | Serving under a reverse-proxy sub-path (`X-Forwarded-Prefix`). |
+| `__HERMES_AUTH_REQUIRED__` | Gate on. No token is injected and the server rejects one, so the WebSocket mints a single-use ticket from `POST /api/auth/ws-ticket` per connection instead. |
+
+This is why a same-origin deploy needs no `VITE_HERMES_TOKEN`: leaving it unset
+is correct, and setting it would only supply a fallback for a split-origin
+deployment.
+
 The only bundled provider is `nous` (Nous Research Portal), under
 `plugins/dashboard_auth/nous/`. Any other identity source needs a provider
 plugin implementing `DashboardAuthProvider` (`hermes_cli/dashboard_auth/base.py`):
