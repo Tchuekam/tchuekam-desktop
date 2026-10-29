@@ -8,6 +8,7 @@
     "start": "docusaurus start",
     "prebuild": "node scripts/prebuild.mjs",
     "build": "docusaurus build",
+    "build:vercel": "npm run build && node scripts/stage-vercel.mjs",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",

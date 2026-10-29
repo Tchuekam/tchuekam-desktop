@@ -31,6 +31,32 @@ real machine:
 `HAS_NATIVE_FS`). They are compile-time constants, so each build drops the
 other shell's code.
 
+### Known gap: Image Studio's Design Agent tab
+
+Image generation works — `MuapiClient` calls `https://api.muapi.ai` directly in
+a production build. The Design Agent tab (`#/image-studio?tab=design-agent`)
+does not. Its vendored code picks its base URL from the page protocol:
+
+```js
+const DIRECT_UPSTREAM =
+  typeof window === "undefined" || !window.location?.protocol?.startsWith("http")
+```
+
+Under Electron the page is `file://`, so it calls muapi directly. On the web it
+is `https://`, so it falls back to same-origin `/api/v1/creative-agent` —
+expecting the Next.js route handlers that proxied to muapi and swapped the
+Bearer token for muapi's `x-api-key` header. Nothing serves those paths on a
+static host, so the requests land on the SPA fallback and come back as HTML.
+
+Two consequences:
+
+- The Design Agent tab is broken in the web build. Fixing it means either
+  calling muapi directly from the browser (which the dev-server proxy exists to
+  avoid, partly for CORS) or standing up a real proxy route.
+- **Do not mount anything public at `/api/v1/*` on this domain.** Those
+  requests would then reach a real service instead of the fallback, and get
+  confidently wrong answers rather than an obvious failure.
+
 ## Demo mode
 
 `VITE_HERMES_DEMO=1` (the default) hides every surface that configures the
@@ -86,12 +112,36 @@ they are two separate deployments.
 
 ### Frontend
 
-`vercel.json` at the repo root already has the build command, output directory
-and SPA fallback. Set the environment variables from `.env.web.example` in the
-project settings.
+`vercel.json` at the repo root deploys the frontends as one Vercel project
+using services:
 
-Any static host works — the only requirement is serving `index.html` for
-unknown paths.
+| Service | Root | Public path |
+|---|---|---|
+| `desktop` | repo root (npm workspace) | `/` — everything not matched above |
+| `website` | `website/` | `/docs/*` |
+
+Set the environment variables from `.env.web.example` in the project settings.
+They are read at build time, so changing one needs a redeploy.
+
+The `desktop` service builds from the repo root rather than `apps/desktop`,
+because the renderer resolves React from the workspace root's `node_modules`
+(see `vite.aliases.ts`) — an install scoped to `apps/desktop` alone would not
+hoist it.
+
+The `website` service builds with `build:vercel`, which stages the Docusaurus
+output under `build-vercel/docs/`. A service rewrite forwards the matched path
+unchanged, and `docusaurus.config.ts` sets `baseUrl: '/docs/'`, so the files
+have to sit at the path the generated HTML already points at. If the docs ever
+move to their own domain, set `baseUrl` back to `/` and drop the staging step.
+
+Any static host works for the app on its own — the only requirement is serving
+`index.html` for unknown paths.
+
+There are no service bindings. Bindings inject an internal URL into a calling
+service at runtime, and nothing here calls another service from the server: the
+only cross-service traffic is the browser talking to the agent backend, which
+needs a public URL it can reach directly, and which is baked into the bundle at
+build time.
 
 ### Backend
 

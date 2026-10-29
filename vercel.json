@@ -1,13 +1,38 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "npm install",
-  "buildCommand": "npm run build:web --workspace apps/desktop",
-  "outputDirectory": "apps/desktop/dist-web",
-  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }],
+  "services": {
+    "desktop": {
+      "root": ".",
+      "framework": "vite",
+      "installCommand": "npm install",
+      "buildCommand": "npm run build:web --workspace apps/desktop",
+      "outputDirectory": "apps/desktop/dist-web"
+    },
+    "website": {
+      "root": "website",
+      "framework": "docusaurus-2",
+      "installCommand": "npm install",
+      "buildCommand": "npm run build:vercel",
+      "outputDirectory": "build-vercel"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/docs/(.*)",
+      "destination": { "service": "website" }
+    },
+    {
+      "source": "/(.*)",
+      "destination": { "service": "desktop" }
+    }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/docs/assets/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     },
     {
