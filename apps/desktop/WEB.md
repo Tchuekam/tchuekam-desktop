@@ -179,8 +179,16 @@ served from another host would fail every authenticated call, including the
 `POST /api/auth/ws-ticket` the gateway needs. Setting `SameSite=None` instead
 trades that for third-party-cookie blocking in Safari and Chrome.
 
-To serve the app same-origin, point `HERMES_WEB_DIST` at the built bundle —
-the dashboard serves whatever that names in place of its own SPA.
+The image already does this. A `webapp_builder` stage in the root `Dockerfile`
+builds `apps/desktop`'s browser bundle and copies the static output to
+`/opt/hermes/web-app`, which `HERMES_WEB_DIST` points at — so the Render
+service serves the app from its own origin. Only the built files cross stages,
+so no Electron toolchain reaches the runtime image, and the runtime
+`node_modules` tree (which deliberately omits `apps/*`) is untouched.
+
+Build args let a deploy override the bundle's configuration:
+`VITE_HERMES_API_URL` (empty = same origin), `VITE_HERMES_DEMO`,
+`VITE_HERMES_APP_VERSION`.
 
 The only bundled provider is `nous` (Nous Research Portal), under
 `plugins/dashboard_auth/nous/`. Any other identity source needs a provider
