@@ -1,0 +1,53 @@
+# Render blueprint for the TchuekaM agent backend.
+#
+# This is the service the web app talks to. It cannot run on a serverless
+# platform: session state is SQLite on local disk, a conversation's running
+# agent lives in the process that owns its WebSocket, and a single turn can run
+# for minutes. It needs a container with a disk, which is what this describes.
+#
+# The separate tchuekam_backend auth API is NOT this service — see
+# Dockerfile.backend for that one.
+services:
+  - type: web
+    name: tchuekam-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # The repo root Dockerfile's default command already starts the dashboard
+    # on $PORT (docker/main-wrapper.sh), so no dockerCommand override.
+    plan: standard
+    region: frankfurt
+    healthCheckPath: /api/status
+    autoDeploy: false
+
+    disk:
+      name: tchuekam-state
+      # HERMES_HOME is /opt/data in the image, and it holds state.db
+      # (sessions, memory, FTS5 search), config.yaml and skills. Without a
+      # disk every redeploy and restart wipes all of it.
+      mountPath: /opt/data
+      sizeGB: 10
+
+    envVars:
+      # --- Where the browser reaches this service -----------------------
+      # Comma-separated exact origins allowed to call /api/* cross-origin.
+      # Only needed while the web app is served from a different host than
+      # this one; same-origin needs no entry.
+      - key: HERMES_DASHBOARD_ALLOWED_ORIGINS
+        sync: false
+
+      # --- Auth --------------------------------------------------------
+      # The dashboard engages its OAuth gate on any non-loopback bind unless
+      # --insecure is passed. Leave the gate on in production and configure a
+      # provider below; see WEB.md for what that currently requires.
+      - key: HERMES_DASHBOARD_OAUTH_CLIENT_ID
+        sync: false
+      - key: HERMES_DASHBOARD_PORTAL_URL
+        sync: false
+
+      # --- Model provider ----------------------------------------------
+      # Set whichever provider you run on, and put a spend cap on the key.
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+      - key: PYTHONUNBUFFERED
+        value: "1"

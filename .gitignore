@@ -66,6 +66,7 @@ hermes_cli/web_dist/
 apps/desktop/build/
 apps/desktop/dist/
 apps/desktop/dist-web/
+website/build-vercel/
 apps/desktop/release/
 apps/desktop/*.tsbuildinfo
 

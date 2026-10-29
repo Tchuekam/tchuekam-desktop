@@ -20,16 +20,62 @@ function envFlag(value: unknown, fallback: boolean): boolean {
 }
 
 /**
- * Hosted-build settings. Everything is read at build time, so a deploy swaps
- * these by rebuilding with different env vars.
+ * Values the dashboard injects into index.html when it serves the bundle
+ * itself (`_serve_index` in hermes_cli/web_server.py).
+ *
+ * These only exist on the same-origin deployment, and they beat anything baked
+ * in at build time: the session token is minted per process, so a build-time
+ * copy would be stale the moment the server restarts. Absent when the bundle
+ * is served by a static host, which is why each read falls back.
+ */
+interface InjectedDashboardGlobals {
+  __HERMES_SESSION_TOKEN__?: string
+  __HERMES_BASE_PATH__?: string
+  __HERMES_AUTH_REQUIRED__?: boolean
+}
+
+function injected(): InjectedDashboardGlobals {
+  if (typeof window === 'undefined') {
+    return {}
+  }
+
+  return window as unknown as InjectedDashboardGlobals
+}
+
+/**
+ * Hosted-build settings.
  *
  * `apiUrl` empty means "same origin" — the right default when the agent
- * backend serves the bundle itself, or when a platform rewrite proxies
- * `/api/*` to it.
+ * backend serves the bundle itself, which is also the only arrangement where
+ * the auth gate's SameSite=Lax cookies reach it.
  */
 export const webConfig = {
   apiUrl: String(env.VITE_HERMES_API_URL ?? '').replace(/\/+$/, ''),
-  token: String(env.VITE_HERMES_TOKEN ?? ''),
+  /**
+   * Dashboard session token, used on `/api/*` and as `?token=` on the gateway
+   * WebSocket. Injected by the server when it serves this page; the build-time
+   * value is the fallback for a split-origin deployment.
+   *
+   * Empty when the auth gate is on — the gate authenticates by cookie, and the
+   * WebSocket uses a single-use ticket instead.
+   */
+  get token(): string {
+    return String(injected().__HERMES_SESSION_TOKEN__ ?? env.VITE_HERMES_TOKEN ?? '')
+  },
+  /**
+   * Path prefix when served behind a reverse proxy that mounts the dashboard
+   * under a sub-path (`X-Forwarded-Prefix`). Empty at a domain root.
+   */
+  get basePath(): string {
+    return String(injected().__HERMES_BASE_PATH__ ?? '').replace(/\/+$/, '')
+  },
+  /**
+   * True when the dashboard's OAuth gate is engaged. The WebSocket then needs
+   * a ticket from `POST /api/auth/ws-ticket` rather than the session token.
+   */
+  get authRequired(): boolean {
+    return injected().__HERMES_AUTH_REQUIRED__ === true
+  },
   version: String(env.VITE_HERMES_APP_VERSION ?? 'web'),
   /**
    * Demo mode hides every surface that manages the host it runs on —

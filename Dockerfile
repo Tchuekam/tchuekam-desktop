@@ -7,6 +7,63 @@ FROM ghcr.io/astral-sh/uv:0.11.6-python3.13-trixie@sha256:b3c543b6c4f23a5f2df228
 # our Debian 13 (trixie, glibc 2.41) runtime.  Bumping to a new Node major
 # is a one-line ARG change; see #4977.
 FROM node:22-bookworm-slim@sha256:7af03b14a13c8cdd38e45058fd957bf00a72bbe17feac43b1c15a689c029c732 AS node_source
+
+# ---------- Web app build stage ----------
+# Builds apps/desktop's browser bundle, which the dashboard serves as its SPA
+# (HERMES_WEB_DIST, below). This is a separate stage on purpose: the runtime
+# image deliberately never `npm install`s apps/* — see the HERMES_TUI_DIR
+# comment near the end of this file for why installing it there would break
+# the TUI launcher's lockfile check. Only the built static output crosses
+# over, so the runtime node_modules tree is untouched and no Electron
+# toolchain lands in the final image.
+#
+# Serving the app from the dashboard's own origin is what makes the auth gate
+# usable: its session cookies are SameSite=Lax, so a bundle hosted elsewhere
+# never gets them on fetch or WebSocket handshakes. See apps/desktop/WEB.md.
+FROM node:22-bookworm-slim@sha256:7af03b14a13c8cdd38e45058fd957bf00a72bbe17feac43b1c15a689c029c732 AS webapp_builder
+WORKDIR /build
+
+# Every workspace manifest, so npm can resolve the root lockfile. They are
+# tiny; the sources that actually get built are copied further down.
+COPY package.json package-lock.json ./
+COPY apps/desktop/package.json apps/desktop/
+COPY apps/shared/package.json apps/shared/
+COPY apps/mobile/package.json apps/mobile/
+COPY apps/bootstrap-installer/package.json apps/bootstrap-installer/
+COPY web/package.json web/
+COPY ui-tui/package.json ui-tui/
+COPY ui-tui/packages/hermes-ink/ ui-tui/packages/hermes-ink/
+
+# Scope the install to the one workspace being built, plus the root (whose
+# node_modules holds the hoisted React that vite.aliases.ts resolves against).
+# Electron is a devDependency of apps/desktop and its postinstall would pull a
+# ~100MB binary that no browser build needs.
+ENV npm_config_install_links=false
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+RUN npm install --prefer-offline --no-audit \
+        --workspace apps/desktop --include-workspace-root && \
+    npm cache clean --force
+
+COPY apps/desktop/ apps/desktop/
+COPY apps/shared/ apps/shared/
+
+# VITE_HERMES_API_URL is intentionally unset: the bundle is served by the
+# dashboard itself, so it addresses the API on its own origin. Overridable at
+# build time for a split-origin deployment.
+ARG VITE_HERMES_API_URL=""
+# Keeps the host-management surfaces (settings, profiles, messaging,
+# automation) hidden. Flip to 0 only once the auth gate is configured and
+# everyone who can load the page is someone you'd trust to edit this
+# deployment's provider credentials — until then there is no login in front of
+# those screens. The terminal and file browser stay hidden either way; they
+# need a PTY and filesystem the browser does not have.
+ARG VITE_HERMES_DEMO="1"
+ARG VITE_HERMES_APP_VERSION="docker"
+ENV VITE_HERMES_API_URL=${VITE_HERMES_API_URL} \
+    VITE_HERMES_DEMO=${VITE_HERMES_DEMO} \
+    VITE_HERMES_APP_VERSION=${VITE_HERMES_APP_VERSION}
+RUN npm run build:web --workspace apps/desktop
+
 FROM debian:13.4@sha256:7a372138a0a86616428e35cf82315b674b05a76bbd352baf6fb6b000574f88bd
 
 # Disable Python stdout buffering to ensure logs are printed immediately
@@ -244,8 +301,15 @@ RUN mkdir -p /etc/cont-init.d && \
 COPY --chmod=0755 docker/cont-init.d/015-supervise-perms /etc/cont-init.d/015-supervise-perms
 COPY --chmod=0755 docker/cont-init.d/02-reconcile-profiles /etc/cont-init.d/02-reconcile-profiles
 
+# ---------- Web app ----------
+# The browser build of apps/desktop, from the webapp_builder stage. Served at
+# the dashboard's own origin so the auth gate's SameSite=Lax cookies reach it.
+# To serve the older web/ dashboard SPA instead, point HERMES_WEB_DIST back at
+# /opt/hermes/hermes_cli/web_dist — it is still built into the image.
+COPY --from=webapp_builder --chown=hermes:hermes /build/apps/desktop/dist-web /opt/hermes/web-app
+
 # ---------- Runtime ----------
-ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
+ENV HERMES_WEB_DIST=/opt/hermes/web-app
 # Point the TUI launcher at the prebuilt bundle baked at build time (Layer 8:
 # `ui-tui && npm run build`). This makes _make_tui_argv take the prebuilt-bundle
 # fast path (`node --expose-gc /opt/hermes/ui-tui/dist/entry.js`) and skip the
