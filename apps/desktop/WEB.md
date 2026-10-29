@@ -145,29 +145,53 @@ build time.
 
 ### Backend
 
-The agent backend is the root `Dockerfile` (not `Dockerfile.backend`, which
-builds the separate `tchuekam_backend` auth API). Run it with no command and
-`docker/main-wrapper.sh` already starts the right thing:
+The agent backend runs from the repo root `Dockerfile` (not
+`Dockerfile.backend`, which builds the separate `tchuekam_backend` auth API).
+`render.yaml` at the repo root describes it as a Render service.
 
-```
-hermes dashboard --host 0.0.0.0 --port $PORT --insecure --no-open
-```
+It needs a container with a disk, and cannot move to a serverless platform:
+`HERMES_HOME` holds `state.db` (sessions, memory, FTS5 search), a
+conversation's running agent lives in the process that owns its WebSocket, and
+one turn can run for minutes. The blueprint mounts a disk at `/opt/data` for
+exactly that reason — without it, every redeploy wipes every session.
 
-Environment variables it needs:
+Environment variables:
 
-- `HERMES_DASHBOARD_SESSION_TOKEN` — the same value as `VITE_HERMES_TOKEN`.
-- `HERMES_DASHBOARD_ALLOWED_ORIGINS` — the frontend's origin, e.g.
-  `https://your-app.vercel.app`. `*.vercel.app`, `*.netlify.app`,
-  `*.up.railway.app` and `*.tchuekam.com` are already allowed by default, so
-  this is only needed for a custom domain.
-- A model provider key, e.g. `OPENROUTER_API_KEY`.
+- `HERMES_DASHBOARD_ALLOWED_ORIGINS` — the web app's origin, if it is served
+  from a different host than this service. Same-origin needs no entry.
+- `HERMES_DASHBOARD_OAUTH_CLIENT_ID` / `HERMES_DASHBOARD_PORTAL_URL` — the
+  dashboard auth gate's provider. See **Authentication** below.
+- A model provider key, e.g. `OPENROUTER_API_KEY`. Put a spend cap on it.
 
-`--insecure` skips the dashboard's OAuth gate, which is what lets the session
-token authenticate the WebSocket. It means the backend has no robust auth of
-its own — disabling the dangerous toolsets above is what makes that acceptable.
+Note that the Render disk mounts root-owned while the container runs as uid
+10000, so check write permissions on the first deploy.
 
-Sessions and memory live in SQLite under `HERMES_HOME`. Mount a volume there,
-or accept that a redeploy starts everyone fresh.
+### Authentication
+
+The dashboard engages an OAuth gate on any non-loopback bind unless
+`--insecure` is passed. The gate is the production path: cookie sessions, a
+login page, single-use 30-second WebSocket tickets, and an audit log.
+
+**The gate requires the app and the backend to share an origin.** Session
+cookies are set `SameSite=Lax` (`hermes_cli/dashboard_auth/cookies.py`), and a
+Lax cookie is not sent on cross-site `fetch` or WebSocket handshakes. A bundle
+served from another host would fail every authenticated call, including the
+`POST /api/auth/ws-ticket` the gateway needs. Setting `SameSite=None` instead
+trades that for third-party-cookie blocking in Safari and Chrome.
+
+To serve the app same-origin, point `HERMES_WEB_DIST` at the built bundle —
+the dashboard serves whatever that names in place of its own SPA.
+
+The only bundled provider is `nous` (Nous Research Portal), under
+`plugins/dashboard_auth/nous/`. Any other identity source needs a provider
+plugin implementing `DashboardAuthProvider` (`hermes_cli/dashboard_auth/base.py`):
+`start_login`, `complete_login`, `verify_session`, `refresh_session`,
+`revoke_session`.
+
+`--insecure` skips the gate entirely and falls back to a shared session token.
+That token ships inside the JavaScript bundle, so anyone who opens the page can
+read it and drive the agent on your API credits. It is acceptable for a
+throwaway demo on a locked-down toolset; it is not an authentication system.
 
 ### Why no /api proxy
 
