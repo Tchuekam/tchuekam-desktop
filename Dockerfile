@@ -64,7 +64,14 @@ ENV VITE_HERMES_API_URL=${VITE_HERMES_API_URL} \
     VITE_HERMES_APP_VERSION=${VITE_HERMES_APP_VERSION}
 RUN npm run build:web --workspace apps/desktop
 
-FROM debian:13.4@sha256:7a372138a0a86616428e35cf82315b674b05a76bbd352baf6fb6b000574f88bd
+# Refreshing this digest is routine maintenance, not a policy exception.
+# Debian rebuilds its point-release images for security updates and re-pushes
+# the same tag, and the superseded manifest is eventually pruned from the
+# registry — at which point every build fails with "not found" on a pin that
+# was valid when it was written. When that happens, re-resolve the tag and
+# update the digest here; do NOT drop the digest to make it go away, since
+# pinning is what the dependency policy in AGENTS.md is protecting.
+FROM debian:13.4@sha256:e2d08da6f42ef4b09b165d55528a12727aeed8240dc9edf888e3ec07e10ef9da
 
 # Disable Python stdout buffering to ensure logs are printed immediately
 ENV PYTHONUNBUFFERED=1
