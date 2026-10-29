@@ -49,19 +49,42 @@ function unsupported(feature: string): never {
  * serving the bundle directly and a host-level rewrite proxying `/api/*`.
  */
 function resolveBaseUrl(): string {
-  return webConfig.apiUrl || window.location.origin.replace(/\/+$/, '')
+  if (webConfig.apiUrl) {
+    return webConfig.apiUrl
+  }
+
+  return `${window.location.origin.replace(/\/+$/, '')}${webConfig.basePath}`
 }
 
 /**
- * The gateway WebSocket cannot carry an Authorization header — browsers do not
- * allow headers on the upgrade — so the backend reads the dashboard session
- * token from the query string, exactly as the desktop shell does.
+ * Build the gateway WebSocket URL, with whichever credential this deployment
+ * authenticates by.
+ *
+ * Browsers cannot set headers on a WebSocket upgrade, so the credential rides
+ * in the query string either way:
+ *
+ * - Gate off: `?token=` carrying the dashboard session token, as the desktop
+ *   shell does.
+ * - Gate on: `?ticket=` — single-use, 30-second TTL, minted against the
+ *   session cookie. The session token is not injected at all in this mode and
+ *   is rejected by the server even if one were supplied, so a ticket is the
+ *   only way through. Minting per connection is the documented pattern.
  */
-function buildWsUrl(baseUrl: string, token: string): string {
+async function buildWsUrl(baseUrl: string): Promise<string> {
   const parsed = new URL(baseUrl)
   const scheme = parsed.protocol === 'https:' ? 'wss' : 'ws'
   const prefix = parsed.pathname.replace(/\/+$/, '')
-  const query = token ? `?token=${encodeURIComponent(token)}` : ''
+  let query = ''
+
+  if (webConfig.authRequired) {
+    const minted = await apiFetch<{ ticket: string }>({
+      path: '/api/auth/ws-ticket',
+      method: 'POST'
+    })
+    query = `?ticket=${encodeURIComponent(minted.ticket)}`
+  } else if (webConfig.token) {
+    query = `?token=${encodeURIComponent(webConfig.token)}`
+  }
 
   return `${scheme}://${parsed.host}${prefix}/api/ws${query}`
 }
@@ -136,7 +159,7 @@ function bootProgress(): DesktopBootProgress {
   }
 }
 
-function connection(): HermesConnection {
+async function connection(): Promise<HermesConnection> {
   const baseUrl = resolveBaseUrl()
 
   return {
@@ -148,7 +171,7 @@ function connection(): HermesConnection {
     nativeOverlayWidth: 0,
     source: 'env',
     token: webConfig.token,
-    wsUrl: buildWsUrl(baseUrl, webConfig.token),
+    wsUrl: await buildWsUrl(baseUrl),
     logs: [],
     windowButtonPosition: null
   }
@@ -373,13 +396,16 @@ export function installWebBridge(): void {
     return
   }
 
-  if (!webConfig.apiUrl) {
-    // Same-origin only works when the agent backend serves this bundle
-    // itself. On a static host it means every API call lands on the SPA
-    // fallback and comes back as HTML.
+  // Same origin is correct when the dashboard serves this bundle itself, and
+  // it proves it by injecting a session token (or by turning the auth gate on,
+  // which supersedes the token). Neither present with no configured API URL
+  // means nothing is serving the API here: every call would land on the static
+  // host's SPA fallback and come back as HTML.
+  if (!webConfig.apiUrl && !webConfig.token && !webConfig.authRequired) {
     console.warn(
-      '[tchuekam] VITE_HERMES_API_URL is not set — falling back to this origin. ' +
-        'Set it to the TchuekaM backend URL unless that backend is serving this page.'
+      '[tchuekam] No TchuekaM backend configured — falling back to this origin, ' +
+        'which is not serving the API. Set VITE_HERMES_API_URL, or serve this ' +
+        'bundle from the backend via HERMES_WEB_DIST.'
     )
   }
 
