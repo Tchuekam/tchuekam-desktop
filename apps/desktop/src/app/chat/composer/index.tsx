@@ -24,7 +24,8 @@ import { cn } from '@/lib/utils'
 import {
   $composerAttachments,
   clearComposerAttachments,
-  type ComposerAttachment
+  type ComposerAttachment,
+  takeComposerSeed
 } from '@/store/composer'
 import {
   $queuedPromptsBySession,
@@ -86,6 +87,7 @@ interface QueueEditState {
 const cloneAttachments = (attachments: ComposerAttachment[]) => attachments.map(a => ({ ...a }))
 
 export function ChatBar({
+  acceptsSeed = false,
   busy,
   cwd,
   disabled,
@@ -219,11 +221,17 @@ export function ChatBar({
       }
     })
 
+    const seed = acceptsSeed ? takeComposerSeed() : null
+
+    if (seed) {
+      appendExternalText(seed, 'block')
+    }
+
     return () => {
       offFocus()
       offInsert()
     }
-  }, [appendExternalText, disabled])
+  }, [acceptsSeed, appendExternalText, disabled])
 
   // Keep draftRef in sync with the assistant-ui composer state for callers
   // that read the latest text outside the React render cycle. We don't push
