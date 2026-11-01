@@ -16,6 +16,7 @@ export interface ComposerAttachment {
 export const $composerDraft = atom('')
 export const $composerAttachments = atom<ComposerAttachment[]>([])
 export const $composerTerminalSelections = atom<Record<string, string>>({})
+export const $pendingComposerSeed = atom<string | null>(null)
 
 export function setComposerDraft(value: string) {
   $composerDraft.set(value)
@@ -49,6 +50,30 @@ export function appendComposerInline(value: string) {
 
 export function clearComposerDraft() {
   $composerDraft.set('')
+}
+
+// Text a view wants in the new-chat composer, for example before it navigates to
+// the new-chat route. The next new-chat composer that is enabled takes it, so the
+// text survives a composer that is still disabled or mounts late. A later queue
+// replaces an earlier one that has not been taken yet.
+export function queueComposerSeed(text: string) {
+  const value = text.trim()
+
+  if (value) {
+    $pendingComposerSeed.set(value)
+  }
+}
+
+export function takeComposerSeed(): string | null {
+  const value = $pendingComposerSeed.get()
+
+  $pendingComposerSeed.set(null)
+
+  return value
+}
+
+export function clearComposerSeed() {
+  $pendingComposerSeed.set(null)
 }
 
 export function addComposerAttachment(attachment: ComposerAttachment) {

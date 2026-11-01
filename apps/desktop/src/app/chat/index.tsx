@@ -7,7 +7,7 @@ import {
 import { useStore } from '@nanostores/react'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
-import { Suspense, useCallback, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { Thread } from '@/components/assistant-ui/thread'
@@ -20,7 +20,7 @@ import type { ChatMessage } from '@/lib/chat-messages'
 import { quickModelOptions, sessionTitle, toRuntimeMessage } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { cn } from '@/lib/utils'
-import type { ComposerAttachment } from '@/store/composer'
+import { clearComposerSeed, type ComposerAttachment } from '@/store/composer'
 import { $pinnedSessionIds } from '@/store/layout'
 import {
   $activeSessionId,
@@ -166,6 +166,14 @@ export function ChatView({
   const selectedSessionId = useStore($selectedStoredSessionId)
   const runtimeMessageCacheRef = useRef(new WeakMap<ChatMessage, ThreadMessage>())
   const isRoutedSessionView = Boolean(routeSessionId(location.pathname))
+
+  // A seed is meant for the new-chat composer only. Once a session route is shown,
+  // drop any seed that was not taken, so it cannot land in that session's draft.
+  useEffect(() => {
+    if (isRoutedSessionView) {
+      clearComposerSeed()
+    }
+  }, [isRoutedSessionView])
 
   const showIntro =
     freshDraftReady && !isRoutedSessionView && !selectedSessionId && !activeSessionId && messages.length === 0
@@ -326,6 +334,7 @@ export function ChatView({
           {showChatBar && (
             <Suspense fallback={<ChatBarFallback />}>
               <ChatBar
+                acceptsSeed={!isRoutedSessionView}
                 busy={busy}
                 cwd={currentCwd}
                 disabled={!gatewayOpen}
