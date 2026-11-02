@@ -239,7 +239,14 @@ def test_start_server_surfaces_nous_skip_reason_when_unconfigured(monkeypatch):
 
 
 def test_start_server_loopback_keeps_proxy_headers_off(monkeypatch):
-    """Loopback bind: proxy_headers stays False (no TLS terminator in front)."""
+    """Loopback bind: proxy_headers stays False (no TLS terminator in front).
+
+    PORT / RAILWAY_ENVIRONMENT mark a hosted platform and turn proxy_headers on,
+    so clear them: this test is about a plain local run, and must not depend on
+    the developer's shell having PORT exported.
+    """
+    monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT", raising=False)
     captured = _stub_uvicorn_run(monkeypatch)
     web_server.start_server(
         host="127.0.0.1", port=9119,
@@ -248,12 +255,19 @@ def test_start_server_loopback_keeps_proxy_headers_off(monkeypatch):
     assert captured["kwargs"].get("proxy_headers") is False
 
 
-def test_start_server_insecure_keeps_proxy_headers_off(monkeypatch):
-    """--insecure: gate stays off, proxy_headers stays off."""
+def test_start_server_insecure_public_bind_trusts_proxy_headers(monkeypatch):
+    """--insecure on a public bind: gate stays off, proxy_headers is on.
+
+    Hosted platforms (Render, Railway, Fly) put a TLS terminator in front of
+    this bind. Without proxy_headers the app sees http:// and framework
+    redirects come back as http:// URLs. Turning it on does not weaken the
+    WebSocket peer check: ``_ws_client_is_allowed`` allows any peer for a
+    non-loopback bind, so the forwarded address is never what grants access.
+    """
     captured = _stub_uvicorn_run(monkeypatch)
     web_server.start_server(
         host="0.0.0.0", port=9119,
         open_browser=False, allow_public=True,
     )
     assert web_server.app.state.auth_required is False
-    assert captured["kwargs"].get("proxy_headers") is False
+    assert captured["kwargs"].get("proxy_headers") is True

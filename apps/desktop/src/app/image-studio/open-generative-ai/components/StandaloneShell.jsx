@@ -790,7 +790,7 @@ export default function StandaloneShell() {
         <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-3 select-none">
           {/* Left: Logo */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
-            <img src="/logo.png" alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
+            <img src={`${import.meta.env.BASE_URL}apple-touch-icon.png`} alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
             <span className="text-sm font-bold tracking-tight hidden xl:block text-white">
               TchuekaM Studio
             </span>

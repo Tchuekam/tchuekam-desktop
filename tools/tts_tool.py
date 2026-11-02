@@ -94,6 +94,25 @@ def _import_edge_tts():
     import edge_tts
     return edge_tts
 
+def _edge_tts_usable_without_install() -> bool:
+    """True if Edge TTS works now, or will be installed when speech is requested.
+
+    ``check_tts_requirements`` is the ``text_to_speech`` tool's ``check_fn``, so
+    it runs while the agent's tool list is built, on the first turn of a fresh
+    install. It must never run pip: ``_import_edge_tts`` does, and that held the
+    first message for ~45s. The install still happens, but at the point speech
+    is actually generated (see ``_import_edge_tts`` callers), not here.
+    """
+    try:
+        from tools.lazy_deps import _allow_lazy_installs, is_available
+    except ImportError:
+        # No lazy-install machinery: only an already-importable package counts.
+        import importlib.util
+
+        return importlib.util.find_spec("edge_tts") is not None
+    return is_available("tts.edge") or _allow_lazy_installs()
+
+
 def _import_elevenlabs():
     """Lazy import ElevenLabs client. Returns the class or raises ImportError.
 
@@ -2163,11 +2182,8 @@ def check_tts_requirements() -> bool:
     # Any configured command provider counts as available.
     if _has_any_command_tts_provider():
         return True
-    try:
-        _import_edge_tts()
+    if _edge_tts_usable_without_install():
         return True
-    except ImportError:
-        pass
     try:
         _import_elevenlabs()
         if get_env_value("ELEVENLABS_API_KEY"):
