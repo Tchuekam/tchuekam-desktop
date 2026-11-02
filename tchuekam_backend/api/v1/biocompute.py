@@ -96,7 +96,7 @@ async def run_playground_experiment(
 
     elif backend == "digital_reservoir":
         res = ReservoirModel(backend=DigitalReservoir(n_units=100, seed=42))
-        res_state = res._states(features.reshape(1, -1))[0]
+        res_state = res.state_for(features)
         total_spikes = int(np.abs(res_state).sum() * 5)
 
         raster_spikes = [

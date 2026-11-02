@@ -15,3 +15,8 @@ python-dotenv>=1.0.0,<2.0.0
 jinja2>=3.1.0,<4.0.0
 starlette>=0.37.0,<1.1.0
 numpy>=1.24.0,<3.0.0
+# BioCompute endpoints (tchuekam_backend/api/v1/biocompute.py): the model layers
+# import scikit-learn and the signal pipeline imports scipy at call time, so a
+# deploy without them starts fine and then 500s on those routes.
+scipy>=1.17.1,<2.0.0
+scikit-learn>=1.9.0,<2.0.0

@@ -200,6 +200,22 @@ class ReservoirModel(Model):
             out[i] = state
         return out
 
+    def state_for(self, x) -> np.ndarray:
+        """Final reservoir state for one feature vector, with no trained readout.
+
+        For inspecting what the reservoir does to an input (e.g. the playground).
+        Builds the input encoder the same way `fit` does if it does not exist yet,
+        so it works on an unfitted model. `fit` replaces the encoder, so calling
+        this first never changes what a later `fit` produces.
+        """
+        x = np.asarray(x, dtype=np.float64).reshape(1, -1)
+        if self._encoder is None:
+            self._encoder = InputEncoder(
+                n_inputs=x.shape[1], n_reservoir=self.backend.state_dim,
+                scale=1.0, seed=self.seed
+            )
+        return self._states(x)[0]
+
     def fit(self, X, y):
         from sklearn.linear_model import RidgeClassifier
 
