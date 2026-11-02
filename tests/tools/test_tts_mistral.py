@@ -204,7 +204,7 @@ class TestCheckTtsRequirementsMistral:
         from tools.tts_tool import check_tts_requirements
 
         monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
-        with patch("tools.tts_tool._import_edge_tts", side_effect=ImportError), \
+        with patch("tools.tts_tool._edge_tts_usable_without_install", return_value=False), \
              patch("tools.tts_tool._import_elevenlabs", side_effect=ImportError), \
              patch("tools.tts_tool._import_openai_client", side_effect=ImportError), \
              patch("tools.tts_tool._check_neutts_available", return_value=False):
@@ -213,7 +213,7 @@ class TestCheckTtsRequirementsMistral:
     def test_mistral_key_missing_returns_false(self, mock_mistral_module):
         from tools.tts_tool import check_tts_requirements
 
-        with patch("tools.tts_tool._import_edge_tts", side_effect=ImportError), \
+        with patch("tools.tts_tool._edge_tts_usable_without_install", return_value=False), \
              patch("tools.tts_tool._import_elevenlabs", side_effect=ImportError), \
              patch("tools.tts_tool._import_openai_client", side_effect=ImportError), \
              patch("tools.tts_tool._check_neutts_available", return_value=False), \
