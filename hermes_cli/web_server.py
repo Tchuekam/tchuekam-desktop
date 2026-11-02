@@ -8569,12 +8569,19 @@ def start_server(
             )
 
     print(f"  TchuekaM Web UI → http://{host}:{port}")
-    # proxy_headers defaults to False so _ws_client_is_allowed sees the real
-    # connection peer rather than X-Forwarded-For's rewritten value (which
-    # would defeat the loopback gate when behind a reverse proxy).  When the
-    # OAuth gate is active we are explicitly running behind a TLS terminator
-    # (Fly.io) and need X-Forwarded-Proto to decide cookie Secure flags, so
-    # we flip proxy_headers on for that mode.
+    # proxy_headers is False for a plain local run, so _ws_client_is_allowed sees
+    # the real connection peer rather than X-Forwarded-For's rewritten value
+    # (which would defeat the loopback gate behind a reverse proxy).  It is on
+    # wherever a TLS terminator is expected in front of us:
+    #   * the OAuth gate is active -- X-Forwarded-Proto decides cookie Secure
+    #     flags, and the audit log wants the real client IP;
+    #   * --insecure on a public bind, or a hosting platform that sets PORT /
+    #     RAILWAY_ENVIRONMENT -- so redirects keep https and logs carry the
+    #     real client IP.
+    # The loopback peer check is skipped for the gated and non-loopback cases
+    # (see _ws_client_is_allowed), so a spoofed X-Forwarded-For does not grant
+    # access there.  Note PORT also matches a loopback bind in a shell that
+    # exports it; only local processes can reach that bind either way.
     uvicorn.run(
         app,
         host=host,
