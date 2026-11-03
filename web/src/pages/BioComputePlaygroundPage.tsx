@@ -2,22 +2,15 @@ import React, { useState } from "react";
 import {
   Activity,
   Brain,
-  CheckCircle2,
-  Cpu,
-  Database,
-  Download,
-  FileCode,
-  Flame,
   Layers,
   Play,
   RotateCcw,
   Sparkles,
   Upload,
-  Zap,
 } from "lucide-react";
 
 interface RasterSpike {
-  channel: int;
+  channel: number;
   time_ms: number;
 }
 

@@ -10,7 +10,7 @@ const POSTHOG_HOST = "https://us.i.posthog.com";
 let distinctId = "";
 let isEnabled = true;
 
-function getDistinctId(): str {
+function getDistinctId(): string {
   if (distinctId) return distinctId;
   const storageKey = "tchuekam_posthog_distinct_id";
   try {
@@ -47,7 +47,7 @@ export function initPostHog(): void {
   }
 }
 
-export function trackEvent(eventName: str, properties: Record<string, any> = {}): void {
+export function trackEvent(eventName: string, properties: Record<string, any> = {}): void {
   if (!isEnabled) return;
   try {
     const payload = {
