@@ -81,6 +81,7 @@ def test_processing_steps_record_params():
 
 
 def test_hdf5_roundtrip_preserves_everything(tmp_path):
+    pytest.importorskip("h5py")
     layout = ChannelLayout(
         provider="simulator", device_id="d", mea_index=0, geometry="test",
         electrodes=[ElectrodePosition(0, 0.0, 0.0, label="00"),

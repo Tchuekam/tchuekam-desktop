@@ -25,7 +25,7 @@ const customRules = {
 
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', 'src/**/*.js']
+    ignores: ['**/node_modules/**', '**/dist/**', '**/dist-web/**', 'src/**/*.js', 'src/app/image-studio/open-generative-ai/**']
   },
   js.configs.recommended,
   {

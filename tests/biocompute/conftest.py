@@ -25,9 +25,11 @@ import pytest
 if importlib.util.find_spec("numpy") is None:  # pragma: no cover - env-dependent
     collect_ignore_glob = ["test_*.py"]
 
-import numpy as np  # noqa: E402
-
-from biocompute.providers.simulator.adapter import SimulatorProvider  # noqa: E402
+    def pytest_ignore_collect(collection_path, config):
+        return True
+else:
+    import numpy as np  # noqa: E402
+    from biocompute.providers.simulator.adapter import SimulatorProvider  # noqa: E402
 
 
 @pytest.fixture

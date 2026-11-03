@@ -401,6 +401,8 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "kimi-k2.5",
         "glm-5.1",
         "glm-5",
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
         "mimo-v2.5-pro",
         "mimo-v2.5",
         "mimo-v2-pro",

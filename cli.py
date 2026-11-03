@@ -631,6 +631,7 @@ def validate_toolset(*args, **kwargs):
     return _validate_toolset(*args, **kwargs)
 
 
+from hermes_cli.callbacks import prompt_for_secret
 from hermes_cli.cli_helpers import (
     _sync_process_session_id,
     get_job,
@@ -2945,7 +2946,7 @@ class HermesCLI:
         if not txt:
             return ""
         t0 = getattr(self, "_tool_start_time", 0) or 0
-        if t0 > 0:
+        if t0 != 0:
             elapsed = time.monotonic() - t0
             if elapsed >= 60:
                 _m, _s = int(elapsed // 60), int(elapsed % 60)
