@@ -52,15 +52,49 @@ NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
 
 def _get_bundled_latest_mtime(bundled_dir: Path) -> float:
-    """Fast directory mtime probe of bundled skills."""
+    """Newest mtime anywhere under the bundled skills tree.
+
+    Used by ``sync_skills``' quiet fast-path to decide whether anything could
+    have changed since the last successful sync, so it has to notice *content*
+    edits, not just added/removed entries.
+
+    This used to stat only ``bundled_dir`` and its immediate subdirectories.
+    Skills live two levels down (``skills/<category>/<skill>/SKILL.md``), so
+    the probe never saw a skill directory, let alone its files — and a
+    directory's mtime only moves when an entry is added, removed or renamed,
+    never when a file's contents are rewritten in place. The result was that
+    editing an existing bundled SKILL.md left every mtime identical, the
+    fast-path reported "nothing to do", and the update never reached users.
+
+    Walks files as well as directories: ~1.7k stats for the shipped tree,
+    measured at ~6 ms warm. More than the old two-level probe, but still well
+    under the content hashing of every skill that this fast-path exists to
+    skip — and the old probe was simply answering the wrong question.
+    """
     try:
-        mtimes = [bundled_dir.stat().st_mtime]
-        for p in bundled_dir.iterdir():
-            if p.is_dir():
-                mtimes.append(p.stat().st_mtime)
-        return max(mtimes)
+        newest = bundled_dir.stat().st_mtime
     except OSError:
         return 0.0
+    # scandir rather than os.walk + os.stat: the directory scan already
+    # carries each entry's metadata, so DirEntry.stat() avoids a second
+    # path resolution per entry.
+    stack = [str(bundled_dir)]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as entries:
+                for entry in entries:
+                    try:
+                        mtime = entry.stat(follow_symlinks=False).st_mtime
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if mtime > newest:
+                        newest = mtime
+                    if is_dir:
+                        stack.append(entry.path)
+        except OSError:
+            continue
+    return newest
 
 
 def _get_bundled_dir() -> Path:
@@ -525,6 +559,12 @@ def sync_skills(quiet: bool = False, force: bool = False) -> dict:
     user_modified = []
     suppressed_skipped: List[str] = []
     skipped = 0
+    # Set when a copy/update raises. A failed skill is deliberately left out
+    # of the manifest so the next sync retries it — but the quiet fast-path
+    # below keys off (bundled mtime, manifest mtime), neither of which changes
+    # on a failure, so writing the stamp anyway made the retry unreachable and
+    # the skill silently absent until something else invalidated the stamp.
+    had_failures = False
 
     for skill_name, skill_src in bundled_skills:
         # Curator-pruned built-ins: do not re-seed. The suppression list
@@ -570,6 +610,7 @@ def sync_skills(quiet: bool = False, force: bool = False) -> dict:
                     if not quiet:
                         print(f"  + {skill_name}")
             except (OSError, IOError) as e:
+                had_failures = True
                 if not quiet:
                     print(f"  ! Failed to copy {skill_name}: {e}")
                 # Do NOT add to manifest — next sync should retry
@@ -620,6 +661,7 @@ def sync_skills(quiet: bool = False, force: bool = False) -> dict:
                             shutil.move(str(backup), str(dest))
                         raise
                 except (OSError, IOError) as e:
+                    had_failures = True
                     if not quiet:
                         print(f"  ! Failed to update {skill_name}: {e}")
             else:
@@ -646,14 +688,23 @@ def sync_skills(quiet: bool = False, force: bool = False) -> dict:
                 logger.debug("Could not copy %s: %s", desc_md, e)
 
     _write_manifest(manifest)
+    # Only stamp a clean run. Stamping after a failure arms the quiet
+    # fast-path above and strands whatever did not copy: the failed skill is
+    # kept out of the manifest so the next sync retries it, but neither the
+    # bundled mtime nor the manifest mtime changes on a failure, so the
+    # fast-path would return "nothing to do" forever. Drop any existing stamp
+    # too, so a previously-clean run can't keep the fast-path armed.
     try:
-        stamp_data = {
-            "bundled_path": str(bundled_dir),
-            "bundled_mtime": _get_bundled_latest_mtime(bundled_dir),
-            "manifest_mtime": MANIFEST_FILE.stat().st_mtime if MANIFEST_FILE.exists() else 0.0,
-            "total_bundled": len(bundled_skills),
-        }
-        SYNC_STAMP_FILE.write_text(json.dumps(stamp_data), encoding="utf-8")
+        if had_failures:
+            SYNC_STAMP_FILE.unlink(missing_ok=True)
+        else:
+            stamp_data = {
+                "bundled_path": str(bundled_dir),
+                "bundled_mtime": _get_bundled_latest_mtime(bundled_dir),
+                "manifest_mtime": MANIFEST_FILE.stat().st_mtime if MANIFEST_FILE.exists() else 0.0,
+                "total_bundled": len(bundled_skills),
+            }
+            SYNC_STAMP_FILE.write_text(json.dumps(stamp_data), encoding="utf-8")
     except Exception:
         pass
     optional_provenance_backfilled = _backfill_optional_provenance(quiet=quiet)

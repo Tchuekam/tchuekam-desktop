@@ -2002,13 +2002,20 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
                 continue
             sub_tokens = [k.strip() for k in re.split(r"[\n,;]+", token) if k.strip()]
             for idx, sub_token in enumerate(sub_tokens):
-                if any(e.access_token == sub_token for e in entries):
-                    continue
                 source = f"env:{env_var}" if len(sub_tokens) == 1 else f"env:{env_var}:{idx+1}"
                 lbl = env_var if len(sub_tokens) == 1 else f"{env_var}#{idx+1}"
                 if _is_source_suppressed(provider, source):
                     continue
+                # Mark the source live BEFORE the dedupe check below. The var
+                # is exported either way, and _prune_stale_seeded_entries()
+                # deletes any borrowed-source entry whose source is not in
+                # active_sources. Skipping the add on the dedupe path meant a
+                # legacy pool entry still holding a raw access_token equal to
+                # the current env value was pruned instead of sanitized —
+                # i.e. upgrading silently dropped the credential.
                 active_sources.add(source)
+                if any(e.access_token == sub_token for e in entries):
+                    continue
                 changed |= _upsert_entry(
                     entries,
                     provider,
@@ -2052,13 +2059,15 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
             continue
         sub_tokens = [k.strip() for k in re.split(r"[\n,;]+", token) if k.strip()]
         for idx, sub_token in enumerate(sub_tokens):
-            if any(e.access_token == sub_token for e in entries):
-                continue
             source = f"env:{env_var}" if len(sub_tokens) == 1 else f"env:{env_var}:{idx+1}"
             lbl = env_var if len(sub_tokens) == 1 else f"{env_var}#{idx+1}"
             if _is_source_suppressed(provider, source):
                 continue
+            # Mark live before the dedupe check — see the openrouter loop
+            # above for why the ordering matters.
             active_sources.add(source)
+            if any(e.access_token == sub_token for e in entries):
+                continue
             auth_type = AUTH_TYPE_OAUTH if provider == "anthropic" and not sub_token.startswith("sk-ant-api") else AUTH_TYPE_API_KEY
             base_url = env_url or pconfig.inference_base_url
             if provider == "kimi-coding":
