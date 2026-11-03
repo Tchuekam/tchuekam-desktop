@@ -229,6 +229,7 @@ export const draftModelNameFromArg = (value: string) => {
 
     if (part === '--provider') {
       i++
+
       continue
     }
 
@@ -361,7 +362,9 @@ export function ActiveSessionSwitcher({
           includeHistory ? gw.request<SessionListResponse>('session.list', { limit: 200 }) : Promise.resolve(null)
         ])
         
-        if (signal?.aborted) return []
+        if (signal?.aborted) {
+          return []
+        }
         
         const r = liveRes.status === 'fulfilled' ? asRpcResult<SessionActiveListResponse>(liveRes.value) : null
 
@@ -764,6 +767,7 @@ export function ActiveSessionSwitcher({
         if (kind === 'history') {
           const h = history[i - 1 - items.length]!
           const pendingDelete = confirmDelete === h.id
+
           const title = pendingDelete
             ? 'press d again to delete'
             : deleting && selected

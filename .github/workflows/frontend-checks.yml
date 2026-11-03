@@ -1,0 +1,126 @@
+name: Frontend Checks
+
+# The TypeScript surfaces had no CI at all — lint.yml is ruff + ty, tests.yml is
+# pytest, and the only workflows that touch npm either build the docs site or
+# produce release artifacts. So `npm run test:ui` and `npm run lint` in
+# apps/desktop, and `npm test` in ui-tui, were all red on main with nobody
+# seeing it. This job runs them.
+#
+# Scoped with `paths` because a cold `npm ci` on this workspace is a couple of
+# minutes. If this is ever promoted to a required status check, drop the paths
+# filter and gate the steps instead — a path-filtered workflow leaves required
+# checks pending forever when no matching file changes, which is the trap
+# contributor-check.yml documents.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/shared/**'
+      - 'ui-tui/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/frontend-checks.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/shared/**'
+      - 'ui-tui/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/frontend-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: desktop (tsc + eslint + vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Root install, not apps/desktop: the desktop app is an npm workspace and
+      # scripts/assert-root-install.cjs fails the build when it is installed
+      # standalone.
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+        working-directory: apps/desktop
+
+      - name: Lint
+        run: npm run lint
+        working-directory: apps/desktop
+
+      # Renderer tests (jsdom). The electron/ and scripts/ *.test.cjs files are
+      # node:test suites and are excluded from vitest — they run in the next
+      # step via `node --test`.
+      - name: Renderer tests
+        run: npm run test:ui
+        working-directory: apps/desktop
+
+      - name: Main-process + build-stamp tests
+        run: npm run test:desktop:platforms
+        working-directory: apps/desktop
+
+  shared:
+    name: shared (tsc)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+        working-directory: apps/shared
+
+  tui:
+    name: ui-tui (tsc + eslint + vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+        working-directory: ui-tui
+
+      - name: Lint
+        run: npm run lint
+        working-directory: ui-tui
+
+      # `npm test` builds packages/hermes-ink first, which the suite imports.
+      - name: Tests
+        run: npm test
+        working-directory: ui-tui

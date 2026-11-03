@@ -76,6 +76,7 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
               `tail=${JSON.stringify(acc.slice(-30))}`
           ).toEqual(expected)
         }
+
         checked += 1
       }
     }
