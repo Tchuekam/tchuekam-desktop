@@ -1428,8 +1428,14 @@ class AIAgent:
         ``...tool, user, user`` — a protocol-invalid sequence that most
         providers silently reject (returns empty content), causing the
         empty-retry loop to fire forever. See #<TBD>.
+
+        Mutates ``messages`` in place and returns it. In-place is the contract
+        two of the three call sites rely on: both
+        ``agent/conversation_loop.py`` sites discard the return value, so while
+        this operated on a private ``list(messages)`` copy the scaffolding was
+        never actually removed from the live transcript — leaving the sentinel
+        in context for the next turn, which is the loop this exists to break.
         """
-        messages = list(messages)
         # Pass 1: strip the flagged scaffolding messages themselves.
         dropped_scaffolding = False
         while (

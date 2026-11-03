@@ -7,7 +7,12 @@ def test_format_banner_version_label_without_git_state():
     with patch.object(banner, "get_git_banner_state", return_value=None):
         value = banner.format_banner_version_label()
 
-    assert value == f"Hermes Agent v{banner.VERSION} ({banner.RELEASE_DATE})"
+    # Brand-agnostic on purpose: what this test owns is "no git decoration is
+    # appended when there is no git state". Pinning the product name made it a
+    # snapshot of the brand string, which the rebrand then broke; the sibling
+    # tests below already assert structurally.
+    assert value.endswith(f"v{banner.VERSION} ({banner.RELEASE_DATE})")
+    assert "·" not in value, f"unexpected git decoration in {value!r}"
 
 
 def test_format_banner_version_label_on_upstream_main():
