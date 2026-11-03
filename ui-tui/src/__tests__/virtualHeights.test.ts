@@ -20,8 +20,14 @@ describe('virtual height estimates', () => {
   it('uses compound user prompt width when estimating user message wrapping', () => {
     const msg: Msg = { role: 'user', text: 'x'.repeat(21) }
 
-    expect(estimatedMsgHeight(msg, 26, { compact: false, details: false, userPrompt: '❯' })).toBe(3)
-    expect(estimatedMsgHeight(msg, 26, { compact: false, details: false, userPrompt: 'Ψ >' })).toBe(4)
+    // 28 columns, not 26: transcriptBodyWidth floors the body at 20 columns,
+    // and at 26 that floor binds for BOTH prompts (26 - 2 - 4 = 20 and
+    // 26 - 4 - 4 = 18 -> 20), so the two cases came out identical and the
+    // assertion could not show the prompt width mattering at all. At 28 the
+    // narrow prompt gets 22 columns and fits on one row, while the compound
+    // prompt lands exactly on the 20-column floor and wraps.
+    expect(estimatedMsgHeight(msg, 28, { compact: false, details: false, userPrompt: '❯' })).toBe(3)
+    expect(estimatedMsgHeight(msg, 28, { compact: false, details: false, userPrompt: 'Ψ >' })).toBe(4)
   })
 
   it('adds one row for a group-boundary lead gap', () => {

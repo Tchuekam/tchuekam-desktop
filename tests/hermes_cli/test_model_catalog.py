@@ -23,6 +23,24 @@ def isolated_home(tmp_path, monkeypatch):
     import importlib
     from hermes_cli import model_catalog
     importlib.reload(model_catalog)
+
+    # The ``model_catalog`` block ships disabled — DEFAULT_CONFIG in
+    # hermes_cli/config.py sets ``enabled: False`` — and ``get_catalog()``
+    # returns {} on that check before it ever reaches ``_fetch_manifest``.
+    # These tests are about the fetch / cache / fallback behaviour itself,
+    # so turn the feature on explicitly instead of inheriting whatever the
+    # shipped default happens to be.
+    monkeypatch.setattr(
+        model_catalog,
+        "_load_catalog_config",
+        lambda: {
+            "enabled": True,
+            "url": model_catalog.DEFAULT_CATALOG_URL,
+            "ttl_hours": float(model_catalog.DEFAULT_TTL_HOURS),
+            "providers": {},
+        },
+    )
+
     yield home
     model_catalog.reset_cache()
 

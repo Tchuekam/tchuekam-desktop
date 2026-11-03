@@ -53,7 +53,10 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
     //
     // Pre-fix: this failed on most narrow widths because the hand-rolled
     // wrap algorithm broke at slightly different points than wrap-ansi.
-    for (const cols of [40, 50, 55, 60, 65, 70, 80]) {
+    const widths = [40, 50, 55, 60, 65, 70, 80]
+    let checked = 0
+
+    for (const cols of widths) {
       let acc = ''
 
       for (const ch of USER_REPORT_MESSAGE) {
@@ -61,13 +64,25 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
         const layout = cursorLayout(acc, acc.length, cols)
         const expected = wrapAnsiEnd(acc, cols)
 
-        expect(
-          layout,
-          `mismatch at cols=${cols}, len=${acc.length}, last-char=${JSON.stringify(ch)}, ` +
-            `tail=${JSON.stringify(acc.slice(-30))}`
-        ).toEqual(expected)
+        // Compare the two fields directly and only reach for `expect` when
+        // they disagree. Calling expect().toEqual() on all ~4000 prefixes —
+        // each with an eagerly built failure message and two JSON.stringify
+        // calls that were thrown away on success — is what pushed this past
+        // vitest's 5s default timeout.
+        if (layout.line !== expected.line || layout.column !== expected.column) {
+          expect(
+            layout,
+            `mismatch at cols=${cols}, len=${acc.length}, last-char=${JSON.stringify(ch)}, ` +
+              `tail=${JSON.stringify(acc.slice(-30))}`
+          ).toEqual(expected)
+        }
+        checked += 1
       }
     }
+
+    // Guard against the loop silently going vacuous (e.g. an empty message
+    // constant), which would make the comparison above assert nothing.
+    expect(checked).toBe(widths.length * [...USER_REPORT_MESSAGE].length)
   })
 
   it('keeps cursor on the same row when text exactly fills the terminal width', () => {
