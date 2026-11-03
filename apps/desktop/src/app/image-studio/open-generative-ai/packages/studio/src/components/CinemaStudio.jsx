@@ -229,7 +229,7 @@ function ScrollColumn({ title, items, columnKey, value, onChange }) {
     }, 100);
 
     return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   const handleScroll = useCallback(() => {
     const list = listRef.current;
@@ -641,7 +641,7 @@ export default function CinemaStudio({
 
   useEffect(() => {
     setCanvasUrl(history[0]?.url || null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [historyItems]);
 
   const formatSummaryValue = () =>

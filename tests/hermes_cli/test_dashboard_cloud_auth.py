@@ -29,7 +29,12 @@ def _run_cmd_dashboard(args, env):
     def fake_start_server(**kwargs):
         captured.update(kwargs)
 
+    # _build_web_ui must be stubbed too: cmd_dashboard calls it before
+    # start_server whenever HERMES_WEB_DIST is unset, and it shells out to a
+    # real `npm ci` in web/. That took minutes (or hung past the per-file
+    # timeout) and is irrelevant to what these tests assert.
     with mock.patch.dict("os.environ", env, clear=False), \
+         mock.patch("hermes_cli.main._build_web_ui", return_value=True), \
          mock.patch("hermes_cli.web_server.start_server", fake_start_server), \
          mock.patch("hermes_cli.plugins.discover_plugins", lambda: None):
         cli_main.cmd_dashboard(args)

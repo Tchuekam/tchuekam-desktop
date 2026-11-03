@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { lazy, Suspense } from 'react'
 
 const StandaloneShellComponent = lazy(
   // @ts-expect-error JS/JSX module without TypeScript declaration file

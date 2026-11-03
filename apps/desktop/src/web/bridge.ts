@@ -81,6 +81,7 @@ async function buildWsUrl(baseUrl: string): Promise<string> {
       path: '/api/auth/ws-ticket',
       method: 'POST'
     })
+
     query = `?ticket=${encodeURIComponent(minted.ticket)}`
   } else if (webConfig.token) {
     query = `?token=${encodeURIComponent(webConfig.token)}`

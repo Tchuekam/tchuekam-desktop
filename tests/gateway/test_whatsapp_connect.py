@@ -64,6 +64,12 @@ def _make_adapter():
     adapter._auto_tts_disabled_chats = set()
     adapter._message_queue = asyncio.Queue()
     adapter._http_session = None
+    adapter._shutting_down = False
+    # Text debounce batching state. __init__ sets these; disconnect() cancels
+    # and clears them, so a fixture that bypasses __init__ has to supply them
+    # or every disconnect() path dies with AttributeError.
+    adapter._pending_text_batches = {}
+    adapter._pending_text_batch_tasks = {}
     return adapter
 
 
