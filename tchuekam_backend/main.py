@@ -2,6 +2,7 @@
 Point d'entrée principal de l'application FastAPI backend TchueKAM avec sécurité, middlewares et gestionnaire d'erreurs centralisé.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +25,11 @@ from tchuekam_backend.domain.schemas import APIResponse
 from tchuekam_backend.services.rbac_service import RbacService
 
 
+import logging
+
+logger = logging.getLogger("tchuekam_backend.main")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Lifecycle Startup: Initialisation DB et seeding RBAC
@@ -34,9 +40,42 @@ async def lifespan(app: FastAPI):
         rbac_service.seed_default_roles_and_permissions()
     finally:
         db.close()
+
+    # Start Telegram / Hermes Gateway if configured
+    gateway_runner = None
+    gateway_task = None
+    if settings.TELEGRAM_BOT_TOKEN:
+        try:
+            from hermes_cli.env_loader import load_hermes_dotenv
+            load_hermes_dotenv()
+            from gateway.config import load_gateway_config
+            from gateway.run import GatewayRunner
+            gw_config = load_gateway_config()
+            gateway_runner = GatewayRunner(config=gw_config)
+
+            async def _start_gateway_async():
+                try:
+                    started = await gateway_runner.start()
+                    if started:
+                        logger.info("Telegram Bot Gateway (TchuekamCloudbot) connected and started successfully.")
+                    else:
+                        logger.warning("Telegram Bot Gateway failed to start during lifespan.")
+                except Exception as ex:
+                    logger.error(f"Error connecting Telegram Bot Gateway: {ex}", exc_info=True)
+
+            gateway_task = asyncio.create_task(_start_gateway_async())
+        except Exception as e:
+            logger.error(f"Error initializing Telegram Bot Gateway in lifespan: {e}", exc_info=True)
+
     yield
+
     # Lifecycle Shutdown
-    pass
+    if gateway_runner:
+        try:
+            await gateway_runner.stop()
+            logger.info("Telegram Bot Gateway stopped cleanly.")
+        except Exception as e:
+            logger.error(f"Error stopping Telegram Bot Gateway: {e}")
 
 
 app = FastAPI(

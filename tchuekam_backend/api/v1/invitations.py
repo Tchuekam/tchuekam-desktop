@@ -20,15 +20,35 @@ from tchuekam_backend.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/invitations", tags=["Invitations & Onboarding"])
 
+#: Hiérarchie des rôles d'organisation, du moins au plus privilégié.
+_ORG_ROLE_RANK = {"VIEWER": 1, "MEMBER": 2, "ADMIN": 3, "OWNER": 4}
+
 
 @router.post("", response_model=InvitationResponseSchema, status_code=status.HTTP_201_CREATED)
 def invite_member(
     payload: InvitationCreateSchema,
     org: Organization = Depends(get_current_org),
     current_user: User = Depends(get_current_user),
-    _role=Depends(require_org_role(["OWNER", "ADMIN"])),
+    membership=Depends(require_org_role(["OWNER", "ADMIN"])),
     db: Session = Depends(get_db),
 ):
+    # Un invitant ne peut pas accorder un rôle supérieur au sien.
+    # ``add_org_member`` met à jour le rôle d'une adhésion existante : sans ce
+    # contrôle, un ADMIN s'invitait lui-même en OWNER et voyait son adhésion
+    # promue — élévation de privilèges verticale.
+    requested_role = (payload.role or "MEMBER").strip().upper()
+    if requested_role not in _ORG_ROLE_RANK:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Rôle d'organisation inconnu : '{payload.role}'.",
+        )
+    inviter_rank = _ORG_ROLE_RANK.get((membership.role or "").strip().upper(), 0)
+    if _ORG_ROLE_RANK[requested_role] > inviter_rank:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vous ne pouvez pas accorder un rôle supérieur au vôtre.",
+        )
+
     inv_service = InvitationService(db)
     success, msg, invitation, token = inv_service.create_invitation(
         org_id=org.id,

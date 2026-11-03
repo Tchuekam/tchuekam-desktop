@@ -12,10 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements-backend.txt ./
 RUN pip install --no-cache-dir -r requirements-backend.txt
 
-# Copy backend and biocompute modules
-COPY tchuekam_backend/ ./tchuekam_backend/
-COPY biocompute/ ./biocompute/
-COPY pyproject.toml ./
+# Copy application code and agent/gateway modules
+COPY . .
 
 # Environment defaults
 ENV PYTHONUNBUFFERED=1
