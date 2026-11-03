@@ -13,11 +13,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { triggerHaptic } from '@/lib/haptics'
 import { Volume2, VolumeX } from '@/lib/icons'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
 import { $fileBrowserOpen, $sidebarOpen, toggleFileBrowserOpen, toggleSidebarOpen } from '@/store/layout'
-
-import { IS_LOCKED_DEMO } from '@/lib/platform'
 
 import { PROFILES_ROUTE } from '../routes'
 

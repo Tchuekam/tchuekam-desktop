@@ -27,7 +27,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, Iterable, List, Optional, Tuple
 
 from tools.registry import discover_builtin_tools, registry
 from toolsets import resolve_toolset, validate_toolset
@@ -210,7 +210,31 @@ TOOLSET_REQUIREMENTS: Dict[str, dict] = registry.get_toolset_requirements()
 
 # Resolved tool names from the last get_tool_definitions() call.
 # Used by code_execution_tool to know which tools are available in this session.
+#
+# Thread-local on purpose: delegate_task runs subagents on worker threads, each
+# with its own toolset, so a process-global would let one child's resolution
+# leak into a sibling's `execute_code` / tool-search scope.
+#
+# The value lives at `.names`; never rebind this attribute to a plain list.
+# Doing so destroys the thread-local and makes every later write raise
+# `AttributeError: 'list' object has no attribute 'names'`, which kills
+# get_tool_definitions() for the rest of the process. Go through the
+# accessors below instead.
 _last_resolved_tool_names = threading.local()
+
+
+def get_last_resolved_tool_names() -> List[str]:
+    """Tool names resolved for the calling thread's most recent session.
+
+    Returns a fresh list (empty when this thread has never resolved tools),
+    so callers can keep it around without aliasing the thread-local.
+    """
+    return list(getattr(_last_resolved_tool_names, "names", None) or [])
+
+
+def set_last_resolved_tool_names(names: Optional[Iterable[str]]) -> None:
+    """Record the tool names resolved for the calling thread."""
+    _last_resolved_tool_names.names = list(names or [])
 
 
 # =============================================================================
@@ -313,8 +337,7 @@ def get_tool_definitions(
         if cached is not None:
             # Update _last_resolved_tool_names so downstream callers see
             # consistent state even on a cache hit.
-            global _last_resolved_tool_names
-            _last_resolved_tool_names.names = [t["function"]["name"] for t in cached]
+            set_last_resolved_tool_names(t["function"]["name"] for t in cached)
             # Return a shallow copy of the list but share the dict references —
             # schemas are treated as read-only by all known callers.
             return list(cached)
@@ -475,8 +498,7 @@ def _compute_tool_definitions(
         else:
             print("🛠️  No tools selected (all filtered out or unavailable)")
 
-    global _last_resolved_tool_names
-    _last_resolved_tool_names.names = [t["function"]["name"] for t in filtered_tools]
+    set_last_resolved_tool_names(t["function"]["name"] for t in filtered_tools)
 
     # Sanitize schemas for broad backend compatibility. llama.cpp's
     # json-schema-to-grammar converter (used by its OAI server to build
@@ -975,7 +997,11 @@ def handle_function_call(
         if function_name == "execute_code":
             # Prefer the caller-provided list so subagents can't overwrite
             # the parent's tool set via the process-global.
-            sandbox_enabled = enabled_tools if enabled_tools is not None else getattr(_last_resolved_tool_names, "names", [])
+            sandbox_enabled = (
+                enabled_tools
+                if enabled_tools is not None
+                else get_last_resolved_tool_names()
+            )
             result = registry.dispatch(
                 function_name, function_args,
                 task_id=task_id,

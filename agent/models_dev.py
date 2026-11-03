@@ -8,11 +8,21 @@ of 4000+ models across 109+ providers.  Provides:
   (reasoning, tools, vision, PDF, audio), modalities, knowledge cutoff,
   open-weights flag, family grouping, deprecation status
 
-Data resolution order (like TypeScript OpenCode):
-  1. Bundled snapshot (ships with the package — offline-first)
-  2. Disk cache (~/.hermes/models_dev_cache.json)
+Data resolution order (see ``fetch_models_dev``):
+  1. In-process cache, while under the 60 minute TTL
+  2. Disk cache (``$HERMES_HOME/models_dev_cache.json``) when fresh by mtime
   3. Network fetch (https://models.dev/api.json)
-  4. Background refresh every 60 minutes
+  4. On network failure, any disk cache at all — even stale
+
+There is NO bundled snapshot. This docstring used to claim one as step 1
+("ships with the package — offline-first"); no such file or loader exists.
+That matters for callers: on a cold cache with no network, every lookup here
+returns None, and capability-gated behaviour degrades silently rather than
+loudly. ``_main_model_supports_vision`` in agent/auxiliary_client.py, for
+instance, treats an unknown capability as "assume vision works", so an
+offline install routes images at a text-only model. Tests that depend on a
+specific capability must declare it (``model.supports_vision`` in
+config.yaml) instead of relying on the registry being reachable.
 
 Other modules should import the dataclasses and query functions from here
 rather than parsing the raw JSON themselves.

@@ -1,5 +1,5 @@
 declare module '@tabler/icons-react' {
-  import * as React from 'react';
+  import type * as React from 'react';
 
   export type IconProps = any;
   export type Icon = React.ComponentType<any>;

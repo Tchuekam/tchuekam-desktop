@@ -523,7 +523,9 @@ export function useMainApp(gw: GatewayClient) {
 
       gw.request<SessionActiveListResponse>('session.active_list', { current_session_id: getUiState().sid })
         .then(raw => {
-          if (signal.aborted) return
+          if (signal.aborted) {
+            return
+          }
           const result = asRpcResult<SessionActiveListResponse>(raw)
 
           if (result?.sessions) {

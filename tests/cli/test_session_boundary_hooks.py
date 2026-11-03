@@ -32,7 +32,10 @@ def test_session_finalize_on_reset(mock_invoke_hook):
 @patch("hermes_cli.plugins.invoke_hook")
 def test_session_finalize_on_cleanup(mock_invoke_hook):
     """Verify on_session_finalize fires during CLI exit cleanup."""
-    import cli as cli_mod
+    # cli.py re-exports _run_cleanup but the cleanup state (_active_agent_ref,
+    # _cleanup_done) lives in hermes_cli.cli_helpers, so the globals have to be
+    # set there — setting them on `cli` is a no-op.
+    import hermes_cli.cli_helpers as cli_mod
 
     mock_agent = MagicMock()
     mock_agent.session_id = "cleanup-session-id"

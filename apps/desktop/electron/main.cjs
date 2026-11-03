@@ -1425,7 +1425,11 @@ function shellQuote(value) {
 // (`hermes desktop --build-only`), then atomically swap the running .app bundle
 // with the freshly built one and relaunch. Degrades to "backend updated,
 // restart to load the new GUI" if the swap can't be performed.
-async function applyUpdatesPosixInApp(opts = {}) {
+// `_opts` is accepted so the signature matches applyUpdates(), but this path
+// honours no options yet: the only declared one, DesktopUpdateApplyOptions
+// .dirtyStrategy (src/global.d.ts), is unimplemented on every platform and no
+// caller passes it.
+async function applyUpdatesPosixInApp(_opts = {}) {
   const updateRoot = resolveUpdateRoot()
   const hermes = resolveHermesCliBinary(updateRoot)
   if (!hermes) {

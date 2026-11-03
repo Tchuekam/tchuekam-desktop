@@ -130,7 +130,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
         return [...missing, ...prev];
       });
     }
-  }, [initialUrls]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialUrls]);  
 
   // When maxImages changes, trim excess selections
   useEffect(() => {
@@ -142,7 +142,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
     if (fileInputRef.current) {
       fileInputRef.current.multiple = maxImages > 1;
     }
-  }, [maxImages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [maxImages]);  
 
   const fireOnSelect = useCallback(
     (entries) => {

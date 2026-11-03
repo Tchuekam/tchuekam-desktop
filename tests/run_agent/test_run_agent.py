@@ -4717,7 +4717,9 @@ class TestSystemPromptStability:
         # Should have built fresh, not queried the DB
         mock_db.get_session.assert_not_called()
         assert agent._cached_system_prompt is not None
-        assert "Hermes Agent" in agent._cached_system_prompt
+        # Structural, not a brand snapshot: what matters here is that a real
+        # prompt was built rather than an empty/stored one being reused.
+        assert agent._cached_system_prompt.startswith("You are ")
 
     def test_fresh_build_when_db_has_no_prompt(self, agent):
         """If the session DB has no stored prompt, build fresh even with history."""
@@ -4744,7 +4746,9 @@ class TestSystemPromptStability:
                 agent._cached_system_prompt = agent._build_system_prompt()
 
         # Empty string is falsy, so should fall through to fresh build
-        assert "Hermes Agent" in agent._cached_system_prompt
+        # Structural, not a brand snapshot: what matters here is that a real
+        # prompt was built rather than an empty/stored one being reused.
+        assert agent._cached_system_prompt.startswith("You are ")
 
 class TestBudgetPressure:
     """Budget exhaustion grace call system."""

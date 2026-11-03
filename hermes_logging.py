@@ -353,7 +353,6 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
         # detect external rotation without an extra fstat per write.
         self._stat_dev: Optional[int] = None
         self._stat_ino: Optional[int] = None
-        self._last_stat_time = 0.0
         self._record_stream_stat()
 
     def _chmod_if_managed(self):
@@ -421,11 +420,18 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
                 pass
 
     def emit(self, record: logging.LogRecord) -> None:
-        now = time.monotonic()
-        if now - self._last_stat_time >= 1.0:
-            if self.stream is not None or os.path.exists(self.baseFilename):
-                self._reopen_if_externally_rotated()
-            self._last_stat_time = now
+        # Cheap-ish stat-per-record check; the kernel caches inode metadata
+        # so the syscall is sub-microsecond on a hot file — a small fraction
+        # of the formatting and write() this record already costs.
+        #
+        # 04bd5ad70 wrapped this in a 1-second throttle. That is not a safe
+        # trade here: it means up to a second of records keep going to the
+        # renamed inode after logrotate runs, which is precisely the
+        # "operator tails gateway.log and sees nothing" symptom this handler
+        # exists to prevent, and it silently broke the three
+        # TestExternalRotationRecovery regression tests.
+        if self.stream is not None or os.path.exists(self.baseFilename):
+            self._reopen_if_externally_rotated()
         super().emit(record)
 
     def _open(self):

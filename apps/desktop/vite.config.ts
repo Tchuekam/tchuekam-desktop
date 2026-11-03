@@ -75,15 +75,20 @@ export default defineConfig({
     testTimeout: 20000,
     hookTimeout: 20000,
     // Vitest covers the renderer (src/**). Exclude build artifacts, packaged
-    // release output, and bundled native-dep tests — and the electron/*.test.cjs
-    // suites, which run under Node's built-in test runner (`node --test`), not
-    // vitest. Without this, vitest globs thousands of stray *.test.js files.
+    // release output, and bundled native-dep tests — and the *.test.cjs suites
+    // under electron/ and scripts/, which run under Node's built-in test runner
+    // (`node --test`, see the test:desktop:platforms script), not vitest.
+    // Vitest finds no suite in a node:test file and fails the whole run, so
+    // missing one of those directories turns `npm run test:ui` red even when
+    // every renderer test passes. Without the rest, vitest globs thousands of
+    // stray *.test.js files out of build output.
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
       '**/build/**',
       '**/release/**',
       'electron/**',
+      'scripts/**',
       'src/app/image-studio/open-generative-ai/tests/**',
       '**/.{idea,git,cache,output,temp}/**'
     ]

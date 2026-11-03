@@ -153,6 +153,14 @@ class TestTextOnlyMainSkippedForVision:
 model:
   provider: deepseek
   default: deepseek-v4-pro
+  # Declare the text-only capability explicitly. Without it the premise of
+  # the test rests on models.dev having catalogued this model: the lookup
+  # returns None when the registry is unreachable (offline, air-gapped, or a
+  # cold cache), _main_model_supports_vision() then conservatively answers
+  # True, and the skip branch under test never runs. The override is the
+  # product's own documented mechanism (model.supports_vision), so this
+  # exercises the real code path without depending on a third-party registry.
+  supports_vision: false
 """)
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
         _fresh_modules()
@@ -241,6 +249,14 @@ auxiliary:
 model:
   provider: deepseek
   default: deepseek-v4-pro
+  # Declare the text-only capability explicitly. Without it the premise of
+  # the test rests on models.dev having catalogued this model: the lookup
+  # returns None when the registry is unreachable (offline, air-gapped, or a
+  # cold cache), _main_model_supports_vision() then conservatively answers
+  # True, and the skip branch under test never runs. The override is the
+  # product's own documented mechanism (model.supports_vision), so this
+  # exercises the real code path without depending on a third-party registry.
+  supports_vision: false
 """)
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
         _fresh_modules()
@@ -256,6 +272,14 @@ model:
 model:
   provider: deepseek
   default: deepseek-v4-pro
+  # Declare the text-only capability explicitly. Without it the premise of
+  # the test rests on models.dev having catalogued this model: the lookup
+  # returns None when the registry is unreachable (offline, air-gapped, or a
+  # cold cache), _main_model_supports_vision() then conservatively answers
+  # True, and the skip branch under test never runs. The override is the
+  # product's own documented mechanism (model.supports_vision), so this
+  # exercises the real code path without depending on a third-party registry.
+  supports_vision: false
 """)
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
         _fresh_modules()

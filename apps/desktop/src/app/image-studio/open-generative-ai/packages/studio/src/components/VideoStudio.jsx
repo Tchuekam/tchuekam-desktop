@@ -857,7 +857,7 @@ export default function VideoStudio({
   useEffect(() => {
     if (hasRestored.current) return;
     applyControlsForModel(defaultModel.id, false, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // ── close dropdown on outside click ─────────────────────────────────────

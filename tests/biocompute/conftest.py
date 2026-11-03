@@ -4,14 +4,30 @@ Everything here is generated from the seeded simulator, so the whole default tes
 suite runs offline and deterministically. Only tests explicitly marked
 `@pytest.mark.integration` touch the live FinalSpark service, and those are
 excluded by the project's default `addopts = -m 'not integration'`.
+
+These tests need the scientific stack from the optional `biocompute` extra
+(numpy, scipy, scikit-learn). CI installs it explicitly — see
+.github/workflows/tests.yml — so they really run there. On a checkout
+installed with only `.[all,dev]` the directory is skipped instead of failing
+collection with ImportError.
 """
 
 from __future__ import annotations
 
-import numpy as np
+import importlib.util
+
 import pytest
 
-from biocompute.providers.simulator.adapter import SimulatorProvider
+# Only consulted when pytest collects the directory, which is how a human
+# invokes it. `scripts/run_tests_parallel.py` names each file explicitly, and
+# pytest does not consult `collect_ignore*` for explicitly-named paths — that
+# path relies on CI having installed the extra.
+if importlib.util.find_spec("numpy") is None:  # pragma: no cover - env-dependent
+    collect_ignore_glob = ["test_*.py"]
+
+import numpy as np  # noqa: E402
+
+from biocompute.providers.simulator.adapter import SimulatorProvider  # noqa: E402
 
 
 @pytest.fixture

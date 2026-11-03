@@ -1,7 +1,7 @@
 let autoUpdater = null
 try {
   autoUpdater = require('electron-updater').autoUpdater
-} catch (err) {
+} catch {
   // electron-updater is not present or optional in this environment
 }
 
