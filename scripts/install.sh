@@ -1068,6 +1068,19 @@ show_manual_install_hint() {
 # Installation
 # ============================================================================
 
+# Clone $1 into $INSTALL_DIR.  A commit pin decides what gets checked out, so the
+# branch is only a hint then: `--branch <name>` fails outright when that branch
+# was never pushed or was deleted after merging (desktop builds are stamped with
+# whatever branch they were built on), which used to fail the whole install even
+# though the pin was fine.
+clone_into_install_dir() {
+    if [ -n "$INSTALL_COMMIT" ]; then
+        git clone "$1" "$INSTALL_DIR"
+    else
+        git clone --branch "$BRANCH" "$1" "$INSTALL_DIR"
+    fi
+}
+
 clone_repo() {
     log_info "Installing to $INSTALL_DIR..."
 
@@ -1086,8 +1099,12 @@ clone_repo() {
             fi
 
             git fetch origin
-            git checkout "$BRANCH"
-            git pull --ff-only origin "$BRANCH"
+            # A commit pin (applied below) decides what is checked out, so only
+            # follow the branch when nothing more specific was asked for.
+            if [ -z "$INSTALL_COMMIT" ]; then
+                git checkout "$BRANCH"
+                git pull --ff-only origin "$BRANCH"
+            fi
 
             if [ -n "$autostash_ref" ]; then
                 local restore_now="yes"
@@ -1131,12 +1148,12 @@ clone_repo() {
         # so SSH fails fast instead of hanging when no key is configured.
         log_info "Trying SSH clone..."
         if GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=5" \
-           git clone --branch "$BRANCH" "$REPO_URL_SSH" "$INSTALL_DIR" 2>/dev/null; then
+           clone_into_install_dir "$REPO_URL_SSH" 2>/dev/null; then
             log_success "Cloned via SSH"
         else
             rm -rf "$INSTALL_DIR" 2>/dev/null  # Clean up partial SSH clone
             log_info "SSH failed, trying HTTPS..."
-            if git clone --branch "$BRANCH" "$REPO_URL_HTTPS" "$INSTALL_DIR"; then
+            if clone_into_install_dir "$REPO_URL_HTTPS"; then
                 log_success "Cloned via HTTPS"
             else
                 log_error "Failed to clone repository"
@@ -1152,7 +1169,29 @@ clone_repo() {
         if ! git cat-file -e "$INSTALL_COMMIT^{commit}" 2>/dev/null; then
             git fetch origin "$INSTALL_COMMIT" || true
         fi
-        git checkout --detach "$INSTALL_COMMIT"
+        if git cat-file -e "$INSTALL_COMMIT^{commit}" 2>/dev/null; then
+            # The commit exists, so a checkout failure (local edits that
+            # conflict, ...) is a real error: let git's own message abort the
+            # install under set -e instead of pretending the pin was missing.
+            git checkout --detach "$INSTALL_COMMIT"
+        else
+            # An unpushed commit, a force-pushed-away commit or a typo must not
+            # fail the install: a working agent on the tip of the branch beats
+            # none.  The pin is a best effort, not a guarantee -- callers that
+            # need an exact revision must check `git rev-parse HEAD` afterwards.
+            log_warn "Pinned commit $INSTALL_COMMIT is not available from the remote; falling back to the tip of branch $BRANCH"
+            git fetch origin "$BRANCH" || true
+            if git checkout "$BRANCH"; then
+                # An existing install already has a local branch of that name
+                # and it is usually behind the remote: bring it to the tip, as
+                # the unpinned update path does.
+                if git symbolic-ref -q HEAD >/dev/null; then
+                    git pull --ff-only origin "$BRANCH" || log_warn "Could not fast-forward $BRANCH; leaving it on its current commit"
+                fi
+            else
+                log_warn "Could not check out branch $BRANCH (is it on the remote?); leaving the checkout where it is"
+            fi
+        fi
     fi
 
     log_success "Repository ready"

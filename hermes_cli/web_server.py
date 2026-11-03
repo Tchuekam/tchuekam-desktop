@@ -62,7 +62,7 @@ from utils import env_var_enabled
 try:
     from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 except ImportError:
@@ -74,7 +74,7 @@ except ImportError:
         _lazy_ensure("tool.dashboard", prompt=False)
         from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
         from fastapi.staticfiles import StaticFiles
         from pydantic import BaseModel
     except Exception:
@@ -8386,9 +8386,13 @@ def _mount_plugin_api_routes():
 
 # ---------------------------------------------------------------------------
 # Direct Application Download Endpoints
-# Direct self-hosted installer download for Windows, macOS, and Linux.
+# Installer download for Windows, macOS, and Linux: served from disk when this
+# server hosts the installer, otherwise redirected to the GitHub release asset.
 # ---------------------------------------------------------------------------
 
+# The file names are fixed by the electron-builder config in
+# apps/desktop/package.json, so a release built from it carries assets under
+# exactly these names (the macOS and Linux ones only once those are published).
 _DOWNLOAD_ASSETS = {
     "windows": {"filename": "TchueKAM-Setup.exe", "media_type": "application/x-msdownload"},
     "mac-arm64": {"filename": "TchueKAM-Mac-arm64.dmg", "media_type": "application/x-apple-diskimage"},
@@ -8396,11 +8400,20 @@ _DOWNLOAD_ASSETS = {
     "linux": {"filename": "TchueKAM-Linux.AppImage", "media_type": "application/x-executable"},
 }
 
+# Real installers are tens of megabytes.  A file far below this is a placeholder
+# or a failed download, and serving it as "TchueKAM-Setup.exe" is how users ended
+# up with an installer that would not open -- so it is never served.
+_MIN_INSTALLER_BYTES = 1_000_000
+
+# GitHub resolves releases/latest/download/<name> to the newest release's asset
+# of that name.  It has to be the public repo: a private one answers 404.
+_RELEASE_DOWNLOAD_BASE = "https://github.com/Tchuekam/tchuekam-desktop/releases/latest/download"
+
 
 @app.get("/api/download/{target}")
 @app.get("/downloads/{target}")
 async def download_installer_file(target: str):
-    """Direct application installer download without external redirects or GitHub links."""
+    """Serve the installer from disk, or send the visitor to the GitHub release asset."""
     key = target.lower().strip()
     if key in ("windows", "windows-64bit", "win", "exe", "setup"):
         asset = _DOWNLOAD_ASSETS["windows"]
@@ -8425,7 +8438,7 @@ async def download_installer_file(target: str):
     ]
 
     for p in search_paths:
-        if p.is_file() and p.stat().st_size > 0:
+        if p.is_file() and p.stat().st_size >= _MIN_INSTALLER_BYTES:
             return FileResponse(
                 path=str(p),
                 filename=filename,
@@ -8433,8 +8446,7 @@ async def download_installer_file(target: str):
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
-    cdn_url = f"https://github.com/Tchuekam/tchuekam-agent/releases/latest/download/{filename}"
-    return RedirectResponse(url=cdn_url, status_code=302)
+    return RedirectResponse(url=f"{_RELEASE_DOWNLOAD_BASE}/{filename}", status_code=302)
 
 
 

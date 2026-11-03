@@ -41,6 +41,20 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # electron-builder publishes to the release named after package.json's
+      # version, not after the tag that triggered this run. When they differ it
+      # uploads nothing and the job still passes, so fail early instead.
+      - name: Check the package version matches the release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "v${VERSION}" != "${RELEASE_TAG}" ]; then
+            echo "::error::apps/desktop/package.json says ${VERSION} but the release tag is ${RELEASE_TAG}. electron-builder publishes to v${VERSION}, so nothing would be attached to ${RELEASE_TAG}. Bump the version, commit, and tag again."
+            exit 1
+          fi
+
       - name: Install root dependencies
         run: npm install --no-audit --no-fund
 
