@@ -4177,6 +4177,15 @@ class AIAgent:
         """
         if base_url_host_matches(self._base_url_lower, "tchuekam.com"):
             return True
+        # Direct Nous Portal accepts `reasoning` for every model it serves, so
+        # it must not fall through to the OpenRouter model-prefix allowlist
+        # below — that allowlist is about what OpenRouter's *upstreams* reject
+        # and would silently drop reasoning for e.g. minimax on the Nous route.
+        # Reuse the canonical route check so the host list has one home.
+        from agent.conversation_loop import _is_nous_inference_route
+
+        if _is_nous_inference_route(self.provider, self.base_url):
+            return True
         if (
             base_url_host_matches(self._base_url_lower, "models.github.ai")
             or base_url_host_matches(self._base_url_lower, "api.githubcopilot.com")
