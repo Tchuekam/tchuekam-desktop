@@ -207,6 +207,7 @@
       ]
     },
     "dmg": {
+      "artifactName": "TchueKAM-Mac-${arch}.${ext}",
       "title": "Install Tchuekam",
       "backgroundColor": "#f5f5f7",
       "iconSize": 96,
@@ -246,7 +247,11 @@
         "rpm"
       ]
     },
+    "appImage": {
+      "artifactName": "TchueKAM-Linux.${ext}"
+    },
     "nsis": {
+      "artifactName": "TchueKAM-Setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,

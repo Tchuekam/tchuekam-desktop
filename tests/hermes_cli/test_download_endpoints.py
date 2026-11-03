@@ -1,51 +1,81 @@
-"""Tests for direct application download endpoints in hermes_cli.web_server."""
+"""Tests for the installer download endpoints in hermes_cli.web_server.
+
+An endpoint serves an installer from disk when this server hosts one, and
+otherwise sends the visitor to the matching asset of the newest GitHub release.
+"""
 
 import pytest
 from fastapi.testclient import TestClient
-from hermes_cli.web_server import app
+
+from hermes_cli import web_server
+
+GITHUB_DOWNLOAD_BASE = "https://github.com/Tchuekam/tchuekam-desktop/releases/latest/download"
+
+INSTALLERS = {
+    "windows": "TchueKAM-Setup.exe",
+    "mac-arm64": "TchueKAM-Mac-arm64.dmg",
+    "mac-x64": "TchueKAM-Mac-x64.dmg",
+    "linux": "TchueKAM-Linux.AppImage",
+}
 
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    # The redirect itself is under test; following it would call github.com.
+    return TestClient(web_server.app, follow_redirects=False)
 
 
-def test_download_windows_endpoint(client):
-    """Test that /api/download/windows triggers direct Windows installer download."""
-    res = client.get("/api/download/windows")
-    assert res.status_code == 200
-    assert "Content-Disposition" in res.headers
-    assert 'attachment; filename="TchueKAM-Setup.exe"' in res.headers["Content-Disposition"]
-    assert res.content.startswith(b"# TchueKAM") or len(res.content) > 0
+@pytest.fixture
+def downloads_dir(tmp_path, monkeypatch):
+    """Point every place the endpoint looks for an installer at empty temp dirs."""
+    project_root = tmp_path / "project"
+    web_dist = tmp_path / "web_dist"
+    project_root.mkdir()
+    web_dist.mkdir()
+    monkeypatch.setattr(web_server, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(web_server, "WEB_DIST", web_dist)
+    directory = web_dist / "downloads"
+    directory.mkdir()
+    return directory
 
 
-def test_download_mac_arm64_endpoint(client):
-    """Test that /api/download/mac-arm64 triggers direct macOS Apple Silicon DMG download."""
-    res = client.get("/api/download/mac-arm64")
-    assert res.status_code == 200
-    assert "Content-Disposition" in res.headers
-    assert 'attachment; filename="TchueKAM-Mac-arm64.dmg"' in res.headers["Content-Disposition"]
+@pytest.mark.parametrize("target,filename", INSTALLERS.items())
+def test_redirects_to_the_public_release_when_no_installer_is_hosted(client, downloads_dir, target, filename):
+    res = client.get(f"/api/download/{target}")
+    assert res.status_code == 302
+    assert res.headers["location"] == f"{GITHUB_DOWNLOAD_BASE}/{filename}"
 
 
-def test_download_mac_x64_endpoint(client):
-    """Test that /api/download/mac-x64 triggers direct macOS Intel DMG download."""
-    res = client.get("/api/download/mac-x64")
-    assert res.status_code == 200
-    assert "Content-Disposition" in res.headers
-    assert 'attachment; filename="TchueKAM-Mac-x64.dmg"' in res.headers["Content-Disposition"]
-
-
-def test_download_linux_endpoint(client):
-    """Test that /api/download/linux triggers direct Linux AppImage download."""
-    res = client.get("/api/download/linux")
-    assert res.status_code == 200
-    assert "Content-Disposition" in res.headers
-    assert 'attachment; filename="TchueKAM-Linux.AppImage"' in res.headers["Content-Disposition"]
-
-
-def test_download_alias_route(client):
-    """Test alias route /downloads/windows."""
+def test_alias_route_redirects_the_same_way(client, downloads_dir):
     res = client.get("/downloads/windows")
+    assert res.status_code == 302
+    assert res.headers["location"] == f"{GITHUB_DOWNLOAD_BASE}/TchueKAM-Setup.exe"
+
+
+def test_latest_alias_resolves_to_the_windows_installer(client, downloads_dir):
+    res = client.get("/api/download/latest")
+    assert res.status_code == 302
+    assert res.headers["location"] == f"{GITHUB_DOWNLOAD_BASE}/TchueKAM-Setup.exe"
+
+
+def test_serves_a_hosted_installer_as_an_attachment(client, downloads_dir):
+    installer = downloads_dir / "TchueKAM-Setup.exe"
+    installer.write_bytes(b"MZ" + b"\0" * web_server._MIN_INSTALLER_BYTES)
+
+    res = client.get("/api/download/windows")
+
     assert res.status_code == 200
-    assert "Content-Disposition" in res.headers
-    assert 'attachment; filename="TchueKAM-Setup.exe"' in res.headers["Content-Disposition"]
+    assert res.headers["content-disposition"] == 'attachment; filename="TchueKAM-Setup.exe"'
+    assert res.content == installer.read_bytes()
+
+
+def test_a_placeholder_file_is_never_served_as_the_installer(client, downloads_dir):
+    # tchuekam.com once served 66-byte text files named like installers, so
+    # every download saved something that could not be opened.
+    placeholder = downloads_dir / "TchueKAM-Setup.exe"
+    placeholder.write_text("# TchueKAM Agent Desktop Windows Installer (x64)\n# Version: 1.0.0\n")
+
+    res = client.get("/api/download/windows")
+
+    assert res.status_code == 302
+    assert res.headers["location"] == f"{GITHUB_DOWNLOAD_BASE}/TchueKAM-Setup.exe"

@@ -40,7 +40,7 @@ It builds and launches the GUI against your existing install — same config, ke
 
 ### Prebuilt installers
 
-When a release ships desktop installers they're attached to its [direct download page](https://docs.tchuekam.com/download) — `.dmg` (macOS), `.exe` / `.msi` (Windows), `.AppImage` / `.deb` / `.rpm` (Linux). These are published manually, so the install-with-Tchuekam path above is the most reliable way to get the latest.
+Desktop installers are attached to each [GitHub release](https://github.com/Tchuekam/tchuekam-desktop/releases/latest) under fixed names — `TchueKAM-Setup.exe` (Windows), `TchueKAM-Mac-arm64.dmg` / `TchueKAM-Mac-x64.dmg` (macOS), `TchueKAM-Linux.AppImage` (Linux) — plus `.msi` / `.deb` / `.rpm`. [tchuekam.com](https://tchuekam.com/installation) asks GitHub for the newest release and links straight to those files, and `https://github.com/Tchuekam/tchuekam-desktop/releases/latest/download/<name>` always resolves to the newest one. Never copy an installer, or a placeholder for one, into the website repo: a 66-byte `TchueKAM-Setup.exe` there was served as the download for months and could not be opened.
 
 ---
 
@@ -90,7 +90,9 @@ npm run dist:linux   # AppImage + deb + rpm
 npm run pack         # unpacked app under release/ (no installer)
 ```
 
-Installers are built and uploaded to GitHub Releases manually. macOS/Windows signing & notarization happen automatically when the relevant credentials are present in the environment (`CSC_LINK` / `CSC_KEY_PASSWORD` / `APPLE_*` for macOS, `WIN_CSC_*` for Windows).
+To release: set `version` in `apps/desktop/package.json` to `X.Y.Z`, commit, then push the tag `vX.Y.Z`. The *Release TchueKAM Desktop* workflow builds every platform's installer and attaches it to the release named after `package.json`'s version (electron-builder takes it from there, not from the tag, so the workflow refuses to run when the two differ: otherwise nothing would be uploaded and the job would still pass). Building locally with the commands above works too; keep the file names the build produces, because the website links to them. macOS/Windows signing & notarization happen automatically when the relevant credentials are present in the environment (`CSC_LINK` / `CSC_KEY_PASSWORD` / `APPLE_*` for macOS, `WIN_CSC_*` for Windows). The Windows installer is **not code-signed** unless those credentials are set, so Windows SmartScreen warns on first run (*More info → Run anyway*).
+
+Each build is stamped with the commit it should install on first launch (`build/install-stamp.json`, written by `scripts/write-build-stamp.cjs`). Push your commits before building a release: an unpushed commit can't be cloned by users, so the build pins the newest pushed ancestor instead and marks the stamp dirty.
 
 ### How it works
 
