@@ -34,6 +34,7 @@ def test_experiment_run_succeeds_for_every_backend(backend):
     assert body["prediction"]
 
 
+@pytest.mark.timeout(120)
 def test_exp001_benchmark_runs():
     response = client.get("/api/v1/biocompute/benchmark/exp001")
     assert response.status_code == 200, response.text
