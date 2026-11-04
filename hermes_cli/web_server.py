@@ -1233,8 +1233,14 @@ async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
 
         from tools.transcription_tools import transcribe_audio
 
+        def _do_transcribe(path: str):
+            try:
+                return transcribe_audio(path, allow_fallback=True)
+            except TypeError:
+                return transcribe_audio(path)
+
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, transcribe_audio, temp_path)
+        result = await loop.run_in_executor(None, _do_transcribe, temp_path)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1248,16 +1254,62 @@ async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
                 pass
 
     if not result.get("success"):
+        err_msg = str(result.get("error") or "")
+        if "empty transcript" in err_msg.lower():
+            return {
+                "ok": True,
+                "transcript": "",
+                "provider": result.get("provider"),
+                "filtered": True,
+            }
         raise HTTPException(
             status_code=400,
-            detail=result.get("error") or "Transcription failed",
+            detail=err_msg or "Transcription failed",
         )
+
+    raw_transcript = str(result.get("transcript") or "").strip()
+    try:
+        from tools.voice_mode import is_whisper_hallucination, strip_non_speech_audio_tags
+
+        if is_whisper_hallucination(raw_transcript):
+            return {
+                "ok": True,
+                "transcript": "",
+                "provider": result.get("provider"),
+                "filtered": True,
+            }
+        raw_transcript = strip_non_speech_audio_tags(raw_transcript)
+    except Exception:
+        pass
 
     return {
         "ok": True,
-        "transcript": str(result.get("transcript") or "").strip(),
+        "transcript": raw_transcript,
         "provider": result.get("provider"),
     }
+
+
+def _detect_audio_mime_type(audio_bytes: bytes, file_path: str) -> str:
+    """Detect actual audio MIME type from magic bytes with file-extension fallback."""
+    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+        return "audio/wav"
+    if len(audio_bytes) >= 4 and audio_bytes[:4] == b"OggS":
+        return "audio/ogg"
+    if len(audio_bytes) >= 4 and audio_bytes[:4] == b"fLaC":
+        return "audio/flac"
+    if len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3":
+        return "audio/mpeg"
+    if len(audio_bytes) >= 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0:
+        return "audio/mpeg"
+
+    ext = os.path.splitext(file_path)[1].lower()
+    return {
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/ogg",
+        ".wav": "audio/wav",
+        ".flac": "audio/flac",
+    }.get(ext, "audio/mpeg")
 
 
 class TTSSpeakRequest(BaseModel):
@@ -1336,8 +1388,15 @@ async def speak_text(payload: TTSSpeakRequest):
 
     try:
         from tools.tts_tool import text_to_speech_tool
+
+        def _do_speak(txt: str):
+            try:
+                return text_to_speech_tool(txt, allow_fallback=True)
+            except TypeError:
+                return text_to_speech_tool(txt)
+
         loop = asyncio.get_running_loop()
-        result_json = await loop.run_in_executor(None, text_to_speech_tool, text)
+        result_json = await loop.run_in_executor(None, _do_speak, text)
     except Exception as exc:
         _log.exception("Desktop voice TTS failed")
         raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {exc}")
@@ -1357,15 +1416,6 @@ async def speak_text(payload: TTSSpeakRequest):
     if not file_path or not os.path.isfile(file_path):
         raise HTTPException(status_code=500, detail="Audio file missing")
 
-    ext = os.path.splitext(file_path)[1].lower()
-    mime_type = {
-        ".mp3": "audio/mpeg",
-        ".ogg": "audio/ogg",
-        ".opus": "audio/ogg",
-        ".wav": "audio/wav",
-        ".flac": "audio/flac",
-    }.get(ext, "audio/mpeg")
-
     try:
         with open(file_path, "rb") as fh:
             audio_bytes = fh.read()
@@ -1377,6 +1427,10 @@ async def speak_text(payload: TTSSpeakRequest):
         except OSError:
             pass
 
+    if not audio_bytes:
+        raise HTTPException(status_code=500, detail="Generated audio file is empty")
+
+    mime_type = _detect_audio_mime_type(audio_bytes, file_path)
     encoded = base64.b64encode(audio_bytes).decode("ascii")
     return {
         "ok": True,
@@ -7306,8 +7360,63 @@ async def api_images_analyze(req: ImageAnalyzeRequest):
     return {"success": True, "result": result, "colors": colors}
 
 
+def _extract_pdf_bytes_text(pdf_bytes: bytes) -> str:
+    """Extract readable text from PDF bytes using pymupdf/pypdf or built-in zlib stream parsing."""
+    import re
+    import zlib
+
+    try:
+        import fitz  # PyMuPDF
+
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        pages = [page.get_text("text").strip() for page in doc]
+        joined = "\n\n".join(p for p in pages if p)
+        if joined:
+            return joined
+    except Exception:
+        pass
+
+    chunks: list[str] = []
+    raw_latin = pdf_bytes.decode("latin1", errors="ignore")
+
+    def _collect_literals(stream_str: str) -> None:
+        for match in re.finditer(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*(?:Tj|')", stream_str):
+            txt = (
+                match.group(1)
+                .replace(r"\n", "\n")
+                .replace(r"\r", "\r")
+                .replace(r"\t", " ")
+                .replace(r"\(", "(")
+                .replace(r"\)", ")")
+                .replace(r"\\", "\\")
+            ).strip()
+            if txt and re.search(r"[A-Za-z0-9À-ÿ]", txt):
+                chunks.append(txt)
+
+    _collect_literals(raw_latin)
+
+    for stream_match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf_bytes, re.DOTALL):
+        stream_data = stream_match.group(1)
+        try:
+            decompressed = zlib.decompress(stream_data).decode("latin1", errors="ignore")
+            _collect_literals(decompressed)
+        except Exception:
+            continue
+
+    return "\n".join(chunks).strip()
+
+
 @app.post("/api/images/ocr")
 async def api_images_ocr(req: ImageOCRRequest):
+    raw_img = (req.image or "").strip()
+    if raw_img.startswith("data:application/pdf;base64,"):
+        try:
+            pdf_b64 = raw_img.split(",", 1)[1]
+            extracted = _extract_pdf_bytes_text(base64.b64decode(pdf_b64))
+            if extracted:
+                return {"success": True, "text": extracted}
+        except Exception:
+            pass
     extracted_text = (
         "TchuekaM Image Studio OCR Result\n"
         "=================================\n"
@@ -7323,6 +7432,91 @@ async def api_images_ocr(req: ImageOCRRequest):
         "Thank you for your business!"
     )
     return {"success": True, "text": extracted_text}
+
+
+class BusinessOcrRequest(BaseModel):
+    data_url: str
+    file_name: Optional[str] = "document"
+    mime_type: Optional[str] = "application/pdf"
+
+
+@app.post("/api/business/ocr")
+async def api_business_ocr(req: BusinessOcrRequest):
+    raw = (req.data_url or "").strip()
+    if "," in raw:
+        raw_b64 = raw.split(",", 1)[1]
+    else:
+        raw_b64 = raw
+
+    try:
+        file_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid base64 file payload."}, status_code=400)
+
+    mime = (req.mime_type or "").lower()
+    fname = (req.file_name or "document").lower()
+
+    if "pdf" in mime or fname.endswith(".pdf") or file_bytes.startswith(b"%PDF"):
+        text = _extract_pdf_bytes_text(file_bytes)
+        if text:
+            return {"ok": True, "text": text}
+        return {
+            "ok": True,
+            "text": f"[{req.file_name}]\n[illegible — scanned PDF contains no embedded text layer. Unclear text is marked [illegible], never guessed.]",
+        }
+
+    # Try plain UTF-8 text if small text payload
+    try:
+        decoded_utf8 = file_bytes.decode("utf-8")
+        if decoded_utf8.strip() and "\ufffd" not in decoded_utf8:
+            return {"ok": True, "text": decoded_utf8.strip()}
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "text": f"[{req.file_name}]\n[illegible — connect a vision model provider to extract text from raster images. Unclear text is marked [illegible], never guessed.]",
+    }
+
+
+class BusinessAiRequest(BaseModel):
+    operation: str
+    input: str
+    language: Optional[str] = "fr"
+    targetLanguage: Optional[str] = None
+    context: Optional[str] = None
+
+
+@app.post("/api/business/ai")
+async def api_business_ai(req: BusinessAiRequest):
+    grounding = (
+        "Do not invent names, dates, amounts, credentials, or legal terms. "
+        "Mark any missing or unconfirmed fact as [to confirm]. "
+        f"Respond only with the updated section text in {'French' if (req.targetLanguage or req.language) == 'fr' else 'English'}."
+    )
+    prompt = f"Operation: {req.operation}\nContext: {req.context or ''}\nInput:\n{req.input}\n\n{grounding}"
+    try:
+        from agent.auxiliary_client import call_llm
+
+        resp = call_llm(
+            messages=[
+                {"role": "system", "content": grounding},
+                {"role": "user", "content": prompt},
+            ],
+            task="fast",
+            max_tokens=600,
+        )
+        content = (
+            resp.choices[0].message.content.strip()
+            if resp and getattr(resp, "choices", None)
+            else ""
+        )
+        if content:
+            return {"ok": True, "output": content}
+    except Exception:
+        pass
+
+    return {"ok": False, "output": ""}
 
 
 @app.get("/api/images/library")
