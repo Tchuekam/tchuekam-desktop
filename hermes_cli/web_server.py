@@ -8592,6 +8592,7 @@ _DOWNLOAD_ASSETS = {
     "mac-arm64": {"filename": "TchueKAM-Mac-arm64.dmg", "media_type": "application/x-apple-diskimage"},
     "mac-x64": {"filename": "TchueKAM-Mac-x64.dmg", "media_type": "application/x-apple-diskimage"},
     "linux": {"filename": "TchueKAM-Linux.AppImage", "media_type": "application/x-executable"},
+    "android": {"filename": "TchueKAM-Mobile.apk", "media_type": "application/vnd.android.package-archive"},
 }
 
 # Real installers are tens of megabytes.  A file far below this is a placeholder
@@ -8617,6 +8618,8 @@ async def download_installer_file(target: str):
         asset = _DOWNLOAD_ASSETS["mac-x64"]
     elif key in ("linux", "appimage"):
         asset = _DOWNLOAD_ASSETS["linux"]
+    elif key in ("android", "apk", "mobile", "android-apk"):
+        asset = _DOWNLOAD_ASSETS["android"]
     else:
         asset = _DOWNLOAD_ASSETS["windows"]
 
@@ -8628,6 +8631,8 @@ async def download_installer_file(target: str):
         PROJECT_ROOT / "dist" / filename,
         PROJECT_ROOT / "apps" / "desktop" / "dist" / filename,
         PROJECT_ROOT / "apps" / "desktop" / "release" / filename,
+        PROJECT_ROOT / "apps" / "mobile" / "dist" / filename,
+        PROJECT_ROOT / "apps" / "mobile" / filename,
         WEB_DIST / "downloads" / filename,
     ]
 

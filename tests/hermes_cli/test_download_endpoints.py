@@ -16,6 +16,7 @@ INSTALLERS = {
     "mac-arm64": "TchueKAM-Mac-arm64.dmg",
     "mac-x64": "TchueKAM-Mac-x64.dmg",
     "linux": "TchueKAM-Linux.AppImage",
+    "android": "TchueKAM-Mobile.apk",
 }
 
 
@@ -50,6 +51,13 @@ def test_alias_route_redirects_the_same_way(client, downloads_dir):
     res = client.get("/downloads/windows")
     assert res.status_code == 302
     assert res.headers["location"] == f"{GITHUB_DOWNLOAD_BASE}/TchueKAM-Setup.exe"
+
+
+def test_android_aliases_redirect_to_mobile_apk(client, downloads_dir):
+    for alias in ("/api/download/apk", "/api/download/mobile", "/downloads/android"):
+        res = client.get(alias)
+        assert res.status_code == 302
+        assert res.headers["location"] == f"{GITHUB_DOWNLOAD_BASE}/TchueKAM-Mobile.apk"
 
 
 def test_latest_alias_resolves_to_the_windows_installer(client, downloads_dir):

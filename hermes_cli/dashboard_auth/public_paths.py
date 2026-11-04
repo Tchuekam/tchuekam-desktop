@@ -52,4 +52,7 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     "/api/download/mac-x64",
     "/api/download/linux",
     "/api/download/latest",
+    "/api/download/android",
+    "/api/download/apk",
+    "/api/download/mobile",
 })
