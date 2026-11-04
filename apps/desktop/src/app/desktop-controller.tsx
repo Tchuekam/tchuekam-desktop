@@ -86,6 +86,7 @@ import type { StatusbarItem } from './shell/statusbar-controls'
 import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
 import { UpdatesOverlay } from './updates-overlay'
+import { MobilePromoBanner } from './mobile/mobile-banner'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
@@ -94,6 +95,7 @@ const ImageStudioView = lazy(async () => ({ default: (await import('./image-stud
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
+const MobileView = lazy(async () => ({ default: (await import('./mobile')).MobileView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
@@ -681,7 +683,16 @@ export function DesktopController() {
         {sidebar}
       </Pane>
       <PaneMain>
+        <MobilePromoBanner />
         <Routes>
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <MobileView />
+              </Suspense>
+            }
+            path="mobile"
+          />
           <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} index />
           <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} path=":sessionId" />
           <Route

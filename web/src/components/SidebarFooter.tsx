@@ -14,11 +14,27 @@ export function SidebarFooter({ status }: SidebarFooterProps) {
         "border-t border-current/10",
       )}
     >
-      <Typography
-        className="font-mono-ui text-xs tabular-nums tracking-[0.08em] text-text-tertiary lowercase"
-      >
-        {status?.version != null ? `v${status.version}` : "—"}
-      </Typography>
+      <div className="flex items-center gap-2">
+        <Typography
+          className="font-mono-ui text-xs tabular-nums tracking-[0.08em] text-text-tertiary lowercase"
+        >
+          {status?.version != null ? `v${status.version}` : "—"}
+        </Typography>
+
+        <a
+          href="/api/download/android"
+          download="TchueKAM-Mobile.apk"
+          title="1-Click Download Android APK"
+          className={cn(
+            "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
+            "bg-cyan-500/10 text-cyan-400 font-mono-ui text-[0.65rem] font-semibold tracking-wider",
+            "border border-cyan-500/20 transition-all hover:bg-cyan-500/20 hover:border-cyan-500/40",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400",
+          )}
+        >
+          <span>📱 APK</span>
+        </a>
+      </div>
 
       <a
         href="https://tchuekam.com"

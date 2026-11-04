@@ -19,6 +19,7 @@ import { useStore } from '@nanostores/react'
 import {
   IconBolt,
   IconBriefcase,
+  IconDeviceMobile,
   IconFiles,
   IconMessageCircle,
   IconPencilPlus,
@@ -77,6 +78,7 @@ import {
   CRON_ROUTE,
   IMAGE_STUDIO_ROUTE,
   MESSAGING_ROUTE,
+  MOBILE_ROUTE,
   SKILLS_ROUTE
 } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
@@ -116,6 +118,12 @@ const ALL_SIDEBAR_NAV: SidebarNavItem[] = [
     label: 'Business Hub',
     icon: navIcon(IconBriefcase),
     route: BUSINESS_ROUTE
+  },
+  {
+    id: 'mobile',
+    label: 'Mobile App',
+    icon: navIcon(IconDeviceMobile),
+    route: MOBILE_ROUTE
   },
   {
     id: 'image-studio',
@@ -487,6 +495,11 @@ export function ChatSidebar({
                           <span className="min-w-0 flex-1 truncate max-[46.25rem]:hidden">{item.label}</span>
                           {item.id === 'new-session' && (
                             <KbdGroup className="ml-auto max-[46.25rem]:hidden" keys={[...NEW_SESSION_KBD]} />
+                          )}
+                          {item.id === 'mobile' && (
+                            <span className="ml-auto rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-[0.625rem] font-bold text-cyan-400 max-[46.25rem]:hidden">
+                              NEW
+                            </span>
                           )}
                         </>
                       )}
