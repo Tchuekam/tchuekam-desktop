@@ -11,6 +11,9 @@ import { sanitizeTextForSpeech } from './speech-text'
 let currentAudio: HTMLAudioElement | null = null
 let currentStop: (() => void) | null = null
 let sequence = 0
+let stoppedExternally = false
+const MAX_PREFETCH_CACHE = 6
+const speechCache = new Map<string, Promise<{ data_url: string }>>()
 
 function currentState(
   status: VoicePlaybackState['status'],
@@ -31,7 +34,7 @@ export interface VoicePlaybackOptions {
   source: VoicePlaybackSource
 }
 
-export function stopVoicePlayback() {
+function cleanupActiveAudio() {
   sequence += 1
   currentStop?.()
   currentStop = null
@@ -42,6 +45,48 @@ export function stopVoicePlayback() {
     currentAudio.load()
     currentAudio = null
   }
+}
+
+function fetchOrGetCachedSpeech(speakableText: string): Promise<{ data_url: string }> {
+  const existing = speechCache.get(speakableText)
+
+  if (existing) {
+    speechCache.delete(speakableText)
+
+    return existing
+  }
+
+  return speakText(speakableText)
+}
+
+export function prefetchSpeechText(text: string) {
+  const speakableText = sanitizeTextForSpeech(text)
+
+  if (!speakableText || speechCache.has(speakableText)) {
+    return
+  }
+
+  if (speechCache.size >= MAX_PREFETCH_CACHE) {
+    const oldestKey = speechCache.keys().next().value
+
+    if (oldestKey !== undefined) {
+      speechCache.delete(oldestKey)
+    }
+  }
+
+  const pending = speakText(speakableText).catch(error => {
+    speechCache.delete(speakableText)
+    throw error
+  })
+
+  speechCache.set(speakableText, pending)
+  void pending.catch(() => undefined)
+}
+
+export function stopVoicePlayback() {
+  stoppedExternally = true
+  speechCache.clear()
+  cleanupActiveAudio()
 
   setVoicePlaybackState({
     audioElement: null,
@@ -52,12 +97,19 @@ export function stopVoicePlayback() {
   })
 }
 
+export function wasVoicePlaybackStopped(): boolean {
+  return stoppedExternally
+}
+
 export async function playSpeechText(text: string, options: VoicePlaybackOptions): Promise<boolean> {
-  stopVoicePlayback()
+  cleanupActiveAudio()
+  stoppedExternally = false
 
   const speakableText = sanitizeTextForSpeech(text)
 
   if (!speakableText) {
+    setVoicePlaybackState(currentState('idle'))
+
     return false
   }
 
@@ -67,7 +119,7 @@ export async function playSpeechText(text: string, options: VoicePlaybackOptions
   setVoicePlaybackState(currentState('preparing', options))
 
   try {
-    const response = await speakText(speakableText)
+    const response = await fetchOrGetCachedSpeech(speakableText)
 
     if (!isCurrent()) {
       return false

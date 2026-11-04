@@ -794,9 +794,11 @@ class AudioRecorder:
 
         Returns the file path.
         """
+        import uuid
+
         os.makedirs(_TEMP_DIR, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        wav_path = os.path.join(_TEMP_DIR, f"recording_{timestamp}.wav")
+        wav_path = os.path.join(_TEMP_DIR, f"recording_{timestamp}_{uuid.uuid4().hex[:8]}.wav")
 
         with wave.open(wav_path, "wb") as wf:
             wf.setnchannels(CHANNELS)
@@ -817,7 +819,7 @@ def create_audio_recorder() -> AudioRecorder | TermuxAudioRecorder:
 
 
 # ============================================================================
-# Whisper hallucination filter
+# Whisper hallucination & non-speech audio-event filter
 # ============================================================================
 # Whisper commonly hallucinates these phrases on silent/near-silent audio.
 WHISPER_HALLUCINATIONS = {
@@ -838,11 +840,21 @@ WHISPER_HALLUCINATIONS = {
     "you",
     "the end.",
     "the end",
+    "see you next time.",
+    "see you next time",
+    "thanks.",
+    "thanks",
     # Non-English hallucinations (common on silence)
     "продолжение следует",
     "продолжение следует...",
     "sous-titres",
     "sous-titres réalisés par la communauté d'amara.org",
+    "sous-titrage st' 501",
+    "sous-titrage société radio-canada",
+    "merci.",
+    "merci",
+    "merci d'avoir regardé.",
+    "merci d'avoir regardé",
     "sottotitoli creati dalla comunità amara.org",
     "untertitel von stephanie geiges",
     "amara.org",
@@ -852,18 +864,65 @@ WHISPER_HALLUCINATIONS = {
 
 # Regex patterns for repetitive hallucinations (e.g. "Thank you. Thank you. Thank you.")
 _HALLUCINATION_REPEAT_RE = re.compile(
-    r'^(?:thank you|thanks|bye|you|ok|okay|the end|\.|\s|,|!)+$',
+    r'^(?:thank you|thanks|merci|bye|you|ok|okay|the end|\.|\s|,|!|\?|-|…)+$',
     flags=re.IGNORECASE,
 )
 
+# Parenthesized / bracketed / asterisk-wrapped non-speech audio events emitted by
+# ElevenLabs Scribe (`tag_audio_events`), Whisper, and other STT models.
+_AUDIO_EVENT_KEYWORDS_RE = re.compile(
+    r'(?:\([^()\n]{1,80}\)|\[[^\[\]\n]{1,80}\]|\*[^*\n]{1,60}\*)',
+    flags=re.IGNORECASE,
+)
+
+_NON_SPEECH_EVENT_TOKENS = (
+    "noise", "bruit", "music", "musique", "laugh", "rire", "chuckle", "giggle",
+    "breath", "respir", "sigh", "soupir", "cough", "toux", "throat", "gorge",
+    "applause", "applaud", "clap", "footstep", "pas", "static", "silence",
+    "click", "clic", "typing", "keyboard", "clavier", "sniff", "snort",
+    "yawn", "bâill", "inaudible", "unintelligible", "blank_audio", "wind",
+    "vent", "hum", "buzz", "ring", "beep", "bip", "tone", "bell", "chatter",
+    "murmur", "groan", "grunt", "gasp", "pant", "snore", "ronfl", "crying",
+    "pleur", "sobbing", "whistl", "siffl", "rustl", "thud", "bang", "tap",
+    "knock", "sound", "son", "audio", "ambient", "ambiant", "background",
+    "fond", "pause", "hesitation", "hésitation", "lip smack", "mic",
+    "microphone", "foreign language", "langue étrangère", "speaking",
+)
+
+
+def strip_non_speech_audio_tags(transcript: str) -> str:
+    """Remove non-speech audio-event annotations (e.g. '(background noise)', '[music]') from STT transcripts."""
+    if not transcript:
+        return ""
+    text = transcript.replace("♪", " ").replace("♫", " ").strip()
+    if not text:
+        return ""
+
+    def _replace_tag(match: re.Match) -> str:
+        raw = match.group(0)
+        inner = raw[1:-1].strip().lower()
+        if any(tok in inner for tok in _NON_SPEECH_EVENT_TOKENS):
+            return " "
+        return raw
+
+    cleaned = _AUDIO_EVENT_KEYWORDS_RE.sub(_replace_tag, text)
+    # If the remaining text consists ONLY of parenthesized/bracketed/asterisk blocks
+    # with no spoken words outside them (e.g. "(inaudible) [pause]"), discard it.
+    without_any_tags = _AUDIO_EVENT_KEYWORDS_RE.sub(" ", cleaned).strip()
+    if not without_any_tags or not re.search(r"[\w\u00C0-\u024F\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]", without_any_tags):
+        return ""
+
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
 
 def is_whisper_hallucination(transcript: str) -> bool:
-    """Check if a transcript is a known Whisper hallucination on silence."""
-    cleaned = transcript.strip().lower()
+    """Check if a transcript is a known Whisper hallucination or non-speech noise event on silence."""
+    stripped = strip_non_speech_audio_tags(transcript)
+    cleaned = stripped.strip().lower()
     if not cleaned:
         return True
     # Exact match against known phrases
-    if cleaned.rstrip('.!') in WHISPER_HALLUCINATIONS or cleaned in WHISPER_HALLUCINATIONS:
+    if cleaned.rstrip('.!?…') in WHISPER_HALLUCINATIONS or cleaned in WHISPER_HALLUCINATIONS:
         return True
     # Repetitive patterns (e.g. "Thank you. Thank you. Thank you. you")
     if _HALLUCINATION_REPEAT_RE.match(cleaned):
@@ -894,10 +953,18 @@ def transcribe_recording(wav_path: str, model: Optional[str] = None) -> Dict[str
     else:
         result = transcribe_audio(wav_path, model=model)
 
-    # Filter out Whisper hallucinations (common on silent/near-silent audio)
-    if result.get("success") and is_whisper_hallucination(result.get("transcript", "")):
-        logger.info("Filtered Whisper hallucination: %r", result["transcript"])
+    if not result.get("success") and "empty transcript" in str(result.get("error") or "").lower():
         return {"success": True, "transcript": "", "filtered": True}
+
+    # Filter out Whisper hallucinations & non-speech audio-event tags (common on silent/background audio)
+    if result.get("success"):
+        raw_transcript = result.get("transcript", "")
+        if is_whisper_hallucination(raw_transcript):
+            logger.info("Filtered Whisper hallucination / non-speech audio event: %r", raw_transcript)
+            return {"success": True, "transcript": "", "filtered": True}
+        cleaned_transcript = strip_non_speech_audio_tags(raw_transcript)
+        if cleaned_transcript != raw_transcript:
+            result = {**result, "transcript": cleaned_transcript}
 
     return result
 

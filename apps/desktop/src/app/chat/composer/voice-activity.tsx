@@ -68,29 +68,33 @@ function VoiceLevelBars({ level, active }: { active: boolean; level: number }) {
 }
 
 function getElementAnalyser(audioElement: HTMLAudioElement): ElementAnalyser | null {
-  let entry = elementAnalysers.get(audioElement)
+  try {
+    let entry = elementAnalysers.get(audioElement)
 
-  if (!entry) {
-    const context = getPlaybackAudioContext()
+    if (!entry) {
+      const context = getPlaybackAudioContext()
 
-    if (!context) {
-      return null
+      if (!context) {
+        return null
+      }
+
+      const source = context.createMediaElementSource(audioElement)
+      const analyser = context.createAnalyser()
+
+      analyser.fftSize = 512
+      analyser.smoothingTimeConstant = 0.65
+      source.connect(analyser)
+      analyser.connect(context.destination)
+      entry = { analyser }
+      elementAnalysers.set(audioElement, entry)
     }
 
-    const source = context.createMediaElementSource(audioElement)
-    const analyser = context.createAnalyser()
+    void playbackAudioContext?.resume()
 
-    analyser.fftSize = 512
-    analyser.smoothingTimeConstant = 0.65
-    source.connect(analyser)
-    analyser.connect(context.destination)
-    entry = { analyser }
-    elementAnalysers.set(audioElement, entry)
+    return entry
+  } catch {
+    return null
   }
-
-  void playbackAudioContext?.resume()
-
-  return entry
 }
 
 const WAVE_W = 88
