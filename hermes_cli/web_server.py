@@ -192,6 +192,7 @@ app.add_middleware(
 from hermes_cli.dashboard_auth.public_paths import (
     PUBLIC_API_PATHS as _PUBLIC_API_PATHS,
 )
+from hermes_cli.download_targets import DOWNLOAD_ALIASES, DOWNLOAD_ASSETS
 
 
 def _has_valid_session_token(request: Request) -> bool:
@@ -8580,52 +8581,129 @@ def _mount_plugin_api_routes():
 
 # ---------------------------------------------------------------------------
 # Direct Application Download Endpoints
-# Installer download for Windows, macOS, and Linux: served from disk when this
-# server hosts the installer, otherwise redirected to the GitHub release asset.
+#
+# A download is only useful if the bytes that come back are an installer.  This
+# site once served 66-byte text files named ``TchueKAM-Setup.exe``; Windows
+# answered "This app can't run on your PC" because the file was never an
+# executable.  So these endpoints refuse to hand over anything that does not
+# look like a real installer, and fall back to the published GitHub release
+# asset, which is the artifact the release pipeline verified.
 # ---------------------------------------------------------------------------
 
-# The file names are fixed by the electron-builder config in
-# apps/desktop/package.json, so a release built from it carries assets under
-# exactly these names (the macOS and Linux ones only once those are published).
-_DOWNLOAD_ASSETS = {
-    "windows": {"filename": "TchueKAM-Setup.exe", "media_type": "application/x-msdownload"},
-    "mac-arm64": {"filename": "TchueKAM-Mac-arm64.dmg", "media_type": "application/x-apple-diskimage"},
-    "mac-x64": {"filename": "TchueKAM-Mac-x64.dmg", "media_type": "application/x-apple-diskimage"},
-    "linux": {"filename": "TchueKAM-Linux.AppImage", "media_type": "application/x-executable"},
-    "android": {"filename": "TchueKAM-Mobile.apk", "media_type": "application/vnd.android.package-archive"},
-}
+# The download target tables live in hermes_cli.download_targets so that the
+# public auth allowlist derives from exactly the same aliases this endpoint
+# accepts -- otherwise a working link can silently start answering 401.
+_DOWNLOAD_ASSETS = DOWNLOAD_ASSETS
+_DOWNLOAD_ALIASES = DOWNLOAD_ALIASES
 
 # Real installers are tens of megabytes.  A file far below this is a placeholder
 # or a failed download, and serving it as "TchueKAM-Setup.exe" is how users ended
 # up with an installer that would not open -- so it is never served.
 _MIN_INSTALLER_BYTES = 1_000_000
 
+# The first bytes that make a file what its name claims.  Checked before any
+# local file is served, because size alone would still pass a megabyte of text.
+# The release pipeline (scripts/verify_release_artifacts.py) does the deeper
+# structural checks; here we only need to catch files that are not installers.
+_INSTALLER_MAGIC = {
+    ".exe": (b"MZ",),
+    ".msi": (b"MZ", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+    ".appimage": (b"\x7fELF",),
+    ".apk": (b"PK\x03\x04",),
+    ".zip": (b"PK\x03\x04",),
+}
+
 # GitHub resolves releases/latest/download/<name> to the newest release's asset
 # of that name.  It has to be the public repo: a private one answers 404.
 _RELEASE_DOWNLOAD_BASE = "https://github.com/Tchuekam/tchuekam-desktop/releases/latest/download"
+_RELEASE_API_URL = "https://api.github.com/repos/Tchuekam/tchuekam-desktop/releases/latest"
+_RELEASE_PAGE_URL = "https://github.com/Tchuekam/tchuekam-desktop/releases/latest"
+
+# What the published release actually contains, so the website can offer the
+# platforms that exist and show real sizes instead of guesses.  Refreshed at
+# most this often; a failure leaves the previous answer in place.
+_RELEASE_INFO_TTL_SECONDS = 600
+# A failed lookup is cached far more briefly than a good one: one network blip
+# should not hide every download for ten minutes, but it also must not turn
+# each page load into another outbound request.
+_RELEASE_INFO_FAILURE_TTL_SECONDS = 30
+_release_info_cache: dict = {"expires_at": 0.0, "data": None}
 
 
-@app.get("/api/download/{target}")
-@app.get("/downloads/{target}")
-async def download_installer_file(target: str):
-    """Serve the installer from disk, or send the visitor to the GitHub release asset."""
-    key = target.lower().strip()
-    if key in ("windows", "windows-64bit", "win", "exe", "setup"):
-        asset = _DOWNLOAD_ASSETS["windows"]
-    elif key in ("mac-arm64", "mac-arm", "mac-m1", "mac-silicon"):
-        asset = _DOWNLOAD_ASSETS["mac-arm64"]
-    elif key in ("mac-x64", "mac-intel", "mac"):
-        asset = _DOWNLOAD_ASSETS["mac-x64"]
-    elif key in ("linux", "appimage"):
-        asset = _DOWNLOAD_ASSETS["linux"]
-    elif key in ("android", "apk", "mobile", "android-apk"):
-        asset = _DOWNLOAD_ASSETS["android"]
-    else:
-        asset = _DOWNLOAD_ASSETS["windows"]
+def _resolve_download_target(target: str) -> dict:
+    """Map any spelling of a platform to the asset that serves it.
 
-    filename = asset["filename"]
-    media_type = asset["media_type"]
+    Anything unrecognised resolves to the Windows installer rather than
+    erroring: a download link that has drifted should still hand the visitor a
+    working product, not a stack trace.
+    """
+    key = (target or "").lower().strip()
+    platform = _DOWNLOAD_ALIASES.get(key, "windows")
+    return _DOWNLOAD_ASSETS.get(platform) or _DOWNLOAD_ASSETS["windows"]
 
+
+def _platform_from_user_agent(user_agent: str) -> str:
+    """Pick the right installer for whoever is asking.
+
+    The website has one Download button; this is what makes it give a Mac user
+    a .dmg and a Windows user an .exe.  Order matters -- an Android UA also
+    contains "Linux", and an Apple Silicon Mac reports differently depending on
+    the browser, so we check the most specific markers first.
+    """
+    ua = (user_agent or "").lower()
+    if "android" in ua:
+        return "android"
+    if "windows" in ua or "win64" in ua or "win32" in ua:
+        return "windows"
+    if "iphone" in ua or "ipad" in ua or "ipod" in ua:
+        # iOS has no desktop installer; the Mac build is the closest honest answer.
+        return "mac-arm64"
+    if "mac os" in ua or "macintosh" in ua or "darwin" in ua:
+        # Safari and Chrome both still report Intel on Apple Silicon, so the
+        # architecture cannot be read reliably from the UA.  arm64 is the
+        # correct default for every Mac sold since 2020, and the x64 build
+        # stays reachable by its explicit link.
+        if "intel mac os x 10_" in ua and "arm" not in ua:
+            return "mac-arm64"
+        return "mac-arm64"
+    if "linux" in ua or "x11" in ua:
+        return "linux"
+    return "windows"
+
+
+def _looks_like_a_real_installer(path: Path) -> bool:
+    """True when this file's size and leading bytes match what it claims to be."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size < _MIN_INSTALLER_BYTES:
+        return False
+
+    suffix = path.suffix.lower()
+    expected = _INSTALLER_MAGIC.get(suffix)
+    if expected:
+        try:
+            with path.open("rb") as fh:
+                head = fh.read(8)
+        except OSError:
+            return False
+        return any(head.startswith(magic) for magic in expected)
+
+    if suffix == ".dmg":
+        # Apple disk images are identified by a trailer, not a header.
+        try:
+            with path.open("rb") as fh:
+                fh.seek(size - 512)
+                return fh.read(4) == b"koly"
+        except OSError:
+            return False
+
+    return True
+
+
+def _find_local_installer(filename: str):
+    """Return a hosted installer for ``filename``, or None if none is usable."""
     search_paths = [
         Path(get_hermes_home()) / "downloads" / filename,
         PROJECT_ROOT / "dist" / filename,
@@ -8635,15 +8713,174 @@ async def download_installer_file(target: str):
         PROJECT_ROOT / "apps" / "mobile" / filename,
         WEB_DIST / "downloads" / filename,
     ]
-
     for p in search_paths:
-        if p.is_file() and p.stat().st_size >= _MIN_INSTALLER_BYTES:
-            return FileResponse(
-                path=str(p),
-                filename=filename,
-                media_type=media_type,
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        try:
+            if not p.is_file():
+                continue
+        except OSError:
+            continue
+        if _looks_like_a_real_installer(p):
+            return p
+        _log.warning(
+            "Ignoring %s: it is named like an installer but its contents are not one "
+            "(%s bytes). Falling back to the published release.",
+            p, p.stat().st_size if p.exists() else "?",
+        )
+    return None
+
+
+def _local_release_manifest() -> dict | None:
+    """Read a latest.json written by scripts/verify_release_artifacts.py."""
+    for base in (
+        Path(get_hermes_home()) / "downloads",
+        PROJECT_ROOT / "dist",
+        PROJECT_ROOT / "apps" / "desktop" / "release",
+        WEB_DIST / "downloads",
+    ):
+        candidate = base / "latest.json"
+        try:
+            if candidate.is_file():
+                return json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            _log.warning("Ignoring unreadable release manifest %s: %s", candidate, exc)
+    return None
+
+
+def _fetch_published_release() -> dict | None:
+    """Ask GitHub what the newest published release actually contains.
+
+    Best effort: the download redirects work without it, and a network failure
+    must never turn into a failed page load.
+    """
+    try:
+        req = urllib.request.Request(
+            _RELEASE_API_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "tchuekam-download-info"},
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:  # noqa: S310 - fixed https URL
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - informational endpoint, never fatal
+        _log.info("Could not read the published release from GitHub: %s", exc)
+        return None
+
+
+def _release_info() -> dict:
+    """Describe the release the website should advertise.
+
+    Only platforms with a real published asset are reported, so the site can
+    never offer a download that does not exist.
+    """
+    now = time.time()
+    cached = _release_info_cache.get("data")
+    if cached is not None and now < _release_info_cache.get("expires_at", 0.0):
+        return cached
+
+    manifest = _local_release_manifest()
+    if manifest:
+        info = {
+            "version": manifest.get("version") or None,
+            "source": "manifest",
+            "release_url": _RELEASE_PAGE_URL,
+            "platforms": {},
+        }
+        for art in manifest.get("artifacts", []):
+            platform = art.get("platform")
+            if not platform:
+                continue
+            info["platforms"][platform] = {
+                "filename": art.get("filename"),
+                "size": art.get("size"),
+                "sha256": art.get("sha256"),
+                "url": art.get("url") or f"{_RELEASE_DOWNLOAD_BASE}/{art.get('filename')}",
+                "download_path": f"/api/download/{platform}",
+            }
+        _release_info_cache.update({"expires_at": now + _RELEASE_INFO_TTL_SECONDS, "data": info})
+        return info
+
+    release = _fetch_published_release()
+    if release is None:
+        info = {
+            "version": None,
+            "source": "unavailable",
+            "release_url": _RELEASE_PAGE_URL,
+            "platforms": {},
+            "note": "The published release could not be read just now. Try the releases page.",
+        }
+        _release_info_cache.update(
+            {"expires_at": now + _RELEASE_INFO_FAILURE_TTL_SECONDS, "data": info}
+        )
+        return info
+
+    by_filename = {a.get("name"): a for a in release.get("assets", []) if a.get("name")}
+    platforms = {}
+    for platform, asset in _DOWNLOAD_ASSETS.items():
+        published = by_filename.get(asset["filename"])
+        if not published:
+            continue
+        if (published.get("size") or 0) < _MIN_INSTALLER_BYTES:
+            # A published asset this small is the placeholder problem again.
+            _log.warning(
+                "Release asset %s is only %s bytes; not advertising it as a download.",
+                asset["filename"], published.get("size"),
             )
+            continue
+        digest = (published.get("digest") or "")
+        platforms[platform] = {
+            "filename": asset["filename"],
+            "size": published.get("size"),
+            "sha256": digest.split("sha256:")[-1] if "sha256:" in digest else None,
+            "url": published.get("browser_download_url"),
+            "download_path": f"/api/download/{platform}",
+        }
+
+    info = {
+        "version": (release.get("tag_name") or "").lstrip("v") or None,
+        "source": "github",
+        "release_url": release.get("html_url") or _RELEASE_PAGE_URL,
+        "published_at": release.get("published_at"),
+        "platforms": platforms,
+    }
+    _release_info_cache.update({"expires_at": now + _RELEASE_INFO_TTL_SECONDS, "data": info})
+    return info
+
+
+@app.get("/api/download-info")
+async def download_release_info(request: Request):
+    """What can actually be downloaded right now, for the website to render.
+
+    Returns only platforms with a verified published asset, plus the real
+    version and file sizes, so the download page never advertises something
+    that does not exist.
+    """
+    info = dict(_release_info())
+    info["detected_platform"] = _platform_from_user_agent(request.headers.get("user-agent", ""))
+    info["available"] = bool(info.get("platforms"))
+    return JSONResponse(info)
+
+
+@app.api_route("/api/download/{target}", methods=["GET", "HEAD"])
+@app.api_route("/downloads/{target}", methods=["GET", "HEAD"])
+async def download_installer_file(target: str, request: Request):
+    """Serve the installer from disk, or send the visitor to the release asset.
+
+    ``/api/download/auto`` picks the right installer from the request's
+    User-Agent so the website can have a single Download button.
+    """
+    key = (target or "").lower().strip()
+    if key in ("auto", "detect", ""):
+        key = _platform_from_user_agent(request.headers.get("user-agent", ""))
+
+    asset = _resolve_download_target(key)
+    filename = asset["filename"]
+
+    local = _find_local_installer(filename)
+    if local is not None:
+        return FileResponse(
+            path=str(local),
+            filename=filename,
+            media_type=asset["media_type"],
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     return RedirectResponse(url=f"{_RELEASE_DOWNLOAD_BASE}/{filename}", status_code=302)
 

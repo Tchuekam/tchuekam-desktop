@@ -30,6 +30,8 @@ the SPA should bootstrap it after login instead.
 """
 from __future__ import annotations
 
+from hermes_cli.download_targets import public_download_paths
+
 PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # Liveness probe target. Returns version, gateway state, active
     # session count, and the dashboard auth-gate shape. No bodies, no
@@ -46,13 +48,10 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # Read-only theme + plugin manifests for the dashboard skin engine.
     "/api/dashboard/themes",
     "/api/dashboard/plugins",
-    # Application installer direct download endpoints.
-    "/api/download/windows",
-    "/api/download/mac-arm64",
-    "/api/download/mac-x64",
-    "/api/download/linux",
-    "/api/download/latest",
-    "/api/download/android",
-    "/api/download/apk",
-    "/api/download/mobile",
-})
+    # Which platforms actually have a published installer, with real
+    # version and file sizes. Read-only release metadata; it is what stops
+    # the download page advertising a platform that has no release.
+    "/api/download-info",
+# Installer downloads. Derived from hermes_cli.download_targets so a target the
+# endpoint understands can never be one the allowlist silently 401s.
+} | public_download_paths())

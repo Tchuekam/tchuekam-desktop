@@ -1,9 +1,19 @@
 name: Release TchueKAM Desktop
 
 # Triggered by pushing a semver tag (v1.2.3) or manually via the Actions tab.
-# Builds installers for Windows, macOS (arm64 + x64), and Linux, then publishes
-# them as a draft GitHub Release. You review + click Publish on github.com to
-# go live — which is when electron-updater picks the new version up.
+#
+# The order here is the point: every installer is built, then PROVED to be a
+# real installer, and only then uploaded. A release reached customers once as a
+# 66-byte text file named TchueKAM-Setup.exe, because nothing between "the build
+# succeeded" and "the customer clicked Download" ever looked at the bytes.
+#
+#   build   -> package each platform, verify its artifacts, fail the job if any
+#              artifact is not a genuine executable/disk image/package
+#   publish -> re-verify everything together, require the platforms we promise,
+#              write a release manifest, and upload to a DRAFT release
+#
+# The release stays a draft until a human publishes it, so nothing is advertised
+# as available before it has passed these checks.
 
 on:
   push:
@@ -14,9 +24,19 @@ on:
       tag:
         description: 'Release tag (e.g. v0.16.0) — must already exist as a git tag'
         required: true
+      required_platforms:
+        description: 'Platforms that must verify before publishing (comma-separated)'
+        required: false
+        default: 'windows'
 
 permissions:
   contents: write   # needed to create the GitHub Release
+
+env:
+  # Platforms a release must carry before it may be published. Windows is the
+  # committed platform; macOS and Linux are built and published when they
+  # verify, but a signing hiccup there must not block a Windows release.
+  REQUIRED_PLATFORMS: ${{ github.event.inputs.required_platforms || 'windows' }}
 
 jobs:
   build:
@@ -24,10 +44,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: win
+            builder_args: --win
+          - os: macos-latest
+            platform: mac
+            builder_args: --mac --arm64 --x64
+          - os: ubuntu-latest
+            platform: linux
+            builder_args: --linux
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -41,9 +70,14 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # electron-builder publishes to the release named after package.json's
-      # version, not after the tag that triggered this run. When they differ it
-      # uploads nothing and the job still passes, so fail early instead.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # electron-builder names the release after package.json's version, not
+      # after the tag that triggered this run. When they differ it uploads
+      # nothing and the job still passes, so fail early instead.
       - name: Check the package version matches the release tag
         shell: bash
         env:
@@ -51,20 +85,143 @@ jobs:
         run: |
           VERSION="$(node -p "require('./apps/desktop/package.json').version")"
           if [ "v${VERSION}" != "${RELEASE_TAG}" ]; then
-            echo "::error::apps/desktop/package.json says ${VERSION} but the release tag is ${RELEASE_TAG}. electron-builder publishes to v${VERSION}, so nothing would be attached to ${RELEASE_TAG}. Bump the version, commit, and tag again."
+            echo "::error::apps/desktop/package.json says ${VERSION} but the release tag is ${RELEASE_TAG}. Bump the version, commit, and tag again."
             exit 1
           fi
+          echo "version=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Install root dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Build + publish installers
+      # Package WITHOUT publishing. Uploading here would put artifacts in front
+      # of customers before anything had checked them.
+      - name: Build and package installers
         working-directory: apps/desktop
         env:
-          # electron-builder reads GH_TOKEN to upload assets to the release
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: skip mac code signing in CI if you haven't set up certs yet
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           npm run build
-          npx electron-builder --publish always
+          npx electron-builder ${{ matrix.builder_args }} --publish never
+
+      - name: List what was produced
+        shell: bash
+        run: ls -lh apps/desktop/release/ || true
+
+      # The gate. Reads each artifact's real bytes — DOS/PE header, UDIF
+      # trailer, ELF magic — and fails on anything that is only named like an
+      # installer.
+      - name: Verify artifacts are genuine installers
+        shell: bash
+        run: |
+          python3 scripts/verify_release_artifacts.py apps/desktop/release \
+            --version "${{ env.version }}"
+
+      - name: Upload verified artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.msi
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm
+            apps/desktop/release/*.yml
+            apps/desktop/release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Verify and publish draft release
+    needs: build
+    # Publish whatever verified. A macOS signing failure must not withhold a
+    # good Windows installer from customers waiting on it. A cancelled run
+    # publishes nothing, since its artifacts may be half-built.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download every platform's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+          pattern: installers-*
+          merge-multiple: true
+
+      - name: Show the release contents
+        run: ls -lh dist-artifacts/ || true
+
+      - name: Resolve the release version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: echo "version=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+
+      # Second gate: everything together, plus the promise that the platforms
+      # we advertise actually have a working installer in this release.
+      - name: Verify the full release and build its manifest
+        shell: bash
+        run: |
+          python3 scripts/verify_release_artifacts.py dist-artifacts \
+            --version "${{ env.version }}" \
+            --require "${{ env.REQUIRED_PLATFORMS }}" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/v${{ env.version }}" \
+            --manifest dist-artifacts/latest.json
+
+      # electron-updater reads latest.yml from the release. Without it, every
+      # installed copy silently stops receiving updates.
+      - name: Check the auto-update feed is present
+        shell: bash
+        run: |
+          if ! ls dist-artifacts/latest*.yml >/dev/null 2>&1; then
+            echo "::error::No latest*.yml in this release. electron-updater reads that file to find new versions; publishing without it leaves every installed copy unable to update."
+            exit 1
+          fi
+          echo "Update feed(s) present:"
+          ls -1 dist-artifacts/latest*.yml
+
+      - name: Publish the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Updating existing release $RELEASE_TAG"
+            gh release upload "$RELEASE_TAG" dist-artifacts/* --clobber
+          else
+            echo "Creating draft release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" dist-artifacts/* \
+              --draft \
+              --title "TchueKAM Agent ${RELEASE_TAG}" \
+              --generate-notes
+          fi
+
+      - name: Summarise
+        shell: bash
+        run: |
+          {
+            echo "### Release artifacts verified"
+            echo
+            echo "Every file below was checked for a real executable header and a"
+            echo "realistic size before upload."
+            echo
+            echo '```'
+            cat dist-artifacts/latest.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
