@@ -117,6 +117,26 @@ jobs:
           python3 scripts/verify_release_artifacts.py apps/desktop/release \
             --version "${{ env.version }}"
 
+      # A valid installer can still be a broken app. v1.0.0 installed
+      # perfectly and then died at startup with "Cannot find module
+      # 'electron-updater'", because a workspace-hoisted dependency never made
+      # it into app.asar and a glob that matches nothing is not an error.
+      - name: Verify the packaged app can load its own code
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r asar; do
+            found=1
+            echo "::group::$asar"
+            python3 scripts/verify_packaged_asar.py "$asar" --expect electron-updater
+            echo "::endgroup::"
+          done < <(find apps/desktop/release -name app.asar -print)
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No app.asar found under apps/desktop/release — nothing was packaged."
+            exit 1
+          fi
+
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v4
         with:

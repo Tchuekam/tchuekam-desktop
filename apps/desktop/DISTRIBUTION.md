@@ -32,7 +32,38 @@ The lesson is narrow and worth stating plainly: *a release is not what you
 built, it is what the customer downloads.* Everything below exists to check
 that second thing.
 
-## The two gates
+## A valid installer is not a working app
+
+The v1.0.0 installer was genuine: a real 114 MB NSIS installer that installed
+cleanly. It then died before opening a window:
+
+> A JavaScript error occurred in the main process
+> Error: Cannot find module 'electron-updater'
+
+Its `app.asar` contained **no `node_modules` at all**. `files` in
+`apps/desktop/package.json` listed `node_modules/electron-updater/**`, but npm
+workspaces hoist shared dependencies to the repo root and electron-builder
+resolves those globs relative to `apps/desktop/`. The glob matched nothing, and
+a glob that matches nothing is not an error. `beforeBuild` returns `false`,
+which switches off electron-builder's own node_modules collector, so nothing
+else noticed either.
+
+`stage-native-deps.cjs` already documents this exact trap for `node-pty`. The
+pure-JS dependency fell into it too and nobody connected the two.
+
+Two things were wrong, and both are fixed:
+
+1. **The module was in the wrong place.** `scripts/stage-app-deps.cjs` copies
+   `electron-updater` and its transitive runtime dependencies into
+   `build/app-node-modules/`, which `files` ships into the asar as
+   `node_modules/`. `require('electron-updater')` then resolves normally.
+2. **The list was incomplete anyway.** The old `files` named two modules. The
+   real closure is sixteen — `fs-extra`, `js-yaml`, `lazy-val`, `semver` and
+   the rest. Even a build that found the two would have crashed on the third.
+   The staging script walks the dependency graph instead of trusting a
+   hand-written list.
+
+## The three gates
 
 ### 1. Before publishing — `scripts/verify_release_artifacts.py`
 
@@ -75,7 +106,29 @@ Exit code 1 blocks the release job. `--require` additionally fails when a
 platform we advertise has no verified artifact — so we cannot ship a release
 that silently drops macOS.
 
-### 2. After deploying — `scripts/verify_live_downloads.py`
+### 2. Before publishing — `scripts/verify_packaged_asar.py`
+
+Opens the built `app.asar` and checks that every module the packaged main
+process requires by name is actually in the package — or, like `node-pty`,
+beside it in `resources/` where the app knows to look.
+
+```bash
+python3 scripts/verify_packaged_asar.py \
+    apps/desktop/release/win-unpacked/resources/app.asar \
+    --expect electron-updater
+```
+
+Run against the v1.0.0 artifact it reports exactly the crash customers hit:
+
+```
+  MISSING  electron-updater
+           required by electron/auto-updater.cjs
+```
+
+This catches the whole class of "installs fine, dies at startup" failures, not
+just this one module.
+
+### 3. After deploying — `scripts/verify_live_downloads.py`
 
 Acts as a customer against the real public site: follows the redirects, and
 inspects the bytes that come back.
@@ -96,8 +149,9 @@ deploy, not just after a release.
 1. Bump `version` in `apps/desktop/package.json`.
 2. Commit, tag `vX.Y.Z`, push the tag.
 3. `.github/workflows/release-desktop.yml` builds Windows, macOS (arm64 + x64)
-   and Linux, verifies each platform's artifacts, then verifies everything
-   together and uploads to a **draft** release.
+   and Linux, verifies each platform's artifacts **and that the packaged app
+   can load its own code**, then verifies everything together and uploads to a
+   **draft** release.
 4. Review the draft, then publish it on github.com.
 5. Run `verify_live_downloads.py` against the live site.
 
@@ -187,6 +241,19 @@ disagree, which means this artifact was not produced by it. Re-cutting the
 release through the workflow — bump `package.json` to the version you intend,
 commit, tag, let CI build — produces an installer whose version matches, and
 `--version` now fails the build if it ever does not.
+
+### `npm run build` currently fails on main
+
+`apps/desktop/src/app/business/` imports `exportBusinessDocument` and
+`serializeBusinessDocument` from an `exporters` module that does not exist —
+not in the tree and not anywhere in git history. Four files import it and
+`tsc -b` stops with 19 errors, so `vite build` never runs and no `dist/` is
+produced.
+
+A release cannot be cut until that module is written or those imports are
+removed. The v1.0.0 artifact predates the breakage, which is why it exists at
+all. This is a missing feature rather than a packaging fault, so it is not
+fixed here: the export behaviour it should implement is a product decision.
 
 ### The live site is deployed from another repository
 

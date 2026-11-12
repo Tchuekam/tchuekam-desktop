@@ -17,7 +17,7 @@
     "profile:main": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron --inspect=9229 .",
     "profile:main:cpu": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 NODE_OPTIONS=--cpu-prof HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron .",
     "start": "npm run build && electron .",
-    "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc -b && vite build",
+    "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && node scripts/stage-app-deps.cjs && tsc -b && vite build",
     "build:web": "tsc -b && vite build --config vite.web.config.ts",
     "builder": "cross-env NODE_OPTIONS=--max-old-space-size=16384 electron-builder",
     "pack": "npm run build && npm run builder -- --dir",
@@ -35,7 +35,7 @@
     "test:desktop:nsis": "node scripts/test-desktop.mjs nsis",
     "test:desktop:existing": "node scripts/test-desktop.mjs existing",
     "test:desktop:fresh": "node scripts/test-desktop.mjs fresh",
-    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/backend-probes.test.cjs electron/bootstrap-runner.test.cjs scripts/write-build-stamp.test.cjs",
+    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/backend-probes.test.cjs electron/bootstrap-runner.test.cjs scripts/write-build-stamp.test.cjs scripts/stage-app-deps.test.cjs",
     "type-check": "tsc -b",
     "lint": "eslint src/ electron/",
     "lint:fix": "eslint src/ electron/ --fix",
@@ -161,10 +161,13 @@
       "dist/**",
       "assets/**",
       "electron/**",
+      "!electron/**/*.test.cjs",
       "public/**",
-      "node_modules/electron-updater/**",
-      "node_modules/builder-util-runtime/**",
-      "package.json"
+      "package.json",
+      {
+        "from": "build/app-node-modules",
+        "to": "node_modules"
+      }
     ],
     "beforeBuild": "scripts/before-build.cjs",
     "afterPack": "scripts/after-pack.cjs",
