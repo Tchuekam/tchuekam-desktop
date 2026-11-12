@@ -90,7 +90,7 @@ npm run dist:linux   # AppImage + deb + rpm
 npm run pack         # unpacked app under release/ (no installer)
 ```
 
-To release: set `version` in `apps/desktop/package.json` to `X.Y.Z`, commit, then push the tag `vX.Y.Z`. The *Release TchueKAM Desktop* workflow builds every platform's installer and attaches it to the release named after `package.json`'s version (electron-builder takes it from there, not from the tag, so the workflow refuses to run when the two differ: otherwise nothing would be uploaded and the job would still pass). Building locally with the commands above works too; keep the file names the build produces, because the website links to them. macOS/Windows signing & notarization happen automatically when the relevant credentials are present in the environment (`CSC_LINK` / `CSC_KEY_PASSWORD` / `APPLE_*` for macOS, `WIN_CSC_*` for Windows). The Windows installer is **not code-signed** unless those credentials are set, so Windows SmartScreen warns on first run (*More info → Run anyway*).
+To release: set `version` in `apps/desktop/package.json` to `X.Y.Z`, commit, then push the tag `vX.Y.Z`. The *Release TchueKAM Desktop* workflow builds every platform's installer, **verifies that each artifact is a real executable before uploading anything**, and attaches the results to a draft release named after `package.json`'s version (electron-builder takes it from there, not from the tag, so the workflow refuses to run when the two differ: otherwise nothing would be uploaded and the job would still pass). You publish the draft once you've reviewed it — that's the moment installed copies start being offered the update. See **[DISTRIBUTION.md](./DISTRIBUTION.md)** for the full release and verification process. Building locally with the commands above works too; keep the file names the build produces, because the website links to them. macOS/Windows signing & notarization happen automatically when the relevant credentials are present in the environment (`CSC_LINK` / `CSC_KEY_PASSWORD` / `APPLE_*` for macOS, `WIN_CSC_*` for Windows). The Windows installer is **not code-signed** unless those credentials are set, so Windows SmartScreen warns on first run (*More info → Run anyway*).
 
 Each build is stamped with the commit it should install on first launch (`build/install-stamp.json`, written by `scripts/write-build-stamp.cjs`). Push your commits before building a release: an unpushed commit can't be cloned by users, so the build pins the newest pushed ancestor instead and marks the stamp dirty.
 
@@ -107,6 +107,20 @@ npm run fix
 npm run type-check
 npm run lint
 npm run test:desktop:all
+```
+
+If you built installers, check the artifacts are genuine before sharing them —
+a file with the right name is not the same thing as a working installer:
+
+```bash
+python3 ../../scripts/verify_release_artifacts.py release/
+```
+
+And after any website deploy, check what the public site actually hands a
+customer:
+
+```bash
+python3 ../../scripts/verify_live_downloads.py --base-url https://tchuekam.com
 ```
 
 ### Troubleshooting
