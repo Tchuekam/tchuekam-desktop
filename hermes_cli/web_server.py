@@ -86,6 +86,8 @@ except ImportError:
 _custom_web_dist = os.environ.get("HERMES_WEB_DIST")
 if _custom_web_dist and Path(_custom_web_dist).exists():
     WEB_DIST = Path(_custom_web_dist)
+elif (PROJECT_ROOT / "apps" / "desktop" / "dist-web").exists():
+    WEB_DIST = PROJECT_ROOT / "apps" / "desktop" / "dist-web"
 else:
     WEB_DIST = Path(__file__).parent / "web_dist"
 _log = logging.getLogger(__name__)
