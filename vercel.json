@@ -1,6 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
+    "app": {
+      "root": ".",
+      "framework": "fastapi",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "desktop",
+          "format": "url",
+          "env": "FRONTEND_URL"
+        }
+      ]
+    },
     "desktop": {
       "root": ".",
       "framework": "vite",
@@ -14,9 +26,17 @@
       "installCommand": "npm install",
       "buildCommand": "npm run build:vercel",
       "outputDirectory": "build-vercel"
+    },
+    "web": {
+      "root": "web",
+      "framework": "vite"
     }
   },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": { "service": "app" }
+    },
     {
       "source": "/docs/(.*)",
       "destination": { "service": "website" }
