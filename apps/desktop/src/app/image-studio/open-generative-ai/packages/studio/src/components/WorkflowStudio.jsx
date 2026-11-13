@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import { confirmToast } from "../utils/confirmToast.js";
 import {
   getTemplateWorkflows,
   getUserWorkflows,
@@ -294,17 +296,19 @@ export default function WorkflowStudio({
   );
 
   const handleDeleteWorkflow = async (wfId) => {
-    if (!confirm("Are you sure you want to delete this workflow?")) return;
-    setIsDeletingId(wfId);
-    try {
-      await deleteWorkflow(apiKey, wfId);
-      setWorkflows((prev) => prev.filter((w) => w.id !== wfId));
-    } catch (err) {
-      console.error("Delete failed:", err);
-      alert("Failed to delete workflow");
-    } finally {
-      setIsDeletingId(null);
-    }
+    confirmToast("Are you sure you want to delete this workflow?", async () => {
+      setIsDeletingId(wfId);
+      try {
+        await deleteWorkflow(apiKey, wfId);
+        setWorkflows((prev) => prev.filter((w) => w.id !== wfId));
+        toast.success("Workflow deleted successfully");
+      } catch (err) {
+        console.error("Delete failed:", err);
+        toast.error("Failed to delete workflow");
+      } finally {
+        setIsDeletingId(null);
+      }
+    });
   };
 
   const handleRenameWorkflow = async (e) => {
@@ -321,9 +325,10 @@ export default function WorkflowStudio({
         setSelectedWorkflow({ ...selectedWorkflow, name: newWorkflowName });
       }
       setRenamingWorkflow(null);
+      toast.success("Workflow renamed");
     } catch (err) {
       console.error("Rename failed:", err);
-      alert("Failed to rename workflow");
+      toast.error("Failed to rename workflow");
     }
   };
 
@@ -378,14 +383,6 @@ export default function WorkflowStudio({
     handleSelectWorkflow,
   ]);
 
-  // Handle reload on exit to clear builder CSS
-  useEffect(() => {
-    const fromBuilder = sessionStorage.getItem("fromWorkflowBuilder");
-    if (fromBuilder && (!urlWorkflowId || activeSubTab !== "builder")) {
-      sessionStorage.removeItem("fromWorkflowBuilder");
-      window.location.reload();
-    }
-  }, [urlWorkflowId, activeSubTab]);
 
   useEffect(() => {
     async function loadWorkflows() {

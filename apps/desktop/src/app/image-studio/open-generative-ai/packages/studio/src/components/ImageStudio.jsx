@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
+import { confirmToast } from "../utils/confirmToast.js";
 import { generateImage, generateI2I, uploadFile } from "../muapi.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
@@ -41,6 +42,9 @@ import {
   promptControlClassName,
   promptMediaButtonClassName,
 } from "./prompt/PromptComposer.jsx";
+import { addComposerAttachment, queueComposerSeed } from "@/store/composer";
+import { getStudioLibrary, deleteFromStudioLibrary } from "@/hermes";
+import { generateUnifiedImage, generateUnifiedI2I } from "../../../../unifiedProvider";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -161,7 +165,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
     const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
     const tooLarge = files.filter((f) => f.size > MAX_IMAGE_SIZE);
     if (tooLarge.length > 0) {
-      alert(
+      toast.error(
         `The following images are too large (max 10MB): ${tooLarge.map((f) => f.name).join(", ")}`,
       );
       return;
@@ -218,7 +222,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
         }),
       );
     } catch (err) {
-      alert(`Image upload failed: ${err.message}`);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setUploading(false);
       setLastUploadProgress(0);
@@ -553,6 +557,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
 // ─── ModelDropdown ────────────────────────────────────────────────────────────
 
 const PROVIDER_LOGOS = {
+  fal: "https://fal.media/files/fal-logo.png",
   openai: "https://cdn.muapi.ai/models/openai.png",
   google: "https://cdn.muapi.ai/models/gemini.png",
   kling: "https://cdn.muapi.ai/models/kling.png",
@@ -941,6 +946,37 @@ export default function ImageStudio({
     }
   }, []);
 
+  // ── Sync with Shared Studio Library on Mount ─────────────────────────────
+  useEffect(() => {
+    let active = true;
+    getStudioLibrary()
+      .then((res) => {
+        if (!active || !res || !res.items || res.items.length === 0) return;
+        const libraryEntries = res.items.map((item) => ({
+          id: item.id,
+          url: item.url,
+          prompt: item.name,
+          model: item.tags?.[1] || item.tags?.[0] || "fal-ai/flux-2/klein/9b",
+          aspect_ratio: "1:1",
+          timestamp: new Date(item.createdAt).toISOString(),
+        }));
+        setLocalHistory((prev) => {
+          const existingIds = new Set(prev.map((e) => e.id));
+          const existingUrls = new Set(prev.map((e) => e.url));
+          const toAdd = libraryEntries.filter(
+            (e) => !existingIds.has(e.id) && !existingUrls.has(e.url)
+          );
+          return toAdd.length > 0 ? [...toAdd, ...prev].slice(0, 50) : prev;
+        });
+      })
+      .catch((err) => {
+        console.warn("Could not sync with studio library:", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // ── Adjust height on load ────────────────────────────────────────────────
   // ── Persistence: Save ────────────────────────────────────────────────────
   useEffect(() => {
@@ -985,7 +1021,7 @@ export default function ImageStudio({
     const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
     const tooLarge = files.filter((f) => f.size > MAX_IMAGE_SIZE);
     if (tooLarge.length > 0) {
-      alert(
+      toast.error(
         `The following images are too large (max 10MB): ${tooLarge.map((f) => f.name).join(", ")}`
       );
       return;
@@ -1012,7 +1048,7 @@ export default function ImageStudio({
 
       handleUploadSelect({ urls });
     } catch (err) {
-      alert(`Image upload failed: ${err.message}`);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setGenerating(false);
     }
@@ -1200,23 +1236,92 @@ export default function ImageStudio({
     setMaxImages(1);
   };
 
+  // ── Studio Actions ────────────────────────────────────────────────────────
+  const handleSendToChat = useCallback((entry) => {
+    try {
+      addComposerAttachment({
+        id: `studio-${entry.id || Date.now()}`,
+        kind: "image",
+        label: entry.prompt
+          ? entry.prompt.length > 28
+            ? entry.prompt.slice(0, 28) + "..."
+            : entry.prompt
+          : "Studio Generation",
+        detail: entry.model || "TchueKAM Image Studio",
+        previewUrl: entry.url,
+        path: entry.url,
+      });
+      if (entry.prompt) {
+        queueComposerSeed(`Continue refining this generated image: "${entry.prompt}"`);
+      }
+      toast.success("Attached to Chat composer!");
+      if (typeof window !== "undefined") {
+        window.location.hash = "#/";
+      }
+    } catch (err) {
+      console.error("Failed to send to chat:", err);
+      toast.error("Could not attach to chat.");
+    }
+  }, []);
+
+  const handleReusePrompt = useCallback((entry) => {
+    if (entry.prompt) {
+      setPrompt(entry.prompt);
+      toast.success("Prompt loaded into composer!");
+    }
+    if (entry.model) {
+      const foundModel = (imageMode ? i2iModels : t2iModels).find((m) => m.id === entry.model);
+      if (foundModel) {
+        setSelectedModelId(foundModel.id);
+        setSelectedModelName(foundModel.name);
+      }
+    }
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [imageMode]);
+
+  const handleUseAsReference = useCallback((entry) => {
+    setUploadedImageUrls([entry.url]);
+    setImageMode(true);
+    if (entry.prompt) {
+      setPrompt(`Variation of: ${entry.prompt}`);
+    }
+    toast.success("Set as reference image!");
+  }, []);
+
+  const handleDeleteItem = useCallback((entry, idx) => {
+    confirmToast("Are you sure you want to delete this asset?", async () => {
+      try {
+        if (entry.id) {
+          await deleteFromStudioLibrary(entry.id);
+        }
+      } catch (err) {
+        console.warn("Backend deletion error:", err);
+      } finally {
+        setLocalHistory((prev) => prev.filter((_, i) => i !== idx));
+        toast.success("Asset deleted.");
+      }
+    });
+  }, []);
+
   // ── Generation ───────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (generating) return;
 
     if (imageMode) {
       if (uploadedImageUrls.length === 0) {
-        alert("Please upload a reference image first.");
+        toast.error("Please upload a reference image first.");
         return;
       }
       const modelInfo = getI2IModelById(selectedModelId);
       if (modelInfo?.swapField && !swapImageUrl) {
-        alert("Please upload a swap face image.");
+        toast.error("Please upload a swap face image.");
         return;
       }
     } else {
       if (!prompt.trim()) {
-        alert("Please enter a prompt to generate an image.");
+        toast.error("Please enter a prompt to generate an image.");
         return;
       }
     }
@@ -1228,30 +1333,62 @@ export default function ImageStudio({
     try {
       const results = await Promise.all(
         Array.from({ length: batchSize }).map(async () => {
+          const isFal =
+            selectedModelId.startsWith("fal-ai/") ||
+            selectedModelId.startsWith("bytedance/") ||
+            selectedModelId.startsWith("alibaba/") ||
+            selectedModelId.startsWith("fal");
+
           if (imageMode) {
-            const genParams = {
-              model: selectedModelId,
-              images_list: uploadedImageUrls,
-              image_url: uploadedImageUrls[0],
-              aspect_ratio: selectedAr,
-            };
-            if (swapImageUrl) genParams.swap_url = swapImageUrl;
-            if (prompt.trim()) genParams.prompt = prompt.trim();
-            if (currentQualityField && selectedQuality) {
-              genParams[currentQualityField] = selectedQuality;
+            if (isFal) {
+              const res = await generateUnifiedI2I({
+                model: selectedModelId,
+                prompt: prompt.trim(),
+                image_url: uploadedImageUrls[0],
+                images_list: uploadedImageUrls,
+                aspect_ratio: selectedAr,
+                quality: selectedQuality,
+                effect: selectedEffect,
+                swapUrl: swapImageUrl,
+                apiKey,
+              });
+              return { url: res.url, id: res.id };
+            } else {
+              const genParams = {
+                model: selectedModelId,
+                images_list: uploadedImageUrls,
+                image_url: uploadedImageUrls[0],
+                aspect_ratio: selectedAr,
+              };
+              if (swapImageUrl) genParams.swap_url = swapImageUrl;
+              if (prompt.trim()) genParams.prompt = prompt.trim();
+              if (currentQualityField && selectedQuality) {
+                genParams[currentQualityField] = selectedQuality;
+              }
+              if (showEffectBtn && selectedEffect) genParams.name = selectedEffect;
+              return await generateI2I(apiKey, genParams);
             }
-            if (showEffectBtn && selectedEffect) genParams.name = selectedEffect;
-            return await generateI2I(apiKey, genParams);
           } else {
-            const genParams = {
-              model: selectedModelId,
-              prompt: prompt.trim(),
-              aspect_ratio: selectedAr,
-            };
-            if (currentQualityField && selectedQuality) {
-              genParams[currentQualityField] = selectedQuality;
+            if (isFal) {
+              const res = await generateUnifiedImage({
+                model: selectedModelId,
+                prompt: prompt.trim(),
+                aspect_ratio: selectedAr,
+                quality: selectedQuality,
+                apiKey,
+              });
+              return { url: res.url, id: res.id };
+            } else {
+              const genParams = {
+                model: selectedModelId,
+                prompt: prompt.trim(),
+                aspect_ratio: selectedAr,
+              };
+              if (currentQualityField && selectedQuality) {
+                genParams[currentQualityField] = selectedQuality;
+              }
+              return await generateImage(apiKey, genParams);
             }
-            return await generateImage(apiKey, genParams);
           }
         })
       );
@@ -1314,18 +1451,67 @@ export default function ImageStudio({
                 />
                 
                 {/* Overlay actions */}
-                <div className="absolute top-2 right-2 hidden md:flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 hidden md:flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                   <GenerationCopyButtons
                     prompt={entry.prompt}
                     imageUrl={entry.url}
                     onCopyError={onGenerationError}
                   />
+                  {/* Send to Chat */}
+                  <button
+                    type="button"
+                    title="Send to Chat"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSendToChat(entry);
+                    }}
+                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </button>
+                  {/* Reuse Prompt */}
+                  {entry.prompt && (
+                    <button
+                      type="button"
+                      title="Reuse Prompt"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReusePrompt(entry);
+                      }}
+                      className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="1 4 1 10 7 10" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                      </svg>
+                    </button>
+                  )}
+                  {/* Use as Reference */}
+                  <button
+                    type="button"
+                    title="Use as Reference"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUseAsReference(entry);
+                    }}
+                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                  </button>
+                  {/* Download */}
                   <button
                     type="button"
                     title="Download"
                     onClick={(e) => {
                       e.stopPropagation();
-                      downloadImage(entry.url, `muapi-${entry.id || idx}.jpg`);
+                      const prefix = entry.model?.startsWith("fal") ? "fal" : "tchuekam";
+                      downloadImage(entry.url, `${prefix}-${entry.id || idx}.png`);
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
@@ -1333,14 +1519,13 @@ export default function ImageStudio({
                       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                     </svg>
                   </button>
+                  {/* Delete */}
                   <button
                     type="button"
                     title="Delete"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm("Are you sure you want to delete this generated item?")) {
-                        setLocalHistory(prev => prev.filter((_, i) => i !== idx));
-                      }
+                      handleDeleteItem(entry, idx);
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-all border border-white/10"
                   >
@@ -1358,20 +1543,33 @@ export default function ImageStudio({
                   onCopyError={onGenerationError}
                   actions={[
                     {
+                      kind: "chat",
+                      label: "Send to Chat",
+                      onSelect: () => handleSendToChat(entry),
+                    },
+                    {
+                      kind: "reuse",
+                      label: "Reuse Prompt",
+                      onSelect: () => handleReusePrompt(entry),
+                    },
+                    {
+                      kind: "reference",
+                      label: "Use as Reference",
+                      onSelect: () => handleUseAsReference(entry),
+                    },
+                    {
                       kind: "download",
                       label: "Download",
-                      onSelect: () =>
-                        downloadImage(entry.url, `muapi-${entry.id || idx}.jpg`),
+                      onSelect: () => {
+                        const prefix = entry.model?.startsWith("fal") ? "fal" : "tchuekam";
+                        downloadImage(entry.url, `${prefix}-${entry.id || idx}.png`);
+                      },
                     },
                     {
                       kind: "delete",
                       label: "Delete",
                       danger: true,
-                      onSelect: () => {
-                        if (confirm("Are you sure you want to delete this generated item?")) {
-                          setLocalHistory((prev) => prev.filter((_, i) => i !== idx));
-                        }
-                      },
+                      onSelect: () => handleDeleteItem(entry, idx),
                     },
                   ]}
                 />

@@ -8,24 +8,57 @@ const BASE_URL = (typeof window !== 'undefined' && window.location?.protocol?.st
     : 'https://api.muapi.ai';
 const PROXY_WF_BASE = '/api/workflow';
 
+export class AuthError extends Error {
+    constructor(message, status = 401, detail = '') {
+        super(message);
+        this.name = 'AuthError';
+        this.status = status;
+        this.detail = detail;
+        this.isAuthError = true;
+    }
+}
+
 function notifyAuthRequired(status, detail) {
     if (typeof window === 'undefined') return;
     if (status !== 401 && status !== 403) return;
     window.dispatchEvent(new CustomEvent('muapi:auth-required', { detail: { status, message: detail } }));
 }
 
-async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000) {
+async function authFetch(url, options = {}) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        const errText = await response.text();
+        notifyAuthRequired(response.status, errText);
+        if (response.status === 401 || response.status === 403) {
+            throw new AuthError(`Authentication failed (${response.status})`, response.status, errText);
+        }
+        throw new Error(`Request failed (${response.status}): ${errText.slice(0, 120)}`);
+    }
+    return response;
+}
+
+async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000, options = {}) {
     const pollUrl = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (options.signal?.aborted) {
+            throw new Error('Generation cancelled by user');
+        }
         await new Promise(resolve => setTimeout(resolve, interval));
+        if (options.signal?.aborted) {
+            throw new Error('Generation cancelled by user');
+        }
         try {
             const response = await fetch(pollUrl, {
-                headers: { 'Content-Type': 'application/json', 'x-api-key': key }
+                headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+                signal: options.signal
             });
             if (!response.ok) {
                 const errText = await response.text();
                 if (response.status >= 500) continue;
                 notifyAuthRequired(response.status, errText);
+                if (response.status === 401 || response.status === 403) {
+                    throw new AuthError(`Authentication failed (${response.status})`, response.status, errText);
+                }
                 throw new Error(`Poll Failed: ${response.status} - ${errText.slice(0, 100)}`);
             }
             const data = await response.json();
@@ -33,29 +66,37 @@ async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000)
             if (status === 'completed' || status === 'succeeded' || status === 'success') return data;
             if (status === 'failed' || status === 'error') throw new Error(`Generation failed: ${data.error || 'Unknown error'}`);
         } catch (error) {
-            if (attempt === maxAttempts) throw error;
+            if (error.isAuthError || options.signal?.aborted || attempt === maxAttempts) throw error;
         }
     }
     throw new Error('Generation timed out after polling.');
 }
 
-async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 60) {
+async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 60, options = {}) {
+    if (!key) {
+        notifyAuthRequired(401, 'API key required to submit request');
+        throw new AuthError('API key not configured. Please enter your API key in Settings.', 401);
+    }
     const url = `${BASE_URL}/api/v1/${endpoint}`;
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: options.signal
     });
     if (!response.ok) {
         const errText = await response.text();
         notifyAuthRequired(response.status, errText);
+        if (response.status === 401 || response.status === 403) {
+            throw new AuthError(`Authentication failed (${response.status})`, response.status, errText);
+        }
         throw new Error(`API Request Failed: ${response.status} ${response.statusText} - ${errText.slice(0, 100)}`);
     }
     const submitData = await response.json();
     const requestId = submitData.request_id || submitData.id;
     if (!requestId) return submitData;
     if (onRequestId) onRequestId(requestId);
-    const result = await pollForResult(requestId, key, maxAttempts);
+    const result = await pollForResult(requestId, key, maxAttempts, 2000, options);
     const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
     return { ...result, url: outputUrl };
 }
@@ -268,7 +309,11 @@ export function uploadFile(apiKey, file, onProgress) {
                     // fallback to statusText
                 }
                 notifyAuthRequired(xhr.status, detail);
-                reject(new Error(`File upload failed: ${xhr.status} - ${detail}`));
+                if (xhr.status === 401 || xhr.status === 403) {
+                    reject(new AuthError(`File upload authentication failed (${xhr.status}): ${detail}`, xhr.status, detail));
+                } else {
+                    reject(new Error(`File upload failed: ${xhr.status} - ${detail}`));
+                }
             }
         };
 
@@ -287,112 +332,87 @@ export async function getUserBalance(apiKey) {
     if (!response.ok) {
         const errText = await response.text();
         notifyAuthRequired(response.status, errText);
+        if (response.status === 401 || response.status === 403) {
+            throw new AuthError(`Authentication failed (${response.status})`, response.status, errText);
+        }
         throw new Error(`Failed to fetch balance: ${response.status} - ${errText.slice(0, 100)}`);
     }
     return await response.json();
 }
 
 export async function getTemplateWorkflows(apiKey) {
-    const response = await fetch(`${BASE_URL}/workflow/get-template-workflows`, {
+    const response = await authFetch(`${BASE_URL}/workflow/get-template-workflows`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch template workflows: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     return await response.json();
 };
 
 export async function getUserWorkflows(apiKey) {
-    const response = await fetch(`${BASE_URL}/workflow/get-workflow-defs`, {
+    const response = await authFetch(`${BASE_URL}/workflow/get-workflow-defs`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch user workflows: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     return await response.json();
 };
 
 export async function getPublishedWorkflows(apiKey) {
-    const response = await fetch(`${BASE_URL}/workflow/get-published-workflows`, {
+    const response = await authFetch(`${BASE_URL}/workflow/get-published-workflows`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch published workflows: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     return await response.json();
 };
 
 // Agents — uses direct URL → https://api.muapi.ai/agents/...
 export async function getTemplateAgents(apiKey) {
-    const response = await fetch(`${BASE_URL}/agents/templates/agents`, {
+    const response = await authFetch(`${BASE_URL}/agents/templates/agents`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch template agents: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     const data = await response.json();
     return Array.isArray(data) ? data : (data.agents || data.items || []);
 };
 
 export async function getUserAgents(apiKey) {
-    const response = await fetch(`${BASE_URL}/agents/user/agents`, {
+    const response = await authFetch(`${BASE_URL}/agents/user/agents`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch user agents: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     const data = await response.json();
     return Array.isArray(data) ? data : (data.agents || data.items || []);
 };
 
 export async function getPublishedAgents(apiKey) {
     // MuAPI: GET /agents/featured/agents
-    const response = await fetch(`${BASE_URL}/agents/featured/agents`, {
+    const response = await authFetch(`${BASE_URL}/agents/featured/agents`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch featured agents: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     const data = await response.json();
     return Array.isArray(data) ? data : (data.agents || data.items || []);
 };
 
 // GET /agents/user/conversations — returns the user's chat history across all agents
 export async function getUserConversations(apiKey) {
-    const response = await fetch(`${BASE_URL}/agents/user/conversations`, {
+    const response = await authFetch(`${BASE_URL}/agents/user/conversations`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
         }
     });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch conversations: ${response.status} - ${errText.slice(0, 100)}`);
-    }
     const data = await response.json();
     return Array.isArray(data) ? data : [];
 };

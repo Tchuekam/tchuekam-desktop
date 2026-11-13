@@ -728,6 +728,23 @@ def image_generate_tool(
             "image": formatted_images[0]["url"] if formatted_images else None,
         }
 
+        # Synchronize asset with TchueKAM Image Studio shared history
+        try:
+            from agent.image_studio_service import register_asset
+            for img_info in formatted_images:
+                register_asset(
+                    url=img_info["url"],
+                    prompt=prompt.strip(),
+                    provider="fal",
+                    model=model_id,
+                    studio_type="image",
+                    parameters={"aspect_ratio": aspect_lc, "num_inference_steps": num_inference_steps},
+                    dimensions={"width": img_info.get("width", 0), "height": img_info.get("height", 0)},
+                    status="completed",
+                )
+        except Exception as reg_err:
+            logger.debug("Could not register asset into image studio shared library: %s", reg_err)
+
         debug_call_data["success"] = True
         debug_call_data["images_generated"] = len(formatted_images)
         debug_call_data["generation_time"] = generation_time
@@ -1027,6 +1044,23 @@ def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
             "error": "Provider returned a non-dict result",
             "error_type": "provider_contract",
         })
+
+    # Synchronize plugin generation with TchueKAM Image Studio shared history
+    if result.get("success") and result.get("image"):
+        try:
+            from agent.image_studio_service import register_asset
+            register_asset(
+                url=result["image"],
+                prompt=prompt.strip(),
+                provider=result.get("provider") or getattr(provider, "name", "unknown"),
+                model=result.get("model") or configured_model or "default",
+                studio_type="image",
+                parameters={"aspect_ratio": aspect_ratio},
+                status="completed",
+            )
+        except Exception as reg_err:
+            logger.debug("Could not register plugin asset into image studio shared library: %s", reg_err)
+
     return json.dumps(result)
 
 

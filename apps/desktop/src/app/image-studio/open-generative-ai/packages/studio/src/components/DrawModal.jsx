@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
+import toast from "react-hot-toast";
 import { uploadFile, generateI2I } from "../muapi.js";
+import { confirmToast } from "../utils/confirmToast.js";
 
 export default function DrawModal({
   isOpen,
@@ -837,22 +839,22 @@ export default function DrawModal({
 
   // Clear Canvas (Remove image, drawings, text overlays and reset to setup screen)
   const handleClearCanvas = () => {
-    if (
-      confirm(
-        "Clear all drawings, text overlays, and remove the background image?",
-      )
-    ) {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-      setCanvasObjects([]);
-      setSelectedObjectId(null);
-      saveStateToHistory([]);
-      setBgImageUrl(null);
-      setViewState("setup");
-    }
+    confirmToast(
+      "Clear all drawings, text overlays, and remove the background image?",
+      () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        setCanvasObjects([]);
+        setSelectedObjectId(null);
+        saveStateToHistory([]);
+        setBgImageUrl(null);
+        setViewState("setup");
+      },
+      { confirmLabel: "Clear Canvas" }
+    );
   };
 
   // Merge Layers and Trigger Generation
@@ -961,11 +963,11 @@ export default function DrawModal({
         }
       });
 
-      alert("Generations complete!");
+      toast.success("Generations complete!");
       onClose();
     } catch (e) {
       console.error("[DrawModal] Generation failed:", e);
-      alert(`Generation failed: ${e.message}`);
+      toast.error(`Generation failed: ${e.message}`);
     } finally {
       setGenerating(false);
     }
@@ -1779,8 +1781,9 @@ export default function DrawModal({
 
               <button
                 onClick={() =>
-                  alert(
+                  toast(
                     "Draw to Edit: paint directly over an image, insert overlay image/text objects, drag/resize elements, or select and delete specific components.",
+                    { icon: "ℹ️" }
                   )
                 }
                 title="Info"

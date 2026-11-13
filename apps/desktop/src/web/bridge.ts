@@ -314,6 +314,24 @@ const bridge: DesktopBridge = {
     return { ok: false }
   },
 
+  getSecureSecret: async (key: string) => {
+    return (window as unknown as { __webSecrets?: Record<string, string> }).__webSecrets?.[key] || ''
+  },
+
+  setSecureSecret: async (key: string, value: string) => {
+    const w = window as unknown as { __webSecrets?: Record<string, string> }
+    w.__webSecrets = w.__webSecrets || {}
+    if (!value) delete w.__webSecrets[key]
+    else w.__webSecrets[key] = value
+    return { ok: true }
+  },
+
+  deleteSecureSecret: async (key: string) => {
+    const w = window as unknown as { __webSecrets?: Record<string, string> }
+    if (w.__webSecrets) delete w.__webSecrets[key]
+    return { ok: true }
+  },
+
   fetchLinkTitle: async () => '',
 
   settings: {

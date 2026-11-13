@@ -1,5 +1,6 @@
 import { localAI, isLocalAIAvailable } from '../lib/localInferenceClient.js';
 import { t, tf } from '../lib/i18n.js';
+import { showConfirm } from '../lib/toast.js';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const DownloadIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`;
@@ -327,10 +328,11 @@ function ModelCard(model, onStateChange) {
 
     const deleteBtn = card.querySelector('.delete-btn');
     if (deleteBtn) {
-        deleteBtn.onclick = async () => {
-            if (!confirm(tf('localModels.deleteConfirm', model.name))) return;
-            await localAI.deleteModel(model.id);
-            if (onStateChange) onStateChange();
+        deleteBtn.onclick = () => {
+            showConfirm(tf('localModels.deleteConfirm', model.name), async () => {
+                await localAI.deleteModel(model.id);
+                if (onStateChange) onStateChange();
+            });
         };
     }
 

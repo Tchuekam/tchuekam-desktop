@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast from "react-hot-toast";
 import { uploadFile, generateMarketingStudioAd } from "../muapi.js";
+import { confirmToast } from "../utils/confirmToast.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import MobileGenerationActions, {
   GenerationCopyButtons,
@@ -367,7 +369,7 @@ export default function MarketingStudio({
         try {
           const url = await uploadFile(apiKey, file, (pct) => setUploadProgress(p => ({ ...p, additional: pct })));
           setAdditionalImages(prev => [...prev, url].slice(0, 6));
-        } catch (err) { alert(err.message); }
+        } catch (err) { toast.error(err.message); }
       }
     } else {
       const file = files[0];
@@ -375,14 +377,20 @@ export default function MarketingStudio({
         const url = await uploadFile(apiKey, file, (pct) => setUploadProgress(p => ({ ...p, [target]: pct })));
         if (target === 'product') setProductImage(url);
         else setAvatarImage(url);
-      } catch (err) { alert(err.message); }
+      } catch (err) { toast.error(err.message); }
     }
     setUploadProgress(p => ({ ...p, [target]: 0 }));
   };
 
   const handleGenerate = async () => {
-    if (!prompt.trim()) return alert("Please enter an ad script.");
-    if (!productImage) return alert("Please upload a product image.");
+    if (!prompt.trim()) {
+      toast.error("Please enter an ad script.");
+      return;
+    }
+    if (!productImage) {
+      toast.error("Please upload a product image.");
+      return;
+    }
 
     onGenerationStart?.();
     setIsGenerating(true);
@@ -460,11 +468,11 @@ export default function MarketingStudio({
                     title="Delete"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm("Are you sure you want to delete this generated item?")) {
+                      confirmToast("Are you sure you want to delete this generated item?", () => {
                         if (!historyItems) {
                           setLocalHistory(prev => prev.filter(h => h.id !== entry.id));
                         }
-                      }
+                      });
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-all border border-white/10"
                   >
@@ -491,13 +499,13 @@ export default function MarketingStudio({
                       label: "Delete",
                       danger: true,
                       onSelect: () => {
-                        if (confirm("Are you sure you want to delete this generated item?")) {
+                        confirmToast("Are you sure you want to delete this generated item?", () => {
                           if (!historyItems) {
                             setLocalHistory((prev) =>
                               prev.filter((item) => item.id !== entry.id),
                             );
                           }
-                        }
+                        });
                       },
                     },
                   ]}

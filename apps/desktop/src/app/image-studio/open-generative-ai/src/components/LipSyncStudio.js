@@ -4,6 +4,7 @@ import { AuthModal } from './AuthModal.js';
 import { t } from '../lib/i18n.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { showToast } from '../lib/toast.js';
 
 export function LipSyncStudio() {
     const container = document.createElement('div');
@@ -175,7 +176,7 @@ export function LipSyncStudio() {
         try {
             uploadedVideoUrl = await muapi.uploadFile(file);
             showVideoReady(file.name);
-        } catch (err) { showVideoIcon(); alert(`Video upload failed: ${err.message}`); }
+        } catch (err) { showVideoIcon(); showToast(`Video upload failed: ${err.message}`, 'error'); }
         videoFileInput.value = '';
     };
 
@@ -243,7 +244,7 @@ export function LipSyncStudio() {
         try {
             uploadedAudioUrl = await muapi.uploadFile(file);
             showAudioReady(file.name);
-        } catch (err) { showAudioIcon(); alert(`Audio upload failed: ${err.message}`); }
+        } catch (err) { showAudioIcon(); showToast(`Audio upload failed: ${err.message}`, 'error'); }
         audioFileInput.value = '';
     };
 
@@ -656,15 +657,15 @@ export function LipSyncStudio() {
 
         // Validation
         if (!uploadedAudioUrl) {
-            alert(t('lipsync.noAudioAlert'));
+            showToast(t('lipsync.noAudioAlert'), 'error');
             return;
         }
         if (inputMode === 'image' && !uploadedImageUrl) {
-            alert(t('lipsync.noImageAlert'));
+            showToast(t('lipsync.noImageAlert'), 'error');
             return;
         }
         if (inputMode === 'video' && !uploadedVideoUrl) {
-            alert(t('lipsync.noVideoAlert'));
+            showToast(t('lipsync.noVideoAlert'), 'error');
             return;
         }
 

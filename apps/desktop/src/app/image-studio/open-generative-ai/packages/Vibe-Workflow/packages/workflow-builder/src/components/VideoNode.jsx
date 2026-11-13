@@ -1,4 +1,4 @@
-import { downloadFile, videoModels } from "./utility";
+import { downloadFile, videoModels, confirmActionToast } from "./utility";
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { BsArrowUpCircleFill } from "react-icons/bs";
 import { IoTimeOutline, IoVideocamOutline, IoTrashOutline, IoPlay, IoPause, IoVolumeHigh, IoVolumeMute } from "react-icons/io5";
@@ -306,11 +306,11 @@ const VideoGeneration = ({ id, data, selected }) => {
   };
 
   const handleDeleteNode = () => {
-    if (window.confirm(`Are you sure you want to delete this ${id} node?`)) {
+    confirmActionToast(`Are you sure you want to delete this ${id} node?`, () => {
       setNodes((nds) => nds.filter((n) => n.id !== id));
       setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
       toast.success(`Deleted node ${id}`);
-    };
+    });
   };
 
   const hasPrompt = properties && "prompt" in properties && !data.selectedModel?.id.includes("passthrough");
@@ -401,7 +401,7 @@ const VideoGeneration = ({ id, data, selected }) => {
     const currentHistory = outputHistory[currentHistoryIndex];
     if (!currentHistory || !currentHistory.node_run_id) return;
 
-    if (window.confirm("Are you sure you want to delete this history entry?")) {
+    confirmActionToast("Are you sure you want to delete this history entry?", async () => {
       try {
         await axios.delete(`/api/workflow/node-run/${currentHistory.node_run_id}`);
         const newHistory = outputHistory.filter((_, i) => i !== currentHistoryIndex);
@@ -421,7 +421,7 @@ const VideoGeneration = ({ id, data, selected }) => {
         toast.error(error.response?.data?.detail || "Failed to delete history entry");
         console.error(error);
       }
-    }
+    });
   };
 
   const currentOutputList = currentHistoryIndex !== -1 && outputHistory[currentHistoryIndex]

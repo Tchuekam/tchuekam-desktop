@@ -16,10 +16,6 @@ const WorkflowUI = ({
   onGenerationComplete,
   onGenerationError,
 }) => {
-  useEffect(() => {
-    sessionStorage.setItem("fromWorkflowBuilder", "true");
-  }, []);
-
   return (
     <div className="w-full h-full bg-black">
       <WorkflowBuilder

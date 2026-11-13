@@ -121,22 +121,49 @@ const EditAgent = ({ useUser, usedIn }) => {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("Are you sure you want to delete this agent? This action cannot be undone.")) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await axios.delete(`${BASE_URL}/by-slug/${id}`);
-      toast.success("Agent deleted successfully");
-      router.push("/agents");
-    } catch (err) {
-      console.error("Delete error:", err);
-      toast.error("Failed to delete agent");
-      setError(err.response?.data?.detail || "Delete failed");
-    } finally {
-      setSaving(false);
-    }
+    toast((t) => (
+      <div className="flex flex-col gap-2 p-1 min-w-[220px]">
+        <div className="text-xs font-semibold text-white/90">Delete this agent? This cannot be undone.</div>
+        <div className="flex justify-end gap-2 mt-1">
+          <button
+            type="button"
+            onClick={() => toast.dismiss(t.id)}
+            className="px-2.5 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                setSaving(true);
+                await axios.delete(`${BASE_URL}/by-slug/${id}`);
+                toast.success("Agent deleted successfully");
+                router.push("/agents");
+              } catch (err) {
+                console.error("Delete error:", err);
+                toast.error("Failed to delete agent");
+                setError(err.response?.data?.detail || "Delete failed");
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="px-2.5 py-1 text-[11px] rounded bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 6000,
+      style: {
+        background: '#18181b',
+        color: '#ffffff',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: '12px',
+      },
+    });
   };
 
   const handleShare = () => {

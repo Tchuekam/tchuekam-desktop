@@ -115,3 +115,13 @@ scripts/out/
 
 *.db
 uploads/
+
+# Image Studio vendored build & cache artifacts
+apps/desktop/src/app/image-studio/open-generative-ai/**/node_modules/
+apps/desktop/src/app/image-studio/open-generative-ai/**/dist/
+apps/desktop/src/app/image-studio/open-generative-ai/cache/
+apps/desktop/src/app/image-studio/open-generative-ai/server/
+apps/desktop/src/app/image-studio/open-generative-ai/static/
+apps/desktop/src/app/image-studio/open-generative-ai/*-manifest.json
+apps/desktop/src/app/image-studio/open-generative-ai/trace
+

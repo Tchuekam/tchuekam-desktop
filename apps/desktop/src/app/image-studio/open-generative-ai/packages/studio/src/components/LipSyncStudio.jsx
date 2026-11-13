@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
+import { confirmToast } from "../utils/confirmToast.js";
 import { processLipSync, uploadFile } from "../muapi.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
@@ -481,7 +482,7 @@ export default function LipSyncStudio({
   const handleImageUpload = useCallback(
     async (file) => {
       if (file.size > 10 * 1024 * 1024) {
-        alert("Image exceeds 10MB limit.");
+        toast.error("Image exceeds 10MB limit.");
         return;
       }
       setImageState(UPLOAD_STATE.UPLOADING);
@@ -495,7 +496,7 @@ export default function LipSyncStudio({
         setImageState(UPLOAD_STATE.READY);
       } catch (err) {
         setImageState(UPLOAD_STATE.IDLE);
-        alert(`Image upload failed: ${err.message}`);
+        toast.error(`Image upload failed: ${err.message}`);
       } finally {
         setImageProgress(0);
       }
@@ -506,7 +507,7 @@ export default function LipSyncStudio({
   const handleVideoPick = useCallback(
     async (file) => {
       if (file.size > 50 * 1024 * 1024) {
-        alert("Video exceeds 50MB limit.");
+        toast.error("Video exceeds 50MB limit.");
         return;
       }
       setVideoState(UPLOAD_STATE.UPLOADING);
@@ -520,7 +521,7 @@ export default function LipSyncStudio({
         setVideoState(UPLOAD_STATE.READY);
       } catch (err) {
         setVideoState(UPLOAD_STATE.IDLE);
-        alert(`Video upload failed: ${err.message}`);
+        toast.error(`Video upload failed: ${err.message}`);
       } finally {
         setVideoProgress(0);
       }
@@ -535,7 +536,7 @@ export default function LipSyncStudio({
   const handleAudioPick = useCallback(
     async (file) => {
       if (file.size > 10 * 1024 * 1024) {
-        alert("Audio file exceeds 10MB limit.");
+        toast.error("Audio file exceeds 10MB limit.");
         return;
       }
       setAudioState(UPLOAD_STATE.UPLOADING);
@@ -549,7 +550,7 @@ export default function LipSyncStudio({
         setAudioState(UPLOAD_STATE.READY);
       } catch (err) {
         setAudioState(UPLOAD_STATE.IDLE);
-        alert(`Audio upload failed: ${err.message}`);
+        toast.error(`Audio upload failed: ${err.message}`);
       } finally {
         setAudioProgress(0);
       }
@@ -640,15 +641,15 @@ export default function LipSyncStudio({
   // ── Generation ──────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!audioUrl) {
-      alert("Please upload an audio file first.");
+      toast.error("Please upload an audio file first.");
       return;
     }
     if (inputMode === "image" && !imageUrl) {
-      alert("Please upload a portrait image first.");
+      toast.error("Please upload a portrait image first.");
       return;
     }
     if (inputMode === "video" && !videoUrl) {
-      alert("Please upload a source video first.");
+      toast.error("Please upload a source video first.");
       return;
     }
 
@@ -801,9 +802,9 @@ export default function LipSyncStudio({
                     title="Delete"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm("Are you sure you want to delete this generated item?")) {
+                      confirmToast("Are you sure you want to delete this generated item?", () => {
                         setInternalHistory(prev => prev.filter((_, i) => i !== idx));
-                      }
+                      });
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-all border border-white/10"
                   >
@@ -830,9 +831,9 @@ export default function LipSyncStudio({
                       label: "Delete",
                       danger: true,
                       onSelect: () => {
-                        if (confirm("Are you sure you want to delete this generated item?")) {
+                        confirmToast("Are you sure you want to delete this generated item?", () => {
                           setInternalHistory((prev) => prev.filter((_, i) => i !== idx));
-                        }
+                        });
                       },
                     },
                   ]}
