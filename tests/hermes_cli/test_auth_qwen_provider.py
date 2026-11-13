@@ -7,6 +7,7 @@ resolve_qwen_runtime_credentials, get_qwen_auth_status.
 
 import json
 import stat
+import sys
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -142,8 +143,9 @@ def test_save_qwen_cli_tokens_permissions(qwen_env):
     mode = saved_path.stat().st_mode
     assert mode & stat.S_IRUSR  # owner read
     assert mode & stat.S_IWUSR  # owner write
-    assert not (mode & stat.S_IRGRP)  # no group read
-    assert not (mode & stat.S_IROTH)  # no other read
+    if sys.platform != "win32":
+        assert not (mode & stat.S_IRGRP)  # no group read
+        assert not (mode & stat.S_IROTH)  # no other read
 
 
 # ---------------------------------------------------------------------------

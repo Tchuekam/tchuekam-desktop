@@ -3,6 +3,7 @@
 import logging
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -67,8 +68,15 @@ def run_inline_shell(command: str, cwd: Path | None, timeout: int) -> str:
     raising, so one bad snippet can't wreck the whole skill message.
     """
     try:
+        bash_bin = "bash"
+        if sys.platform == "win32":
+            try:
+                from tools.environments.local import _find_bash
+                bash_bin = _find_bash()
+            except Exception:
+                pass
         completed = subprocess.run(
-            ["bash", "-c", command],
+            [bash_bin, "-c", command],
             cwd=str(cwd) if cwd else None,
             capture_output=True,
             text=True,
@@ -93,6 +101,12 @@ def run_inline_shell(command: str, cwd: Path | None, timeout: int) -> str:
     output = (completed.stdout or "").rstrip("\n")
     if not output and completed.stderr:
         output = completed.stderr.rstrip("\n")
+    if sys.platform == "win32":
+        try:
+            from tools.environments.local import _msys_to_windows_path
+            output = _msys_to_windows_path(output)
+        except Exception:
+            pass
     if len(output) > _INLINE_SHELL_MAX_OUTPUT:
         output = output[:_INLINE_SHELL_MAX_OUTPUT] + "...[truncated]"
     return output
