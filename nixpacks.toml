@@ -7,4 +7,4 @@ cmds = [
 ]
 
 [start]
-cmd = "uvicorn tchuekam_backend.main:app --host 0.0.0.0 --port $PORT"
+cmd = "python -m hermes_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure --skip-build --no-open"

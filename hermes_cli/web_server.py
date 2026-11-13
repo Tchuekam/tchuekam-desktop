@@ -106,6 +106,18 @@ _log = logging.getLogger(__name__)
 async def _lifespan(app: "FastAPI"):
     app.state.event_channels = {}  # dict[str, set]
     app.state.event_lock = asyncio.Lock()
+    try:
+        from tchuekam_backend.core.database import init_db, SessionLocal
+        from tchuekam_backend.services.rbac_service import RbacService
+        init_db()
+        db = SessionLocal()
+        try:
+            rbac = RbacService(db)
+            rbac.seed_default_roles_and_permissions()
+        finally:
+            db.close()
+    except Exception as e:
+        _log.debug("tchuekam_backend DB initialization skipped or error: %s", e)
     yield
 
 
@@ -127,6 +139,12 @@ def _get_event_state(app: "FastAPI"):
 
 
 app = FastAPI(title="TchuekaM Agent", version=__version__, lifespan=_lifespan)
+
+try:
+    from tchuekam_backend.api.router import api_router as _tchuekam_backend_router
+    app.include_router(_tchuekam_backend_router, prefix="/api/v1")
+except Exception as _e:
+    _log.debug("tchuekam_backend api_router skipped: %s", _e)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
@@ -690,6 +708,20 @@ def _probe_gateway_health() -> tuple[bool, dict | None]:
         except Exception:
             continue
     return False, None
+
+
+@app.get("/health")
+@app.get("/healthz")
+@app.get("/api/health")
+@app.get("/api/v1/health")
+async def health_check():
+    """Railway and PaaS liveness / readiness probe."""
+    return {
+        "status": "healthy",
+        "service": "tchuekam-agent",
+        "version": __version__,
+        "timestamp": time.time(),
+    }
 
 
 @app.get("/api/status")

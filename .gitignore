@@ -62,7 +62,7 @@ ignored/
 environments/benchmarks/evals/
 
 # Web UI build output
-hermes_cli/web_dist/
+# hermes_cli/web_dist/ (tracked for cloud deployment)
 apps/desktop/build/
 apps/desktop/dist/
 apps/desktop/dist-web/
