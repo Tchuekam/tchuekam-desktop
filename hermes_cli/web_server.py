@@ -7698,6 +7698,10 @@ def mount_spa(application: FastAPI):
         return Response(content=css, media_type="text/css")
 
     application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+    if (WEB_DIST / "ds-assets").is_dir():
+        application.mount("/ds-assets", StaticFiles(directory=WEB_DIST / "ds-assets"), name="ds-assets")
+    if (WEB_DIST / "hermes-frames").is_dir():
+        application.mount("/hermes-frames", StaticFiles(directory=WEB_DIST / "hermes-frames"), name="hermes-frames")
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str, request: Request):

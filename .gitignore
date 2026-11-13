@@ -65,7 +65,7 @@ environments/benchmarks/evals/
 # hermes_cli/web_dist/ (tracked for cloud deployment)
 apps/desktop/build/
 apps/desktop/dist/
-apps/desktop/dist-web/
+# apps/desktop/dist-web/
 website/build-vercel/
 apps/desktop/release/
 apps/desktop/*.tsbuildinfo

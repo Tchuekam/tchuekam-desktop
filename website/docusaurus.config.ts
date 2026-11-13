@@ -7,6 +7,21 @@ const config: Config = {
   tagline: 'The self-improving AI agent',
   favicon: 'img/favicon.ico',
 
+  headTags: [
+    {
+      tagName: 'script',
+      attributes: {
+        async: 'true',
+        src: 'https://www.googletagmanager.com/gtm.js?id=G-LM6BWKCD9L',
+      },
+    },
+    {
+      tagName: 'script',
+      attributes: {},
+      innerHTML: 'window.dataLayer = window.dataLayer || [];\nfunction gtag(){dataLayer.push(arguments);}\ngtag(\'js\', new Date());',
+    },
+  ],
+
   url: 'https://hermes-agent.nousresearch.com',
   baseUrl: '/docs/',
 
