@@ -94,7 +94,7 @@ export default function BioComputePlaygroundPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#08080c] text-white p-6 space-y-8 font-sans">
+    <div className="min-h-dvh bg-[#08080c] text-white p-3 sm:p-6 space-y-6 sm:space-y-8 font-sans">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-white/10 pb-4 gap-4">
         <div>

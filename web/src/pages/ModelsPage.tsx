@@ -255,7 +255,7 @@ function UseAsMenu({
         Use as <ChevronDown className="h-3 w-3" />
       </Button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] border border-border bg-card shadow-lg">
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[min(220px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] border border-border bg-card shadow-lg">
           <button
             type="button"
             onClick={() => assign("main", "")}
@@ -434,7 +434,7 @@ function ModelCard({
               reasoning={entry.reasoning_tokens}
             />
 
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-1 min-[360px]:grid-cols-3 gap-2 text-xs">
               <div className="text-center">
                 <div className="font-mono font-semibold">{entry.sessions}</div>
                 <div className="text-xs text-text-tertiary">

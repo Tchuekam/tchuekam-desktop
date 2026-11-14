@@ -469,7 +469,7 @@ export default function SystemPage() {
                   onChange={(e) => setHookCommand(e.target.value)}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="hook-matcher">Matcher (optional)</Label>
                   <Input
@@ -533,7 +533,7 @@ export default function SystemPage() {
         </H2>
         <Card>
           <CardContent className="py-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-6 text-sm">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-6 text-sm">
               <div>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">OS</div>
                 <div>{stats?.os} {stats?.os_release}</div>

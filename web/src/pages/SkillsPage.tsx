@@ -300,11 +300,11 @@ export default function SkillsPage() {
               {view === "skills" &&
                 !isSearching &&
                 allCategories.length > 0 && (
-                  <div className="hidden sm:flex flex-col border-t border-border">
-                    <div className="px-3 pt-2 pb-1 font-mondwest text-display text-xs tracking-[0.12em] text-text-tertiary">
+                  <div className="flex flex-col border-t border-border">
+                    <div className="hidden sm:block px-3 pt-2 pb-1 font-mondwest text-display text-xs tracking-[0.12em] text-text-tertiary">
                       {t.skills.categories}
                     </div>
-                    <div className="flex flex-col p-2 pt-1 gap-px max-h-[calc(100vh-340px)] overflow-y-auto">
+                    <div className="flex sm:flex-col p-2 sm:pt-1 gap-1 sm:gap-px overflow-x-auto sm:overflow-x-visible scrollbar-none sm:max-h-[calc(100dvh-340px)] sm:overflow-y-auto">
                       {allCategories.map(({ key, name, count }) => {
                         const isActive = activeCategory === key;
 
@@ -315,7 +315,7 @@ export default function SkillsPage() {
                             onClick={() =>
                               setActiveCategory(isActive ? null : key)
                             }
-                            className="rounded-none px-2 py-1 text-xs"
+                            className="shrink-0 sm:shrink rounded-none px-2.5 sm:px-2 py-1 text-xs"
                           >
                             <span className="flex-1 truncate">{name}</span>
                             <span
