@@ -593,10 +593,44 @@ export function getElevenLabsVoices(): Promise<ElevenLabsVoicesResponse> {
   })
 }
 
+export interface StudioAsset {
+  id: string
+  url: string
+  prompt?: string
+  provider?: string
+  model?: string
+  studioType?: string
+  parameters?: Record<string, unknown>
+  mimeType?: string
+  jobId?: string | null
+  workspaceId?: string
+  conversationId?: string | null
+  hasLocalFile?: boolean
+  tags?: string[]
+  favorite?: boolean
+  createdAt?: number
+}
+
+export type StudioJobState =
+  | 'REQUESTED'
+  | 'VALIDATING'
+  | 'SUBMITTED'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+
 export interface ImageGenStudioResponse {
   success: boolean
   images?: string[]
+  asset?: StudioAsset
+  jobId?: string
+  state?: StudioJobState
+  duplicate?: boolean
+  provider?: string
+  model?: string
   error?: string
+  error_type?: string
 }
 
 export function generateStudioImages(payload: {
@@ -606,6 +640,11 @@ export function generateStudioImages(payload: {
   quality: string
   model: string
   numImages: number
+  provider?: string
+  workspaceId?: string
+  conversationId?: string
+  /** Idempotency key: re-sending it never triggers a second generation. */
+  clientRequestId?: string
 }): Promise<ImageGenStudioResponse> {
   return window.hermesDesktop.api<ImageGenStudioResponse>({
     path: '/api/images/generate',
@@ -614,6 +653,22 @@ export function generateStudioImages(payload: {
   })
 }
 
+export function cancelStudioJob(jobId: string): Promise<{ success: boolean; state?: StudioJobState }> {
+  return window.hermesDesktop.api({ path: `/api/images/jobs/${encodeURIComponent(jobId)}/cancel`, method: 'POST' })
+}
+
+/** Make a library asset available as a local file (chat attachments need a path). */
+export function materializeStudioAsset(id: string): Promise<{ success: boolean; path?: string; error?: string }> {
+  return window.hermesDesktop.api({
+    path: `/api/images/assets/${encodeURIComponent(id)}/materialize`,
+    method: 'POST'
+  })
+}
+
+/** Data URL for an asset that only exists as a local file on the backend. */
+export function getStudioAssetData(id: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+  return window.hermesDesktop.api({ path: `/api/images/assets/${encodeURIComponent(id)}/data`, method: 'GET' })
+}
 export function processImageEdit(payload: {
   image: string
   mask?: string
@@ -650,10 +705,8 @@ export function performStudioOCR(payload: {
   })
 }
 
-export interface LibraryItem {
-  id: string
-  name: string
-  url: string
+export interface LibraryItem extends StudioAsset {
+  name?: string
   tags: string[]
   favorite: boolean
   createdAt: number

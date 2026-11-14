@@ -16,6 +16,7 @@ Inspired by Block/goose's SubdirectoryHintTracker.
 import logging
 import os
 import shlex
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, Set
 
@@ -150,7 +151,7 @@ class SubdirectoryHintTracker:
     def _extract_paths_from_command(self, cmd: str, candidates: Set[Path]):
         """Extract path-like tokens from a shell command string."""
         try:
-            tokens = shlex.split(cmd)
+            tokens = shlex.split(cmd, posix=(sys.platform != "win32"))
         except ValueError:
             tokens = cmd.split()
 
@@ -158,8 +159,8 @@ class SubdirectoryHintTracker:
             # Skip flags
             if token.startswith("-"):
                 continue
-            # Must look like a path (contains / or .)
-            if "/" not in token and "." not in token:
+            # Must look like a path (contains /, \, or .)
+            if "/" not in token and "\\" not in token and "." not in token:
                 continue
             # Skip URLs
             if token.startswith(("http://", "https://", "git@")):

@@ -17,7 +17,8 @@
     "profile:main": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron --inspect=9229 .",
     "profile:main:cpu": "wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 NODE_OPTIONS=--cpu-prof HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron .",
     "start": "npm run build && electron .",
-    "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc -b && vite build",
+    "build:backend-web": "node -e \"const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('../../node_modules/vite/package.json')&&!fs.existsSync('../../web/node_modules/vite/package.json'))cp.execSync('npm install',{cwd:'../../web',stdio:'inherit'});cp.execSync('npm run build',{cwd:'../../web',stdio:'inherit'})\"",
+    "build": "node scripts/assert-root-install.cjs && npm run build:backend-web && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc -b && vite build",
     "build:web": "tsc -b && vite build --config vite.web.config.ts",
     "builder": "cross-env NODE_OPTIONS=--max-old-space-size=16384 electron-builder",
     "pack": "npm run build && npm run builder -- --dir",
@@ -180,11 +181,16 @@
       {
         "from": "assets/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "../../hermes_cli/web_dist",
+        "to": "web_dist"
       }
     ],
     "asar": true,
     "afterSign": "scripts/notarize.cjs",
     "asarUnpack": [
+      "dist/**",
       "**/*.node",
       "**/prebuilds/**"
     ],

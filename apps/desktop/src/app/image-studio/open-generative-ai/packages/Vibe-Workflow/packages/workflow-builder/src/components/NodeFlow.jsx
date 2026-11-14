@@ -1344,7 +1344,12 @@ const NodeFlow = ({ apiKey, initialNodeSchemas, initialWorkflowData }) => {
     try {
       const response = await api.post("/api/workflow/create", workflowPayload);
       console.log("Workflow created:", response.data);
-      window.location.href = `/workflow/${response.data.workflow_id}`;
+      const wfId = response.data.workflow_id;
+      if (typeof window !== 'undefined' && window.location.hash.startsWith('#/image-studio')) {
+        window.location.hash = `#/image-studio?tab=workflows&workflowId=${wfId}`;
+      } else {
+        window.location.href = `/workflow/${wfId}`;
+      }
     } catch (error) {
       console.log(error);
       setIsRunning(0);

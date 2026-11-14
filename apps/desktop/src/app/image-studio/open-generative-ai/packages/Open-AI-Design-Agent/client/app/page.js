@@ -57,7 +57,7 @@ export default function AssistantDashboard() {
 
     const type = () => {
       const currentString = placeholders[currentPlaceholderIdx];
-      
+
       if (isDeleting) {
         setPlaceholderText(currentString.substring(0, currentCharIdx - 1));
         currentCharIdx--;
@@ -122,14 +122,44 @@ export default function AssistantDashboard() {
 
 
   const deleteSession = async (sessionId, sessionName) => {
-    if (!window.confirm(`Delete chat "${sessionName || "Untitled"}"? This cannot be undone.`)) return;
-    try {
-      await axios.delete(`${API}/sessions/${sessionId}`);
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
-      toast.success("Chat deleted");
-    } catch (err) {
-      toast.error("Failed to delete chat");
-    }
+    toast((t) => (
+      <div className="flex flex-col gap-2 p-1 min-w-[220px]">
+        <div className="text-xs font-semibold text-white/90">{`Delete chat "${sessionName || "Untitled"}"? This cannot be undone.`}</div>
+        <div className="flex justify-end gap-2 mt-1">
+          <button
+            type="button"
+            onClick={() => toast.dismiss(t.id)}
+            className="px-2.5 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await axios.delete(`${API}/sessions/${sessionId}`);
+                setSessions(prev => prev.filter(s => s.id !== sessionId));
+                toast.success("Chat deleted");
+              } catch (err) {
+                toast.error("Failed to delete chat");
+              }
+            }}
+            className="px-2.5 py-1 text-[11px] rounded bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 6000,
+      style: {
+        background: '#18181b',
+        color: '#ffffff',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: '12px',
+      },
+    });
   };
 
   const removeAttachment = (url) => {
@@ -139,15 +169,15 @@ export default function AssistantDashboard() {
   const selectMention = (item, type) => {
     const before = input.substring(0, mentionCursorPos);
     const after = input.substring(textareaRef.current.selectionStart);
-    
+
     if (type === "skill") {
       setActiveSkill(item);
-      setInput(before + after); 
+      setInput(before + after);
     } else {
       const insertion = `@${item.asset_label || "asset"}`;
       setInput(before + insertion + after);
     }
-    
+
     setShowMentionPopup(false);
     setTimeout(() => textareaRef.current?.focus(), 10);
   };
@@ -181,9 +211,9 @@ export default function AssistantDashboard() {
       // 3. Final URL
       const uploadedUrl = `https://cdn.muapi.ai/${fields.key}`;
       const kind = file.type?.startsWith("video/") ? "video"
-                 : file.type?.startsWith("audio/") ? "audio"
-                 : "image";
-      
+        : file.type?.startsWith("audio/") ? "audio"
+          : "image";
+
       const att = { url: uploadedUrl, kind };
       setAttachments(prev => [...prev, att]);
       toast.success("File uploaded successfully");
@@ -207,23 +237,23 @@ export default function AssistantDashboard() {
       let registeredAssets = [];
 
       if (initialAttachments.length > 0) {
-        const results = await Promise.all(initialAttachments.map(a => 
-          axios.post(`${API}/sessions/${sessionId}/assets`, { 
-            url: a.url, 
-            kind: a.kind, 
-            source_tool: "upload" 
+        const results = await Promise.all(initialAttachments.map(a =>
+          axios.post(`${API}/sessions/${sessionId}/assets`, {
+            url: a.url,
+            kind: a.kind,
+            source_tool: "upload"
           })
         ));
         registeredAssets = results.map(r => r.data);
         const labels = registeredAssets.map(a => a.asset_label).join(",");
         url += `&a=${encodeURIComponent(labels)}`;
       }
-      
+
       if (initialMsg) {
         const attachmentNote = registeredAssets.length
           ? "\n\n[Attached " + registeredAssets.map(a => `${a.asset_label} (${a.kind})`).join(", ") + "]"
           : "";
-        
+
         const userMsg = {
           role: "user",
           content: initialMsg + attachmentNote,
@@ -250,7 +280,7 @@ export default function AssistantDashboard() {
           });
         }
       }
-      
+
       router.push(url);
     } catch (err) {
       toast.error("Failed to start session");
@@ -267,7 +297,7 @@ export default function AssistantDashboard() {
   };
 
   const filteredSkills = skills.filter(s => s.name.toLowerCase().includes(mentionQuery.toLowerCase()));
-  const filteredAssets = attachments.map((a, i) => ({ ...a, asset_label: `asset_${i+1}` })).filter(a => a.asset_label.includes(mentionQuery.toLowerCase()));
+  const filteredAssets = attachments.map((a, i) => ({ ...a, asset_label: `asset_${i + 1}` })).filter(a => a.asset_label.includes(mentionQuery.toLowerCase()));
 
 
   if (!mounted) return null;
@@ -299,7 +329,7 @@ export default function AssistantDashboard() {
                   const val = e.target.value;
                   const pos = e.target.selectionStart;
                   setInput(val);
-                  
+
                   const lastAtPos = val.lastIndexOf("@", pos - 1);
                   if (lastAtPos !== -1 && (lastAtPos === 0 || val[lastAtPos - 1] === " ")) {
                     const query = val.substring(lastAtPos + 1, pos);
@@ -320,13 +350,13 @@ export default function AssistantDashboard() {
               />
               <div className="flex items-center justify-between px-2 pb-2">
                 <div className="flex items-center gap-1 relative">
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
                     onChange={handleFileUpload}
                   />
-                  <button 
+                  <button
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2 hover:bg-bg-page rounded-full text-secondary-text transition-colors relative"
                     title="Upload File"
@@ -340,7 +370,7 @@ export default function AssistantDashboard() {
                       <FiPlus size={20} />
                     )}
                   </button>
-                  <button 
+                  <button
                     onClick={() => setShowSkillsMenu(!showSkillsMenu)}
                     className={`p-2 hover:bg-bg-page rounded-full transition-colors ${activeSkill || showSkillsMenu ? "text-primary bg-primary/10" : "text-secondary-text"}`}
                     title="Skills"
@@ -352,8 +382,8 @@ export default function AssistantDashboard() {
                   {(uploading || attachments.length > 0 || input.includes("@")) && (
                     <div className="absolute bottom-full left-0 mb-1 flex flex-wrap gap-2 bg-bg-card border border-divider rounded shadow-xl z-10 animate-in slide-in-from-bottom-2 duration-300">
                       {attachments.map((att, i) => (
-                        <div 
-                          key={i} 
+                        <div
+                          key={i}
                           className="relative group flex items-center gap-2 px-2 py-1 bg-bg-page border border-divider rounded cursor-help hover:border-primary/50 transition-all"
                           onMouseEnter={() => setHoveredAsset(att)}
                           onMouseLeave={() => setHoveredAsset(null)}
@@ -361,17 +391,17 @@ export default function AssistantDashboard() {
                           <div className="w-5 h-5 rounded overflow-hidden">
                             {att.kind === "image" ? <img src={att.url} className="w-full h-full object-cover" /> : <FiTerminal size={10} />}
                           </div>
-                          <span className="text-[10px] font-bold text-secondary-text">{`asset_${i+1}`}</span>
+                          <span className="text-[10px] font-bold text-secondary-text">{`asset_${i + 1}`}</span>
                         </div>
                       ))}
-                      
+
                       {/* Detection for @asset_N in text */}
                       {input.match(/@asset_\d+/g)?.map(match => {
                         const index = parseInt(match.split('_')[1]) - 1;
                         const asset = attachments[index];
                         if (!asset) return null;
                         return (
-                          <div 
+                          <div
                             key={match}
                             className="relative group flex items-center gap-2 px-2 py-1 bg-primary/5 border border-primary/20 rounded-lg cursor-help hover:border-primary/50 transition-all"
                             onMouseEnter={() => setHoveredAsset(asset)}
@@ -453,7 +483,7 @@ export default function AssistantDashboard() {
                                 <p className="text-xs text-secondary-text font-medium opacity-70">Power up your creative workflow with specialized AI experts.</p>
                               </div>
                             </div>
-                            <button 
+                            <button
                               onClick={() => setShowSkillsMenu(false)}
                               className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-bg-page border border-divider rounded text-xs font-bold text-secondary-text hover:text-primary hover:border-primary/30 transition-all"
                             >
@@ -486,7 +516,7 @@ export default function AssistantDashboard() {
                               <RiRobot2Line size={14} />
                               Design Protocol v1.2
                             </div>
-                            <button 
+                            <button
                               onClick={() => setShowSkillsMenu(false)}
                               className="px-4 py-2 text-xs font-bold text-primary-text hover:bg-bg-page rounded transition-colors border border-transparent hover:border-divider"
                             >
@@ -518,7 +548,7 @@ export default function AssistantDashboard() {
                       </button>
                     </div>
                   )}
-                  <button 
+                  <button
                     onClick={() => (input.trim() || attachments.length > 0) && startNewSession(input.trim(), activeSkill, attachments)}
                     disabled={!input.trim() && attachments.length === 0}
                     className={`p-2 rounded-full transition-all ${input.trim() || attachments.length > 0 ? "bg-primary text-white shadow-lg shadow-primary/20 hover:scale-105" : "bg-bg-page text-secondary-text/30"}`}
@@ -533,7 +563,7 @@ export default function AssistantDashboard() {
             <h2 className="text-xl font-bold mb-6">Recent Projects</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {/* New Project Card */}
-              <button 
+              <button
                 onClick={() => router.push("/canvas")}
                 className="group aspect-[16/10] bg-bg-card border-2 border-dashed border-divider rounded-md flex flex-col items-center justify-center gap-3 hover:border-primary hover:bg-primary/5 transition-all"
               >
@@ -545,7 +575,7 @@ export default function AssistantDashboard() {
 
               {/* Session Cards */}
               {sessions.map((session) => (
-                <div 
+                <div
                   key={session.id}
                   onClick={() => router.push(`/canvas?session=${session.id}`)}
                   className="group relative aspect-[16/10] bg-bg-card border border-divider rounded overflow-hidden cursor-pointer hover:shadow-xl hover:border-primary/50 transition-all"
@@ -583,7 +613,7 @@ export default function AssistantDashboard() {
                     <div className="text-white font-bold text-sm truncate">{session.name || "Untitled"}</div>
                     <div className="text-white/60 text-[10px] mt-1">{session.assets?.length || 0} assets</div>
                   </div>
-                  
+
                   <div className="absolute bottom-0 left-0 right-0 p-3 bg-bg-card/90 backdrop-blur-sm border-t border-divider opacity-100 group-hover:opacity-0 transition-opacity">
                     <div className="text-primary-text font-bold text-xs truncate">{session.name || "Untitled Session"}</div>
                   </div>

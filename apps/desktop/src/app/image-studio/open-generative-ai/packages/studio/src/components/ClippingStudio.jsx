@@ -374,7 +374,7 @@ export default function ClippingStudio({
   // ── Copy Link & Download Helpers ─────────────────────────────────────────
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    alert("URL copied to clipboard!");
+    toast.success("URL copied to clipboard!");
   };
 
   const downloadVideo = async (url, title = "clipped_video") => {
@@ -437,7 +437,7 @@ export default function ClippingStudio({
   // ── Dispatch Run / Call submitAndPoll ────────────────────────────────────
   const handleGenerate = async () => {
     if (!videoUrl) {
-      alert("Please upload a video or paste a video URL first.");
+      toast.error("Please upload a video or paste a video URL first.");
       return;
     }
 

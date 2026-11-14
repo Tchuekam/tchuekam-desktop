@@ -95,7 +95,9 @@ export function ModelPickerDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className={cn('max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0', contentClassName)}>
+      <DialogContent
+        className={cn('max-h-[85dvh] w-[calc(100vw-1.5rem)] max-w-2xl gap-0 overflow-hidden p-0', contentClassName)}
+      >
         <DialogHeader className="border-b border-border px-4 py-3">
           <DialogTitle>Switch model</DialogTitle>
           <DialogDescription className="font-mono text-xs leading-relaxed">

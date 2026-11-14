@@ -99,13 +99,13 @@ export function ZoomableImage({ className, containerClassName, src, alt, slot, .
   const lightbox = src ? (
     <Dialog onOpenChange={setLightboxOpen} open={lightboxOpen}>
       <DialogContent
-        className="block w-auto max-h-[calc(100vh-12rem)] max-w-[calc(100vw-12rem)] overflow-visible border-0 bg-transparent p-0 shadow-none"
+        className="block w-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-visible border-0 bg-transparent p-0 shadow-none sm:max-h-[calc(100dvh-6rem)] sm:max-w-[calc(100vw-6rem)]"
         showCloseButton={false}
       >
         <div className="group/lightbox relative inline-block">
           <img
             alt={alt ?? ''}
-            className="block max-h-[calc(100vh-12rem)] max-w-[calc(100vw-12rem)] cursor-zoom-out select-auto rounded-lg object-contain shadow-2xl"
+            className="block max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] cursor-zoom-out select-auto rounded-lg object-contain shadow-2xl sm:max-h-[calc(100dvh-6rem)] sm:max-w-[calc(100vw-6rem)]"
             onClick={() => setLightboxOpen(false)}
             src={src}
           />
@@ -150,7 +150,7 @@ function ImageActionButton({
     <button
       aria-label={saving ? 'Saving image' : 'Download image'}
       className={cn(
-        'absolute right-2 top-2 grid size-8 place-items-center rounded-full border border-border/70 bg-background/80 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:opacity-50',
+        'absolute right-2 top-2 grid size-8 place-items-center rounded-full border border-border/70 bg-background/80 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:opacity-50 [@media(hover:none),(pointer:coarse)]:opacity-90',
         variant === 'inline' ? 'group-hover/image:opacity-100' : 'group-hover/lightbox:opacity-100'
       )}
       disabled={saving}

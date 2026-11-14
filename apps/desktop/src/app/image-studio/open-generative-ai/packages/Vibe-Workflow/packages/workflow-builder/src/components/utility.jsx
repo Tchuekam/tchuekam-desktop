@@ -1,6 +1,41 @@
 import axios from "axios";
 import { toast } from "react-hot-toast";
 
+export function confirmActionToast(message, onConfirm, confirmLabel = "Delete") {
+  toast((t) => (
+    <div className="flex flex-col gap-2 p-1 min-w-[200px]">
+      <div className="text-xs font-semibold text-white/90">{message}</div>
+      <div className="flex justify-end gap-2 mt-1">
+        <button
+          type="button"
+          onClick={() => toast.dismiss(t.id)}
+          className="px-2.5 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            toast.dismiss(t.id);
+            onConfirm();
+          }}
+          className="px-2.5 py-1 text-[11px] rounded bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </div>
+  ), {
+    duration: 6000,
+    style: {
+      background: '#18181b',
+      color: '#ffffff',
+      border: '1px solid rgba(255, 255, 255, 0.15)',
+      borderRadius: '10px',
+    },
+  });
+}
+
 export const imageModels = [
   {
     id: "image-passthrough",

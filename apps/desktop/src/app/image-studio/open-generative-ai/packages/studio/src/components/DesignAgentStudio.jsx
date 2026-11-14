@@ -23,9 +23,16 @@ export default function DesignAgentStudio({
   // child-before-parent within a commit, so setting this from *our* useEffect ran after
   // CreativeCanvas's first sessions/agent-skills fetch had already gone out unauthenticated.
   if (typeof window !== 'undefined' && apiKey) {
-    sessionStorage.setItem("fromDesignAgent", "true");
     localStorage.setItem("token", apiKey);
   }
+
+  useEffect(() => {
+    return () => {
+      try {
+        localStorage.removeItem("token");
+      } catch { }
+    };
+  }, []);
 
   useEffect(() => {
     if (!apiKey) return;
@@ -43,7 +50,7 @@ export default function DesignAgentStudio({
     }
 
     const fetchUser = async () => {
-      if (!apiKey || apiKey === 'genimage_free_key') {
+      if (!apiKey) {
         setUserData({
           username: 'Studio User',
           email: null,
@@ -75,7 +82,7 @@ export default function DesignAgentStudio({
 
   return (
     <div className="h-full w-full bg-black overflow-hidden design-agent-studio">
-      <CreativeCanvas 
+      <CreativeCanvas
         user={userData}
         isAuthorized={!!userData}
         creditConversionRate={200}

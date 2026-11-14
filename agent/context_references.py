@@ -141,12 +141,27 @@ async def preprocess_context_references_async(
     if not refs:
         return ContextReferenceResult(message=message, original_message=message)
 
-    cwd_path = Path(cwd).expanduser().resolve()
+    _home_env = os.environ.get("HOME")
+    cwd_str = str(cwd)
+    if cwd_str.startswith(("~/", "~\\")) and _home_env:
+        cwd_path = (Path(_home_env) / cwd_str[2:]).resolve()
+    elif cwd_str == "~" and _home_env:
+        cwd_path = Path(_home_env).resolve()
+    else:
+        cwd_path = Path(cwd).expanduser().resolve()
+
     # Default to the current working directory so @ references cannot escape
     # the active workspace unless a caller explicitly widens the root.
-    allowed_root_path = (
-        Path(allowed_root).expanduser().resolve() if allowed_root is not None else cwd_path
-    )
+    if allowed_root is not None:
+        allowed_str = str(allowed_root)
+        if allowed_str.startswith(("~/", "~\\")) and _home_env:
+            allowed_root_path = (Path(_home_env) / allowed_str[2:]).resolve()
+        elif allowed_str == "~" and _home_env:
+            allowed_root_path = Path(_home_env).resolve()
+        else:
+            allowed_root_path = Path(allowed_root).expanduser().resolve()
+    else:
+        allowed_root_path = cwd_path
     warnings: list[str] = []
     blocks: list[str] = []
     injected_tokens = 0
@@ -327,7 +342,14 @@ async def _default_url_fetcher(url: str) -> str:
 
 
 def _resolve_path(cwd: Path, target: str, *, allowed_root: Path | None = None) -> Path:
-    path = Path(os.path.expanduser(target))
+    if target.startswith(("~/", "~\\")):
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        path = Path(home) / target[2:]
+    elif target == "~":
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        path = Path(home)
+    else:
+        path = Path(os.path.expanduser(target))
     if not path.is_absolute():
         path = cwd / path
     resolved = path.resolve()
@@ -341,7 +363,8 @@ def _resolve_path(cwd: Path, target: str, *, allowed_root: Path | None = None) -
 
 def _ensure_reference_path_allowed(path: Path) -> None:
     from hermes_constants import get_hermes_home
-    home = Path(os.path.expanduser("~")).resolve()
+    home_dir = os.environ.get("HOME") or os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    home = Path(home_dir).resolve()
     hermes_home = get_hermes_home().resolve()
 
     blocked_exact = {home / rel for rel in _SENSITIVE_HOME_FILES}

@@ -13,8 +13,9 @@ import {
   useRef
 } from 'react'
 
+import { useIsCompactViewport } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
-import { $paneStates, ensurePaneRegistered, setPaneWidthOverride } from '@/store/panes'
+import { $paneStates, ensurePaneRegistered, setPaneOpen, setPaneWidthOverride } from '@/store/panes'
 
 import { PaneShellContext, type PaneShellContextValue, type PaneSlot } from './context'
 
@@ -179,10 +180,52 @@ export function PaneShell({ children, className, style }: PaneShellProps) {
     [ctxValue.cssVars, ctxValue.gridTemplate, style]
   )
 
+  const isCompact = useIsCompactViewport()
+
+  const hasOpenCompactDrawer =
+    isCompact && Array.from(ctxValue.paneById.values()).some(entry => entry.open)
+
+  const closeCompactDrawers = useCallback(() => {
+    for (const [paneId, entry] of ctxValue.paneById.entries()) {
+      if (entry.open) {
+        setPaneOpen(paneId, false)
+      }
+    }
+  }, [ctxValue.paneById])
+
+  useEffect(() => {
+    if (!hasOpenCompactDrawer) {
+      return
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeCompactDrawers()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [closeCompactDrawers, hasOpenCompactDrawer])
+
   return (
-    <PaneShellContext.Provider value={{ mainColumn: ctxValue.mainColumn, paneById: ctxValue.paneById }}>
-      <div className={cn('relative grid h-full min-h-0', className)} style={composedStyle}>
+    <PaneShellContext.Provider
+      value={{ mainColumn: isCompact ? 1 : ctxValue.mainColumn, paneById: ctxValue.paneById }}
+    >
+      <div
+        className={cn('relative grid h-full min-h-0', className)}
+        style={isCompact ? { ...composedStyle, gridTemplateColumns: 'minmax(0,1fr)' } : composedStyle}
+      >
         {children}
+        {hasOpenCompactDrawer && (
+          <button
+            aria-label="Close side panel"
+            className="absolute inset-0 z-35 cursor-default bg-black/35 backdrop-blur-[1px] transition-opacity"
+            onClick={closeCompactDrawers}
+            type="button"
+          />
+        )}
       </div>
     </PaneShellContext.Provider>
   )
@@ -199,6 +242,7 @@ export function Pane({
   resizable = false
 }: PaneProps) {
   const ctx = useContext(PaneShellContext)
+  const isCompact = useIsCompactViewport()
   const registered = useRef(false)
   const paneRef = useRef<HTMLDivElement | null>(null)
 
@@ -213,7 +257,7 @@ export function Pane({
 
   const slot = ctx?.paneById.get(id)
   const open = Boolean(slot?.open && !disabled)
-  const canResize = open && resizable
+  const canResize = open && resizable && !isCompact
   const lo = widthToPx(minWidth) ?? DEFAULT_RESIZE_MIN_WIDTH
   const hi = widthToPx(maxWidth) ?? Number.POSITIVE_INFINITY
   const side = slot?.side ?? 'left'
@@ -273,15 +317,34 @@ export function Pane({
     return null
   }
 
+  const drawerWidthClass =
+    id === 'preview'
+      ? 'w-full md:w-[min(90vw,36rem)]'
+      : id === 'file-browser'
+        ? 'w-[min(88vw,22rem)]'
+        : 'w-[min(86vw,19rem)]'
+
   return (
     <div
       aria-hidden={!open}
-      className={cn('relative row-start-1 min-w-0 overflow-hidden', !open && 'pointer-events-none', className)}
+      className={cn(
+        isCompact
+          ? cn(
+              'absolute inset-y-0 z-40 min-w-0 overflow-hidden bg-background shadow-2xl transition-transform duration-200 ease-out',
+              slot.side === 'left' ? 'left-0' : 'right-0',
+              drawerWidthClass,
+              open
+                ? 'pointer-events-auto translate-x-0'
+                : cn('pointer-events-none', slot.side === 'left' ? '-translate-x-full' : 'translate-x-full')
+            )
+          : cn('relative row-start-1 min-w-0 overflow-hidden', !open && 'pointer-events-none'),
+        className
+      )}
       data-pane-id={id}
       data-pane-open={open ? 'true' : 'false'}
       data-pane-side={slot.side}
       ref={paneRef}
-      style={{ gridColumn: `${slot.column} / ${slot.column + 1}` }}
+      style={isCompact ? undefined : { gridColumn: `${slot.column} / ${slot.column + 1}` }}
     >
       {canResize && (
         <div

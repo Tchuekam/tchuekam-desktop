@@ -27,6 +27,9 @@ declare global {
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
       openImageStudioWindow: () => Promise<{ ok: boolean; windowId?: number }>
+      getSecureSecret?: (key: string) => Promise<string>
+      setSecureSecret?: (key: string, value: string) => Promise<{ ok: boolean }>
+      deleteSecureSecret?: (key: string) => Promise<{ ok: boolean }>
       fetchLinkTitle: (url: string) => Promise<string>
       settings: {
         getDefaultProjectDir: () => Promise<{ defaultLabel: string; dir: null | string }>

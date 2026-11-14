@@ -32,7 +32,11 @@ function emitAsIndexHtml(outDir: string): Plugin {
       const from = path.resolve(here, outDir, 'index.web.html')
       const to = path.resolve(here, outDir, 'index.html')
 
-      await fs.rename(from, to)
+      try {
+        await fs.rename(from, to)
+      } catch (err: any) {
+        if (err?.code !== 'ENOENT') throw err
+      }
     }
   }
 }
@@ -47,7 +51,26 @@ export default defineConfig({
     outDir: WEB_OUT_DIR,
     emptyOutDir: true,
     rollupOptions: {
-      input: path.resolve(here, 'index.web.html')
+      input: path.resolve(here, 'index.web.html'),
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/shiki') || id.includes('node_modules/@shikijs')) {
+            return 'vendor-shiki'
+          }
+          if (id.includes('Vibe-Workflow') || id.includes('workflow-builder')) {
+            return 'studio-workflow-builder'
+          }
+          if (id.includes('Open-AI-Design-Agent') || id.includes('design-agent')) {
+            return 'studio-design-agent'
+          }
+          if (id.includes('Open-Poe-AI') || id.includes('packages/agents')) {
+            return 'studio-agents'
+          }
+          if (id.includes('packages/studio/src/models')) {
+            return 'studio-models'
+          }
+        }
+      }
     }
   },
   resolve: {

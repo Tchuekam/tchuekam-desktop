@@ -93,7 +93,7 @@ export function RightSidebarPane({
   return (
     <aside
       aria-label="Right sidebar"
-      className="before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary) shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)] before:absolute before:inset-x-0 before:top-(--titlebar-height) before:z-1 before:h-px before:bg-(--ui-stroke-tertiary)"
+      className="before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-0 text-(--ui-text-tertiary) shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)] before:absolute before:inset-x-0 before:top-0 before:z-1 before:h-px before:bg-(--ui-stroke-tertiary) md:pt-(--titlebar-height) md:before:top-(--titlebar-height)"
     >
       <RightSidebarChrome activeTab={effectiveTab} branch={currentBranch} tabs={tabs} />
 
