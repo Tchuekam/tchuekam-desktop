@@ -188,9 +188,9 @@ export function McpSettings({ gateway, onConfigSaved, query }: McpSettingsProps)
 
   return (
     <SettingsContent>
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SectionHeading icon={Package} meta={`${names.length} configured`} title="MCP servers" />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <OverlayActionButton onClick={() => setSelected(null)}>New server</OverlayActionButton>
           <OverlayActionButton disabled={reloading} onClick={() => void reloadMcp()}>
             {reloading ? 'Reloading...' : 'Reload MCP'}

@@ -434,7 +434,7 @@ export function CommandCenterView({
       closeLabel="Close command center"
       headerContent={
         <OverlaySearchInput
-          containerClassName="w-[min(36rem,calc(100vw-32rem))] min-w-80"
+          containerClassName="w-full sm:w-[min(36rem,calc(100vw-16rem))] md:w-[min(36rem,calc(100vw-24rem))]"
           loading={searchLoading}
           onChange={next => setQuery(next)}
           placeholder="Search sessions, views, and actions"
@@ -457,7 +457,7 @@ export function CommandCenterView({
         </OverlaySidebar>
 
         <OverlayMain>
-          <header className="mb-4 flex items-center justify-between gap-2">
+          <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold text-foreground">{SECTION_LABELS[section]}</h2>
               <p className="text-xs text-muted-foreground">{SECTION_DESCRIPTIONS[section]}</p>

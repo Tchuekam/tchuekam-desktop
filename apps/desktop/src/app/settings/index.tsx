@@ -100,7 +100,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
       closeLabel="Close settings"
       headerContent={
         <OverlaySearchInput
-          containerClassName="w-[min(36rem,calc(100vw-32rem))] min-w-80"
+          containerClassName="w-full sm:w-[min(36rem,calc(100vw-16rem))] md:w-[min(36rem,calc(100vw-24rem))]"
           inputRef={searchInputRef}
           onChange={setQuery}
           placeholder={SEARCH_PLACEHOLDER[queryKey]}
