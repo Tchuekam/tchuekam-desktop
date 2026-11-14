@@ -50,7 +50,7 @@ export function DocumentPreview({
     return (
       <div className="flex h-full flex-col bg-slate-100/70 dark:bg-zinc-950/40">
         {/* Apple Keynote Style Presentation Bar */}
-        <div className="flex items-center justify-between border-b border-border/70 bg-card/80 px-4 py-2.5 text-xs backdrop-blur-md">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card/80 px-3 py-2 text-xs backdrop-blur-md sm:px-4 sm:py-2.5">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-primary">
               <Codicon name="preview" size="0.8rem" />
@@ -84,10 +84,10 @@ export function DocumentPreview({
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center overflow-auto p-6">
+        <div className="flex flex-1 flex-col items-center justify-center overflow-auto p-3 sm:p-6">
           {currentSlide && (
             <div
-              className="flex aspect-video w-full max-w-2xl flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white p-8 text-slate-900 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] transition-all"
+              className="flex aspect-video w-full max-w-2xl flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white p-4 text-slate-900 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] transition-all sm:p-8"
               style={{ borderTop: `6px solid ${accentColor}` }}
             >
               <div>
@@ -161,7 +161,7 @@ export function DocumentPreview({
   return (
     <div className="flex h-full flex-col bg-slate-100/70 dark:bg-zinc-950/40">
       {/* Apple-style Live Sheet Toolbar */}
-      <div className="flex items-center justify-between border-b border-border/70 bg-card/80 px-4 py-2.5 text-xs backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card/80 px-3 py-2 text-xs backdrop-blur-md sm:px-4 sm:py-2.5">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-primary">
             <Codicon name="file-pdf" size="0.85rem" />
@@ -193,7 +193,7 @@ export function DocumentPreview({
       </div>
 
       {/* Sheet Canvas */}
-      <div className="flex-1 overflow-auto p-6 flex flex-col items-center">
+      <div className="flex flex-1 flex-col items-center overflow-auto p-3 sm:p-6">
         <div
           className={cn(
             'w-full max-w-[650px] min-h-[842px] rounded-xl border border-slate-200/90 dark:border-white/10 bg-white text-slate-900 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] transition-all origin-top',
@@ -245,7 +245,7 @@ export function DocumentPreview({
               </div>
             </div>
           ) : (
-            <div className="space-y-4 p-8">
+            <div className="space-y-4 p-4 sm:p-8">
               {blocks.map((block, idx) => (
                 <PreviewBlock
                   accentColor={accentColor}

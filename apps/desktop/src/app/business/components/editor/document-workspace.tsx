@@ -53,6 +53,7 @@ export function DocumentWorkspace({
   const [activeSlideIndex, setActiveSlideIndex] = useState(0)
   const [aiBusy, setAiBusy] = useState<string | null>(null)
   const [lastExportInfo, setLastExportInfo] = useState<string | null>(null)
+  const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor')
 
   const canUseAi = !takeover
   const supportedFormats = SUPPORTED_EXPORT_FORMATS[doc.type] ?? ['pdf', 'docx']
@@ -251,7 +252,7 @@ export function DocumentWorkspace({
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-foreground pt-(--titlebar-height)">
       {/* Apple-style Studio Navigation & Command Bar */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-card/85 px-6 py-3 shadow-xs backdrop-blur-md">
+      <header className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/70 bg-card/85 px-3 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
         <div className="flex items-center gap-3">
           <button
             aria-label="Back to Business Hub"
@@ -266,7 +267,7 @@ export function DocumentWorkspace({
           <div className="relative flex items-center">
             <input
               aria-label="Document Title"
-              className="h-8 min-w-[220px] rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-foreground transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="h-8 min-w-0 flex-1 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-foreground transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 sm:min-w-[14rem] sm:flex-initial"
               onChange={e =>
                 updateBusinessDocument(doc.id, current => ({
                   ...current,
@@ -405,7 +406,7 @@ export function DocumentWorkspace({
 
       {/* Export & Validation Status Strip */}
       {(lastExportInfo || validation.warnings.length > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-6 py-2 text-xs backdrop-blur-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs backdrop-blur-xs sm:px-6">
           {lastExportInfo ? (
             <span className="flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400" role="status">
               <Codicon name="check" size="0.85rem" />
@@ -423,9 +424,42 @@ export function DocumentWorkspace({
         </div>
       )}
 
+      {/* Mobile Editor / Preview Switcher (<1024px) */}
+      <div className="flex items-center gap-1 border-b border-border/60 bg-muted/30 px-3 py-1.5 lg:hidden">
+        <button
+          className={cn(
+            'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+            mobilePane === 'editor'
+              ? 'bg-card text-foreground shadow-2xs'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onClick={() => setMobilePane('editor')}
+          type="button"
+        >
+          Edit Content
+        </button>
+        <button
+          className={cn(
+            'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+            mobilePane === 'preview'
+              ? 'bg-card text-foreground shadow-2xs'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onClick={() => setMobilePane('preview')}
+          type="button"
+        >
+          Live Preview
+        </button>
+      </div>
+
       {/* Split-Screen Editor + Live Preview */}
       <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-2">
-        <div className="overflow-y-auto p-6 scroll-smooth">
+        <div
+          className={cn(
+            'overflow-y-auto p-3 scroll-smooth sm:p-6',
+            mobilePane !== 'editor' && 'max-lg:hidden'
+          )}
+        >
           <DocumentForms
             activeSlideIndex={activeSlideIndex}
             aiBusy={aiBusy}
@@ -438,7 +472,12 @@ export function DocumentWorkspace({
             onUpdateData={handleUpdateData}
           />
         </div>
-        <div className="min-h-[420px] overflow-hidden border-t border-border/70 lg:border-l lg:border-t-0">
+        <div
+          className={cn(
+            'min-h-0 overflow-hidden border-t border-border/70 lg:border-l lg:border-t-0',
+            mobilePane !== 'preview' && 'max-lg:hidden'
+          )}
+        >
           <DocumentPreview
             activeSlideIndex={activeSlideIndex}
             document={doc}

@@ -562,7 +562,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                     total={visibleImageArtifacts.length}
                   />
                 </div>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] items-start gap-2 pt-1.5">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(11rem,100%),1fr))] items-start gap-2 pt-1.5">
                   {pagedImageArtifacts.map(artifact => (
                     <ArtifactImageCard
                       artifact={artifact}
@@ -613,7 +613,7 @@ function ArtifactsPagination({ className, itemLabel, onPageChange, page, pageSiz
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
 
   return (
-    <div className={cn('flex h-6 items-center justify-between gap-2 px-1', className)}>
+    <div className={cn('flex min-h-6 flex-wrap items-center justify-between gap-2 px-1', className)}>
       <div className="shrink-0 text-[0.62rem] text-muted-foreground">
         {pageRangeLabel(total, page, pageSize)} {itemLabel}
       </div>

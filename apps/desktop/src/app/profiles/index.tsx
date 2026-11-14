@@ -176,8 +176,8 @@ export function ProfilesView({
         {!profiles ? (
           <PageLoader label="Loading profiles..." />
         ) : (
-          <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[16rem_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col overflow-hidden border-b border-border/50 lg:border-b-0 lg:border-r">
+          <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1">
+            <aside className="flex min-h-0 max-lg:max-h-44 flex-col overflow-hidden border-b border-border/50 lg:border-b-0 lg:border-r">
               <div className="border-b border-border/40 p-2">
                 <Button className="w-full" onClick={() => setCreateOpen(true)} size="sm">
                   <Codicon name="add" />
@@ -305,7 +305,7 @@ function ProfileDetail({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl space-y-6 px-6 py-6">
+        <div className="mx-auto max-w-2xl space-y-5 px-4 py-4 sm:space-y-6 sm:px-6 sm:py-6">
           <header className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">

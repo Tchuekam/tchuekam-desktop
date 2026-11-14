@@ -67,7 +67,7 @@ const TEXTAREA_CLASS =
   'w-full rounded-xl border border-border/70 bg-background/80 p-3 text-xs text-foreground placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed'
 
 const LABEL_CLASS = 'mb-1.5 block text-[0.6875rem] font-semibold text-muted-foreground tracking-wide'
-const SECTION_CARD = 'rounded-2xl border border-border/70 bg-card/85 p-5 shadow-xs backdrop-blur-sm space-y-3.5'
+const SECTION_CARD = 'rounded-2xl border border-border/70 bg-card/85 p-3.5 shadow-xs backdrop-blur-sm space-y-3 sm:p-5 sm:space-y-3.5'
 
 const PLAN_SECTION_LABELS: Array<{ key: BusinessPlanSectionKey; labelEn: string; labelFr: string }> = [
   { key: 'executiveSummary', labelEn: '1. Executive Summary', labelFr: '1. Résumé Exécutif' },
