@@ -7,11 +7,13 @@ import { I18nProvider } from "./i18n";
 import { exposePluginSDK } from "./plugins";
 import { ThemeProvider } from "./themes";
 import { HERMES_BASE_PATH } from "./lib/api";
+import { captureSupabaseHashSession } from "./lib/supabaseAuth";
 
 import { initPostHog } from "./lib/posthog";
 
 // Expose the plugin SDK before rendering so plugins loaded via <script>
 // can access React, components, etc. immediately.
+captureSupabaseHashSession();
 exposePluginSDK();
 initPostHog();
 

@@ -18,6 +18,7 @@ export const HERMES_BASE_PATH = readBasePath();
 const BASE = HERMES_BASE_PATH;
 
 import type { DashboardTheme } from "@/themes/types";
+import { getStoredSupabaseAccessToken } from "./supabaseAuth";
 
 // Ephemeral session token for protected endpoints.
 // Injected into index.html by the server — never fetched via API.
@@ -51,6 +52,10 @@ export async function fetchJSON<T>(
   const token = window.__HERMES_SESSION_TOKEN__;
   if (token) {
     setSessionHeader(headers, token);
+  }
+  const supabaseToken = getStoredSupabaseAccessToken();
+  if (supabaseToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${supabaseToken}`);
   }
   const res = await fetch(`${BASE}${url}`, {
     ...init,
