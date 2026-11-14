@@ -110,7 +110,7 @@ export function AppShell({
 
   return (
     <SidebarProvider
-      className="h-screen min-h-0 flex-col bg-background"
+      className="h-dvh min-h-0 flex-col bg-background pb-[env(safe-area-inset-bottom,0px)]"
       onOpenChange={setSidebarOpen}
       open={sidebarOpen}
       style={
@@ -141,6 +141,10 @@ export function AppShell({
       />
 
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
+        <div
+          aria-hidden="true"
+          className="h-[calc(var(--titlebar-height)+env(safe-area-inset-top,0px))] w-full shrink-0 border-b border-(--ui-stroke-tertiary)/70 bg-background/95 md:hidden"
+        />
         <PaneShell className="min-h-0 flex-1">
           <div
             aria-hidden="true"

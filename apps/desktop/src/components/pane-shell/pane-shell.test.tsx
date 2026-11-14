@@ -330,4 +330,41 @@ describe('PaneShell composition', () => {
 
     expect($paneStates.get().preview?.widthOverride).toBe(340)
   })
+
+  it('switches side panes to dismissible overlay drawers on compact viewports', () => {
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('63.9375rem'),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false
+    })) as typeof window.matchMedia
+
+    try {
+      const rendered = render(
+        <PaneShell>
+          <Pane id="chat-sidebar" resizable side="left" width="240px">
+            <span>sidebar</span>
+          </Pane>
+          <PaneMain>main</PaneMain>
+        </PaneShell>
+      )
+
+      const tracks = getColumnTemplate(gridContainer(rendered))
+
+      expect(tracks).toEqual(['minmax(0,1fr)'])
+      expect(rendered.queryByLabelText('Resize chat-sidebar')).toBeNull()
+
+      const backdrop = rendered.getByRole('button', { name: 'Close side panel' })
+      fireEvent.click(backdrop)
+
+      expect($paneStates.get()['chat-sidebar']?.open).toBe(false)
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
+  })
 })

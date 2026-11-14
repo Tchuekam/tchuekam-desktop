@@ -28,7 +28,12 @@ export const RIGHT_RAIL_PREVIEW_TAB_ID = 'preview'
 
 export type RightRailTabId = typeof RIGHT_RAIL_PREVIEW_TAB_ID | `file:${string}`
 
-ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true })
+const isInitialCompactViewport =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(max-width: 63.9375rem)').matches
+
+ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: !isInitialCompactViewport })
 ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false })
 
 export const $sidebarOpen: ReadableAtom<boolean> = computed(

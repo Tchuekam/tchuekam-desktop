@@ -133,7 +133,7 @@ export function MobileView() {
         <div className="absolute top-1/3 -right-20 h-[400px] w-[500px] rounded-full bg-emerald-500/8 blur-[100px]" />
       </div>
 
-      <div className="relative mx-auto flex max-w-7xl flex-col gap-10 px-6 py-10 md:px-10 lg:py-14">
+      <div className="relative mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:gap-10 sm:px-6 sm:py-10 md:px-10 md:pt-[calc(var(--titlebar-height)+2rem)] lg:py-14">
         {/* Header Section */}
         <div className="flex flex-col items-start gap-4">
           <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-1 text-xs font-semibold tracking-wide text-cyan-400">

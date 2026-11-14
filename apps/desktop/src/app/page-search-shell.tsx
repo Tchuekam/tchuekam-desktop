@@ -36,13 +36,11 @@ export function PageSearchShell({
         click the search box" on the messaging/cron/etc pages).
       */}
       <div className="relative z-10 grid gap-2 border-b border-(--ui-stroke-tertiary) px-3 py-2.5 [-webkit-app-region:no-drag]">
-        {/* Reserve the top-right titlebar tools + native window-controls
-            footprint so the full-width search input never slides under them. */}
+        {/* On tablet/desktop, reserve the top-left & top-right floating titlebar
+            controls footprint so the search bar never slides under them.
+            On mobile (<768px), AppShell places TitlebarControls in its own row above PaneShell. */}
         <div
-          style={{
-            paddingRight:
-              'max(0px, calc(var(--titlebar-tools-right, 0px) + var(--titlebar-tools-width, 0px) - 0.75rem))'
-          }}
+          className="max-md:px-0! md:pl-[max(0px,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+0.75rem))] md:pr-[max(0px,calc(var(--titlebar-tools-right,0px)+var(--titlebar-tools-width,0px)-0.75rem))]"
         >
           <PageSearchInput
             onChange={onSearchChange}
