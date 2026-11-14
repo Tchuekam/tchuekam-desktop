@@ -9,6 +9,8 @@ covered in ``test_shell_hooks_consent.py``.
 from __future__ import annotations
 
 import json
+import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,8 @@ from agent import shell_hooks
 
 
 def _write_script(tmp_path: Path, name: str, body: str) -> Path:
+    if sys.platform == "win32" and (name.endswith(".sh") or name.endswith(".bash")):
+        body = re.sub(r'([A-Za-z]):\\([^\n"\']+)', lambda m: f"{m.group(1)}:/{m.group(2).replace(chr(92), '/')}", body)
     path = tmp_path / name
     path.write_text(body)
     path.chmod(0o755)
@@ -672,12 +676,13 @@ class TestAllowlistConcurrency:
         assert shell_hooks.script_is_executable(f"python3 {script}")
         assert shell_hooks.script_is_executable(f"/usr/bin/env python3 {script}")
 
-        # Bare invocation on the same non-X_OK file: not runnable.
-        assert not shell_hooks.script_is_executable(str(script))
+        if sys.platform != "win32":
+            # Bare invocation on the same non-X_OK file: not runnable.
+            assert not shell_hooks.script_is_executable(str(script))
 
-        # Flip +x; bare invocation is now runnable too.
-        script.chmod(0o755)
-        assert shell_hooks.script_is_executable(str(script))
+            # Flip +x; bare invocation is now runnable too.
+            script.chmod(0o755)
+            assert shell_hooks.script_is_executable(str(script))
 
     def test_command_script_path_resolution(self):
         """Regression: ``_command_script_path`` used to return the first

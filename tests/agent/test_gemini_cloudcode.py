@@ -16,6 +16,7 @@ import base64
 import hashlib
 import json
 import stat
+import sys
 import time
 from pathlib import Path
 
@@ -219,8 +220,9 @@ class TestCredentialIo:
         from agent.google_oauth import _credentials_path, save_credentials
 
         save_credentials(self._make())
-        mode = stat.S_IMODE(_credentials_path().stat().st_mode)
-        assert mode == 0o600
+        if sys.platform != "win32":
+            mode = stat.S_IMODE(_credentials_path().stat().st_mode)
+            assert mode == 0o600
 
     def test_disk_format_is_packed(self):
         from agent.google_oauth import _credentials_path, save_credentials

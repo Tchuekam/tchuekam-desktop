@@ -4860,7 +4860,7 @@ def reap_worker_zombies() -> "list[int]":
         try:
             while True:
                 try:
-                    pid, status = os.waitpid(-1, os.WNOHANG)
+                    pid, status = os.waitpid(-1, getattr(os, "WNOHANG", 1))
                 except ChildProcessError:
                     break
                 if pid == 0:

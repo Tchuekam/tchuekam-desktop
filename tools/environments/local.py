@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _msys_to_windows_path(cwd: str) -> str:
-    """Translate a Git Bash / MSYS-style POSIX path (``/c/Users/x``) to the
+    """Translate a Git Bash / MSYS-style POSIX path (``/c/Users/x`` or ``/tmp/x``) to the
     native Windows form (``C:\\Users\\x``) so ``os.path.isdir`` and
     ``subprocess.Popen(..., cwd=...)`` can find it.
 
@@ -30,6 +30,10 @@ def _msys_to_windows_path(cwd: str) -> str:
     """
     if not _IS_WINDOWS or not cwd:
         return cwd
+    if cwd == "/tmp" or cwd.startswith("/tmp/"):
+        temp_dir = tempfile.gettempdir()
+        tail = cwd[4:].replace("/", "\\") if cwd.startswith("/tmp/") else ""
+        return os.path.normpath(temp_dir + tail)
     # Match leading "/<single letter>/" or exactly "/<letter>" (bare drive root).
     m = re.match(r'^/([a-zA-Z])(/.*)?$', cwd)
     if not m:
@@ -269,10 +273,9 @@ def _find_bash() -> str:
             if os.path.isfile(candidate):
                 return candidate
 
-    found = shutil.which("bash")
-    if found:
-        return found
-
+    # Prefer installed Git for Windows before generic which("bash"), because on
+    # Windows, which("bash") often resolves to C:\Windows\System32\bash.exe (the WSL stub),
+    # which fails with "No such file or directory" when WSL is not configured.
     for candidate in (
         os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
         os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
@@ -280,6 +283,10 @@ def _find_bash() -> str:
     ):
         if candidate and os.path.isfile(candidate):
             return candidate
+
+    found = shutil.which("bash")
+    if found and "system32" not in found.lower() and "windowsapps" not in found.lower():
+        return found
 
     raise RuntimeError(
         "Git Bash not found. Hermes Agent requires Git for Windows on Windows.\n"
