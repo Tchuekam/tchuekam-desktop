@@ -9,9 +9,15 @@ import App from './app'
 import { ErrorBoundary } from './components/error-boundary'
 import { HapticsProvider } from './components/haptics-provider'
 import { installClipboardShim } from './lib/clipboard'
+import { IS_WEB } from './lib/platform'
+import { captureSupabaseHashSession } from './lib/supabase-auth'
 import { ThemeProvider } from './themes/context'
 
 installClipboardShim()
+
+if (IS_WEB) {
+  captureSupabaseHashSession()
+}
 
 // Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
 // scripts/ harnesses can drive a synthetic stream + record render cost.
