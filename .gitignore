@@ -20,6 +20,8 @@ __pycache__/
 .uv-cache/
 compose.hermes.local.yml
 export*
+!apps/desktop/src/app/business/exporters/
+!apps/desktop/src/app/business/exporters/**
 __pycache__/model_tools.cpython-310.pyc
 __pycache__/web_tools.cpython-310.pyc
 logs/
