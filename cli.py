@@ -631,6 +631,7 @@ def validate_toolset(*args, **kwargs):
     return _validate_toolset(*args, **kwargs)
 
 
+from hermes_cli.callbacks import prompt_for_secret
 from hermes_cli.cli_helpers import (
     _sync_process_session_id,
     get_job,
@@ -643,6 +644,8 @@ from hermes_cli.cli_helpers import (
     _prepare_deferred_agent_startup,
     _run_cleanup,
     _reset_terminal_input_modes_on_exit,
+    _set_active_agent_ref,
+    _TERMINAL_INPUT_MODE_RESET_SEQ,
 )
 from hermes_cli.worktree import (
     _active_worktree,
@@ -1718,19 +1721,8 @@ _SGR_MOUSE_VISIBLE_RE = re.compile(r"\^\[\[<\d+;\d+;\d+[Mm]")
 # these fragments are extremely unlikely to be intentional user input, and
 # stripping them is better than sending corrupted prompts.
 _SGR_MOUSE_BARE_RE = re.compile(r"<\d+;\d+;\d+[Mm]")
-_TERMINAL_INPUT_MODE_RESET_SEQ = (
-    "\x1b[?1006l"  # disable SGR mouse
-    "\x1b[?1003l"  # disable any-motion tracking
-    "\x1b[?1002l"  # disable button-motion tracking
-    "\x1b[?1000l"  # disable click tracking
-    "\x1b[?1004l"  # disable focus events
-    "\x1b[?2004l"  # disable bracketed paste
-    "\x1b[?1049l"  # leave alt screen (if stuck there)
-    "\x1b[<u"      # pop kitty keyboard mode
-    "\x1b[>4m"     # reset modifyOtherKeys
-    "\x1b[0m"      # reset text attributes
-    "\x1b[?25h"    # ensure cursor visible
-)
+# _TERMINAL_INPUT_MODE_RESET_SEQ now lives in hermes_cli.cli_helpers (imported
+# above) so this module and the atexit reset path cannot drift apart.
 
 
 def _preserve_ctrl_enter_newline() -> bool:
@@ -2954,7 +2946,7 @@ class HermesCLI:
         if not txt:
             return ""
         t0 = getattr(self, "_tool_start_time", 0) or 0
-        if t0 > 0:
+        if t0 != 0:
             elapsed = time.monotonic() - t0
             if elapsed >= 60:
                 _m, _s = int(elapsed // 60), int(elapsed % 60)
@@ -4283,9 +4275,9 @@ class HermesCLI:
                 stream_delta_callback=self._stream_delta if self.streaming_enabled else None,
                 tool_gen_callback=self._on_tool_gen_start if self.streaming_enabled else None,
             )
-            # Store reference for atexit memory provider shutdown
-            global _active_agent_ref
-            _active_agent_ref = self.agent
+            # Store reference for atexit memory provider shutdown. Goes
+            # through the setter so it lands on the module _run_cleanup reads.
+            _set_active_agent_ref(self.agent)
             # Route agent status output through prompt_toolkit so ANSI escape
             # sequences aren't garbled by patch_stdout's StdoutProxy (#2262).
             self.agent._print_fn = _cprint

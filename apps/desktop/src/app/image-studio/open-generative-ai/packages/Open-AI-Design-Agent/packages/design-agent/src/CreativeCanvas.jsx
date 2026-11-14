@@ -890,23 +890,51 @@ export default function CreativeCanvas({
   };
 
   const deleteSession = async (id) => {
-    // We use a simple confirm for safety, but with a premium look via toast if we had a custom one.
-    // For now, standard confirm is reliable.
-    if (!window.confirm("Are you sure you want to delete this session?")) return;
-    try {
-      await axios.delete(`${API}/sessions/${id}`, { headers: getHeaders() });
-      toast.success("Session deleted");
-      if (inEmbedMode) {
-        if (id === sessionId) setActiveEmbedSession(null);
-      } else {
-        fetchSessions();
-        if (id === sessionId) {
-          router.push("/canvas");
-        }
-      }
-    } catch (err) {
-      toast.error("Failed to delete session");
-    }
+    toast((t) => (
+      <div className="flex flex-col gap-2 p-1 min-w-[220px]">
+        <div className="text-xs font-semibold text-white/90">Delete this session? This cannot be undone.</div>
+        <div className="flex justify-end gap-2 mt-1">
+          <button
+            type="button"
+            onClick={() => toast.dismiss(t.id)}
+            className="px-2.5 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await axios.delete(`${API}/sessions/${id}`, { headers: getHeaders() });
+                toast.success("Session deleted");
+                if (inEmbedMode) {
+                  if (id === sessionId) setActiveEmbedSession(null);
+                } else {
+                  fetchSessions();
+                  if (id === sessionId) {
+                    router.push("/canvas");
+                  }
+                }
+              } catch (err) {
+                toast.error("Failed to delete session");
+              }
+            }}
+            className="px-2.5 py-1 text-[11px] rounded bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 6000,
+      style: {
+        background: '#18181b',
+        color: '#ffffff',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: '12px',
+      },
+    });
   };
 
   const handleMouseMove = useCallback((e) => {
@@ -1202,7 +1230,7 @@ export default function CreativeCanvas({
                   
                   <div className="py-1">
                     <a 
-                      href="mailto:support@vadoo.tv"
+                      href="mailto:support@tchuekam.com"
                       className="w-full flex items-center gap-3 px-4 py-2 hover:bg-bg-page transition-colors text-[13px] font-semibold text-primary-text"
                     >
                       Support

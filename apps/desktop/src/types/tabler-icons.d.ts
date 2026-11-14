@@ -1,5 +1,5 @@
 declare module '@tabler/icons-react' {
-  import * as React from 'react';
+  import type * as React from 'react';
 
   export type IconProps = any;
   export type Icon = React.ComponentType<any>;
@@ -41,6 +41,7 @@ declare module '@tabler/icons-react' {
   export const IconDeviceDesktopAnalytics: Icon;
   export const IconDeviceFloppy: Icon;
   export const IconDeviceLaptop: Icon;
+  export const IconDeviceMobile: Icon;
   export const IconDots: Icon;
   export const IconDotsVertical: Icon;
   export const IconDownload: Icon;
@@ -108,6 +109,9 @@ declare module '@tabler/icons-react' {
   export const IconZoomIn: Icon;
   export const IconZoomOut: Icon;
 
+  export const IconQrcode: Icon;
+  export const IconShieldCheck: Icon;
+  export const IconWorld: Icon;
   const defaultExport: Record<string, Icon>;
   export default defaultExport;
 }

@@ -1,6 +1,7 @@
 """Tests for user-defined quick commands that bypass the agent loop."""
 import os
 import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 from rich.text import Text
 import pytest
@@ -61,11 +62,12 @@ class TestCLIQuickCommands:
         cli.console.print.assert_called_once()
 
     def test_exec_command_no_output_shows_fallback(self):
-        cli = self._make_cli({"empty": {"type": "exec", "command": "true"}})
+        cmd = "cd ." if sys.platform == "win32" else "true"
+        cli = self._make_cli({"empty": {"type": "exec", "command": cmd}})
         cli.process_command("/empty")
         cli.console.print.assert_called_once()
         args = cli.console.print.call_args[0][0]
-        assert "no output" in args.lower()
+        assert "no output" in getattr(args, "plain", str(args)).lower()
 
     def test_alias_command_routes_to_target(self):
         """Alias quick commands rewrite to the target command."""
@@ -87,21 +89,21 @@ class TestCLIQuickCommands:
         cli.process_command("/broken")
         cli.console.print.assert_called_once()
         args = cli.console.print.call_args[0][0]
-        assert "no target defined" in args.lower()
+        assert "no target defined" in getattr(args, "plain", str(args)).lower()
 
     def test_unsupported_type_shows_error(self):
         cli = self._make_cli({"bad": {"type": "prompt", "command": "echo hi"}})
         cli.process_command("/bad")
         cli.console.print.assert_called_once()
         args = cli.console.print.call_args[0][0]
-        assert "unsupported type" in args.lower()
+        assert "unsupported type" in getattr(args, "plain", str(args)).lower()
 
     def test_missing_command_field_shows_error(self):
         cli = self._make_cli({"oops": {"type": "exec"}})
         cli.process_command("/oops")
         cli.console.print.assert_called_once()
         args = cli.console.print.call_args[0][0]
-        assert "no command defined" in args.lower()
+        assert "no command defined" in getattr(args, "plain", str(args)).lower()
 
     def test_quick_command_takes_priority_over_skill_commands(self):
         """Quick commands must be checked before skill slash commands."""
@@ -126,7 +128,7 @@ class TestCLIQuickCommands:
             cli.process_command("/slow")
         cli.console.print.assert_called_once()
         args = cli.console.print.call_args[0][0]
-        assert "timed out" in args.lower()
+        assert "timed out" in getattr(args, "plain", str(args)).lower()
 
 
 # ── Gateway tests ──────────────────────────────────────────────────────────

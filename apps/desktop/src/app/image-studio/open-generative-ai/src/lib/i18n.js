@@ -32,12 +32,10 @@ export function getLang() {
     return normalized;
 }
 
-export function setLang(lang, { reload = true } = {}) {
+export function setLang(lang, { reload = false } = {}) {
     const normalized = normalizeLang(lang);
     localStorage.setItem(LANG_KEY, normalized);
-    if (reload && typeof location !== 'undefined') {
-        location.reload();
-    } else if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('og_lang_change', { detail: normalized }));
     }
 }

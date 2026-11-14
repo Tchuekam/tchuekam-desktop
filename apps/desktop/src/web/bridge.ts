@@ -81,6 +81,7 @@ async function buildWsUrl(baseUrl: string): Promise<string> {
       path: '/api/auth/ws-ticket',
       method: 'POST'
     })
+
     query = `?ticket=${encodeURIComponent(minted.ticket)}`
   } else if (webConfig.token) {
     query = `?token=${encodeURIComponent(webConfig.token)}`
@@ -309,8 +310,27 @@ const bridge: DesktopBridge = {
   },
 
   openImageStudioWindow: async () => {
-    // No second BrowserWindow to open; the studio renders in the main view.
-    return { ok: false }
+    // In web, navigate to the studio route in the current window
+    window.location.hash = '#/image-studio'
+    return { ok: true }
+  },
+
+  getSecureSecret: async (key: string) => {
+    return (window as unknown as { __webSecrets?: Record<string, string> }).__webSecrets?.[key] || ''
+  },
+
+  setSecureSecret: async (key: string, value: string) => {
+    const w = window as unknown as { __webSecrets?: Record<string, string> }
+    w.__webSecrets = w.__webSecrets || {}
+    if (!value) delete w.__webSecrets[key]
+    else w.__webSecrets[key] = value
+    return { ok: true }
+  },
+
+  deleteSecureSecret: async (key: string) => {
+    const w = window as unknown as { __webSecrets?: Record<string, string> }
+    if (w.__webSecrets) delete w.__webSecrets[key]
+    return { ok: true }
   },
 
   fetchLinkTitle: async () => '',

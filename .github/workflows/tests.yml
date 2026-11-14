@@ -64,7 +64,7 @@ jobs:
         run: |
           uv venv .venv --python 3.11
           source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+          uv pip install -e ".[all,biocompute,dev]"
 
       - name: Run tests (slice ${{ matrix.slice }}/6)
         # Per-file isolation via scripts/run_tests_parallel.py: discovers
@@ -170,7 +170,7 @@ jobs:
         run: |
           uv venv .venv --python 3.11
           source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+          uv pip install -e ".[all,biocompute,dev]"
 
       - name: Run e2e tests
         run: |

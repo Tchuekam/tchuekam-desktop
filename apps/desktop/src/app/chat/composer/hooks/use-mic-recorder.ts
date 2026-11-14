@@ -3,12 +3,15 @@ import { useEffect, useRef, useState } from 'react'
 type BrowserAudioContext = typeof AudioContext
 
 export interface MicRecorderOptions {
-  onLevel?: (level: number) => void
+  idleSilenceMs?: number
+  maxDipMs?: number
+  minSpeechMs?: number
   onError?: (error: Error) => void
+  onLevel?: (level: number) => void
   onSilence?: () => void
+  onSpeechStart?: () => void
   silenceLevel?: number
   silenceMs?: number
-  idleSilenceMs?: number
 }
 
 export interface MicRecording {
@@ -60,6 +63,9 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
   const animationRef = useRef<number | null>(null)
   const startedAtRef = useRef(0)
   const heardSpeechRef = useRef(false)
+  const speechStartedAtRef = useRef<number | null>(null)
+  const speechDipStartedAtRef = useRef<number | null>(null)
+  const noiseFloorRef = useRef(0.015)
   const silenceTriggeredRef = useRef(false)
   const silenceStartedAtRef = useRef<number | null>(null)
   const stopResolverRef = useRef<((recording: MicRecording | null) => void) | null>(null)
@@ -77,6 +83,8 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
     recorderRef.current = null
     setLevel(0)
     setRecording(false)
+    speechStartedAtRef.current = null
+    speechDipStartedAtRef.current = null
     silenceTriggeredRef.current = false
   }
 
@@ -92,6 +100,7 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
 
     try {
       const audioContext = new AudioContextCtor()
+      void audioContext.resume()
       const analyser = audioContext.createAnalyser()
       const source = audioContext.createMediaStreamSource(stream)
 
@@ -121,11 +130,26 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
         const speechThreshold = options.silenceLevel ?? 0
         const silenceMs = options.silenceMs ?? 0
         const idleSilenceMs = options.idleSilenceMs ?? 0
+        const minSpeechMs = options.minSpeechMs ?? 260
+        const maxDipMs = options.maxDipMs ?? 220
 
-        if (speechThreshold > 0 && options.onSilence && !silenceTriggeredRef.current) {
-          if (normalized >= speechThreshold) {
-            heardSpeechRef.current = true
+        if (!heardSpeechRef.current && speechStartedAtRef.current === null) {
+          noiseFloorRef.current = noiseFloorRef.current * 0.96 + normalized * 0.04
+        }
+
+        const effectiveThreshold =
+          speechThreshold > 0 ? Math.max(speechThreshold, Math.min(0.18, noiseFloorRef.current * 2.2)) : 0
+
+        if (effectiveThreshold > 0 && options.onSilence && !silenceTriggeredRef.current) {
+          if (normalized >= effectiveThreshold) {
+            speechStartedAtRef.current ??= now
+            speechDipStartedAtRef.current = null
             silenceStartedAtRef.current = null
+
+            if (!heardSpeechRef.current && now - speechStartedAtRef.current >= minSpeechMs) {
+              heardSpeechRef.current = true
+              options.onSpeechStart?.()
+            }
           } else if (heardSpeechRef.current && silenceMs > 0) {
             silenceStartedAtRef.current ??= now
 
@@ -135,11 +159,22 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
 
               return
             }
-          } else if (!heardSpeechRef.current && idleSilenceMs > 0 && now - startedAtRef.current >= idleSilenceMs) {
-            silenceTriggeredRef.current = true
-            options.onSilence()
+          } else {
+            if (speechStartedAtRef.current !== null) {
+              speechDipStartedAtRef.current ??= now
 
-            return
+              if (now - speechDipStartedAtRef.current >= maxDipMs) {
+                speechStartedAtRef.current = null
+                speechDipStartedAtRef.current = null
+              }
+            }
+
+            if (!heardSpeechRef.current && idleSilenceMs > 0 && now - startedAtRef.current >= idleSilenceMs) {
+              silenceTriggeredRef.current = true
+              options.onSilence()
+
+              return
+            }
           }
         }
 
@@ -171,7 +206,7 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true }
+        audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true }
       })
     } catch (error) {
       throw micError(error)
@@ -195,9 +230,25 @@ export function useMicRecorder(): { handle: MicRecorderHandle; level: number; re
     streamRef.current = stream
     recorderRef.current = recorder
     heardSpeechRef.current = false
+    speechStartedAtRef.current = null
+    speechDipStartedAtRef.current = null
+    noiseFloorRef.current = 0.015
     silenceTriggeredRef.current = false
     silenceStartedAtRef.current = null
     startedAtRef.current = Date.now()
+
+    stream.getAudioTracks().forEach(track => {
+      track.addEventListener(
+        'ended',
+        () => {
+          if (recorderRef.current === recorder && recorder.state !== 'inactive') {
+            options.onError?.(new Error('Microphone disconnected during recording.'))
+            recorder.stop()
+          }
+        },
+        { once: true }
+      )
+    })
 
     recorder.ondataavailable = event => {
       if (event.data.size > 0) {

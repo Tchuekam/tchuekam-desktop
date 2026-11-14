@@ -14,6 +14,27 @@ _active_agent_ref = None
 _deferred_agent_startup_done = False
 _tui_input_modes_active = False
 
+# Canonical "put the terminal back" sequence, shared by every reset path.
+# Lives here rather than in cli.py because cli.py imports from this module,
+# and because the two copies had drifted: this module used to inline only the
+# five mouse/focus codes, so the atexit path — the one that runs on Ctrl+C,
+# SIGTERM and crashes, i.e. the whole point of #36823 — left the shell with a
+# hidden cursor, stuck in the alt screen, with bracketed paste and kitty
+# keyboard mode still enabled.
+_TERMINAL_INPUT_MODE_RESET_SEQ = (
+    "\x1b[?1006l"  # disable SGR mouse
+    "\x1b[?1003l"  # disable any-motion tracking
+    "\x1b[?1002l"  # disable button-motion tracking
+    "\x1b[?1000l"  # disable click tracking
+    "\x1b[?1004l"  # disable focus events
+    "\x1b[?2004l"  # disable bracketed paste
+    "\x1b[?1049l"  # leave alt screen (if stuck there)
+    "\x1b[<u"      # pop kitty keyboard mode
+    "\x1b[>4m"     # reset modifyOtherKeys
+    "\x1b[0m"      # reset text attributes
+    "\x1b[?25h"    # ensure cursor visible
+)
+
 
 def _sync_process_session_id(session_id: str) -> None:
     """Keep process-local session-id consumers aligned after CLI switches."""
@@ -55,6 +76,21 @@ def _mark_tui_input_modes_active() -> None:
     """Record that the TUI app started, so _run_cleanup resets input modes."""
     global _tui_input_modes_active
     _tui_input_modes_active = True
+
+
+def _set_active_agent_ref(agent: Any) -> None:
+    """Register the live agent for atexit memory-provider shutdown.
+
+    Must go through a setter: ``_run_cleanup`` below reads *this* module's
+    ``_active_agent_ref``, and cli.py used to do ``global _active_agent_ref``
+    in its own namespace, which left this one None forever. The effect was
+    that on every CLI exit ``on_session_finalize`` fired with session_id=None
+    and ``shutdown_memory_provider`` was never called at all — silently
+    reintroducing #15165, the very bug tests/cli/test_cli_shutdown_memory_messages.py
+    guards.
+    """
+    global _active_agent_ref
+    _active_agent_ref = agent
 
 
 def _prepare_deferred_agent_startup() -> None:
@@ -102,15 +138,47 @@ def _prepare_deferred_agent_startup() -> None:
 
 
 def _reset_terminal_input_modes_on_exit() -> None:
-    """Best-effort: disable focus reporting + mouse tracking on TUI exit."""
+    """Best-effort: put the terminal back the way the TUI found it (#36823).
+
+    Called from ``_run_cleanup`` (atexit-registered plus the normal / EOF /
+    interrupt exit paths), so it covers normal quit, Ctrl+C and SIGTERM/SIGHUP.
+    ``kill -9`` is uncatchable and the kanban worker's ``os._exit(0)`` bypasses
+    atexit; neither runs this, but both are non-TTY / non-TUI so there is
+    nothing to reset.
+
+    Gated on ``_tui_input_modes_active`` so one-shot non-TUI CLI runs (which
+    share ``_run_cleanup`` via atexit) never emit these codes.
+
+    Writes to the controlling terminal directly: by exit prompt_toolkit's own
+    output is torn down, so ``sys.stdout`` is the real fd. Falls back to
+    ``/dev/tty`` when stdout is redirected away from the terminal — the TUI may
+    have been driving the tty while stdout went to a pipe, and resetting
+    nowhere is what leaves the next shell with a hidden cursor.
+
+    58464400e collapsed this to a bare five-code write on stdout, which dropped
+    the flag clear, the /dev/tty fallback, and the guard around ``isatty()``
+    (an OSError from a closed stdout escaped straight out of atexit).
+    """
     global _tui_input_modes_active
     if not _tui_input_modes_active:
         return
-    if not sys.stdout or not getattr(sys.stdout, "isatty", lambda: False)():
-        return
+    # About to disable the modes — clear the flag first so a re-armed
+    # _run_cleanup (or a long-lived process that reuses it) doesn't re-emit
+    # them, even if the writes below fail.
+    _tui_input_modes_active = False
+    # Prefer stdout when it's the terminal; otherwise reset on /dev/tty.
     try:
-        sys.stdout.write("\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l")
-        sys.stdout.flush()
+        stream = sys.stdout
+        if stream is not None and stream.isatty():
+            stream.write(_TERMINAL_INPUT_MODE_RESET_SEQ)
+            stream.flush()
+            return
+    except Exception:
+        pass
+    try:
+        with open("/dev/tty", "w", encoding="ascii") as tty:
+            tty.write(_TERMINAL_INPUT_MODE_RESET_SEQ)
+            tty.flush()
     except Exception:
         pass
 

@@ -11864,7 +11864,10 @@ _BUILTIN_SUBCOMMANDS = frozenset(
     {
         "acp", "auth", "backup", "bundles", "checkpoints", "claw", "completion",
         "computer-use",
-        "config", "cron", "curator", "dashboard", "debug", "doctor",
+        # "web" is an alias of "dashboard" (see subparsers.add_parser below);
+        # aliases need their own entry or `hermes web` takes the slow path and
+        # eagerly imports every bundled plugin.
+        "config", "cron", "curator", "dashboard", "web", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate",
         "model", "pairing", "plugins", "portal", "postinstall", "profile", "proxy",

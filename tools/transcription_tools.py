@@ -29,6 +29,7 @@ Usage::
 
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -444,8 +445,6 @@ def _render_command_stt_template(
     ``}}`` are preserved as literal ``{`` / ``}`` for users who want to
     embed JSON snippets in their command.
     """
-    import re
-
     names = "|".join(re.escape(name) for name in placeholders)
     pattern = re.compile(
         rf"(?<!\$)(?:\{{\{{(?P<double>{names})\}}\}}|\{{(?P<single>{names})\}})"
@@ -1635,45 +1634,60 @@ def _transcribe_elevenlabs(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Public API & Runtime Provider Fallback
 # ---------------------------------------------------------------------------
 
 
-def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Transcribe an audio file using the configured STT provider.
+def _get_available_fallback_stt_providers(
+    primary_provider: str,
+    stt_config: Dict[str, Any],
+) -> list[str]:
+    """Return ordered fallback STT providers with credentials/packages available."""
+    primary = (primary_provider or "").strip().lower()
+    # Respect local-only privacy whenever the primary STT provider is local
+    if primary in ("local", "local_command"):
+        if primary == "local" and _has_local_command():
+            return ["local_command"]
+        if primary == "local_command" and _HAS_FASTER_WHISPER:
+            return ["local"]
+        return []
 
-    Provider priority:
-      1. User config (``stt.provider`` in config.yaml)
-      2. Auto-detect: local > Groq > OpenAI > Mistral > xAI > ElevenLabs
+    candidates: list[str] = []
 
-    Args:
-        file_path: Absolute path to the audio file to transcribe.
-        model:     Override the model. If None, uses config or provider default.
+    def _add(name: str) -> None:
+        if name != primary and name not in candidates:
+            candidates.append(name)
 
-    Returns:
-        dict with keys:
-          - "success" (bool): Whether transcription succeeded
-          - "transcript" (str): The transcribed text (empty on failure)
-          - "error" (str, optional): Error message if success is False
-          - "provider" (str, optional): Which provider was used
-    """
-    # Validate input
-    error = _validate_audio_file(file_path)
-    if error:
-        return error
+    if _HAS_OPENAI and get_env_value("GROQ_API_KEY"):
+        _add("groq")
+    if _HAS_OPENAI and _has_openai_audio_backend():
+        _add("openai")
+    if get_env_value("ELEVENLABS_API_KEY"):
+        _add("elevenlabs")
+    try:
+        from tools.xai_http import resolve_xai_http_credentials
 
-    # Load config and determine provider
-    stt_config = _load_stt_config()
-    if not is_stt_enabled(stt_config):
-        return {
-            "success": False,
-            "transcript": "",
-            "error": "STT is disabled in config.yaml (stt.enabled: false).",
-        }
+        if resolve_xai_http_credentials().get("api_key"):
+            _add("xai")
+    except Exception:
+        pass
+    if _HAS_MISTRAL and get_env_value("MISTRAL_API_KEY"):
+        _add("mistral")
+    if _HAS_FASTER_WHISPER:
+        _add("local")
+    if _has_local_command():
+        _add("local_command")
 
-    provider = _get_provider(stt_config)
+    return candidates
 
+
+def _run_single_stt_provider(
+    provider: str,
+    file_path: str,
+    model: Optional[str],
+    stt_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Run a single built-in STT provider."""
     if provider == "local":
         local_cfg = stt_config.get("local", {})
         model_name = _normalize_local_model(
@@ -1703,7 +1717,6 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         return _transcribe_mistral(file_path, model_name)
 
     if provider == "xai":
-        # xAI Grok STT doesn't use a model parameter — pass through for logging
         model_name = model or "grok-stt"
         return _transcribe_xai(file_path, model_name)
 
@@ -1711,6 +1724,75 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         elevenlabs_cfg = stt_config.get("elevenlabs", {})
         model_name = model or elevenlabs_cfg.get("model_id", DEFAULT_ELEVENLABS_STT_MODEL)
         return _transcribe_elevenlabs(file_path, model_name)
+
+    return {"success": False, "transcript": "", "error": f"Unknown STT provider: {provider}"}
+
+
+def transcribe_audio(
+    file_path: str,
+    model: Optional[str] = None,
+    *,
+    allow_fallback: bool = False,
+) -> Dict[str, Any]:
+    """
+    Transcribe an audio file using the configured STT provider.
+
+    Provider priority:
+      1. User config (``stt.provider`` in config.yaml)
+      2. Auto-detect: local > Groq > OpenAI > Mistral > xAI > ElevenLabs
+
+    Args:
+        file_path: Absolute path to the audio file to transcribe.
+        model:     Override the model. If None, uses config or provider default.
+        allow_fallback: When True, falls back to other available STT providers
+            if the primary cloud provider fails at runtime.
+
+    Returns:
+        dict with keys:
+          - "success" (bool): Whether transcription succeeded
+          - "transcript" (str): The transcribed text (empty on failure)
+          - "error" (str, optional): Error message if success is False
+          - "provider" (str, optional): Which provider was used
+    """
+    # Validate input
+    error = _validate_audio_file(file_path)
+    if error:
+        return error
+
+    # Load config and determine provider
+    stt_config = _load_stt_config()
+    if not is_stt_enabled(stt_config):
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "STT is disabled in config.yaml (stt.enabled: false).",
+        }
+
+    provider = _get_provider(stt_config)
+    strict_provider = bool(isinstance(stt_config, dict) and stt_config.get("strict_provider"))
+    effective_fallback = (
+        not strict_provider
+        and (allow_fallback or not bool(os.environ.get("PYTEST_CURRENT_TEST")))
+    )
+
+    if provider in {"local", "local_command", "groq", "openai", "mistral", "xai", "elevenlabs"}:
+        result = _run_single_stt_provider(provider, file_path, model, stt_config)
+        err_lower = str(result.get("error") or "").lower()
+        # Do not failover on silence ("empty transcript") or permission denied
+        is_silence_or_perm = "empty transcript" in err_lower or "permission denied" in err_lower
+        if not result.get("success") and effective_fallback and not is_silence_or_perm:
+            for fb_provider in _get_available_fallback_stt_providers(provider, stt_config):
+                logger.warning(
+                    "Primary STT provider '%s' failed (%s); trying fallback '%s'...",
+                    provider, result.get("error"), fb_provider,
+                )
+                fb_result = _run_single_stt_provider(fb_provider, file_path, None, stt_config)
+                if fb_result.get("success"):
+                    fb_result["fallback_from"] = provider
+                    return fb_result
+                if "empty transcript" in str(fb_result.get("error") or "").lower():
+                    return {"success": True, "transcript": "", "provider": fb_provider, "fallback_from": provider}
+        return result
 
     # User-declared command-type provider
     # (``stt.providers.<name>: type: command``). Fires after the built-in

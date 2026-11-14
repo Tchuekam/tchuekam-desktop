@@ -418,14 +418,14 @@ class TestToolNamePreservation(unittest.TestCase):
     """Verify _last_resolved_tool_names is restored after subagent runs."""
 
     def test_global_tool_names_restored_after_delegation(self):
-        """The process-global _last_resolved_tool_names must be restored
+        """The caller thread's _last_resolved_tool_names must be restored
         after a subagent completes so the parent's execute_code sandbox
         generates correct imports."""
         import model_tools
 
         parent = _make_mock_parent(depth=0)
         original_tools = ["terminal", "read_file", "web_search", "execute_code", "delegate_task"]
-        model_tools._last_resolved_tool_names = list(original_tools)
+        model_tools.set_last_resolved_tool_names(original_tools)
 
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
@@ -436,15 +436,15 @@ class TestToolNamePreservation(unittest.TestCase):
 
             delegate_task(goal="Test tool preservation", parent_agent=parent)
 
-        self.assertEqual(model_tools._last_resolved_tool_names, original_tools)
+        self.assertEqual(model_tools.get_last_resolved_tool_names(), original_tools)
 
     def test_global_tool_names_restored_after_child_failure(self):
-        """Even when the child agent raises, the global must be restored."""
+        """Even when the child agent raises, the names must be restored."""
         import model_tools
 
         parent = _make_mock_parent(depth=0)
         original_tools = ["terminal", "read_file", "web_search"]
-        model_tools._last_resolved_tool_names = list(original_tools)
+        model_tools.set_last_resolved_tool_names(original_tools)
 
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
@@ -454,7 +454,7 @@ class TestToolNamePreservation(unittest.TestCase):
             result = json.loads(delegate_task(goal="Crash test", parent_agent=parent))
             self.assertEqual(result["results"][0]["status"], "error")
 
-        self.assertEqual(model_tools._last_resolved_tool_names, original_tools)
+        self.assertEqual(model_tools.get_last_resolved_tool_names(), original_tools)
 
     def test_build_child_agent_does_not_raise_name_error(self):
         """Regression: _build_child_agent must not reference _saved_tool_names.
@@ -484,14 +484,54 @@ class TestToolNamePreservation(unittest.TestCase):
                     f"_saved_tool_names leaked back into wrong scope: {exc}"
                 )
 
+    def test_delegation_keeps_the_thread_local_intact(self):
+        """Regression: delegating must not rebind model_tools'
+        _last_resolved_tool_names to a plain list.
+
+        It is a `threading.local()` whose value lives at `.names`. Rebinding
+        the attribute destroys the thread-local, and every later
+        `set_last_resolved_tool_names()` then raises AttributeError — which
+        takes get_tool_definitions() down for the rest of the process, not
+        just for the delegating call.
+        """
+        import threading
+
+        import model_tools
+
+        parent = _make_mock_parent(depth=0)
+        model_tools.set_last_resolved_tool_names(["terminal", "read_file"])
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            mock_child.run_conversation.return_value = {
+                "final_response": "done", "completed": True, "api_calls": 1,
+            }
+            MockAgent.return_value = mock_child
+
+            delegate_task(
+                tasks=[{"goal": "first"}, {"goal": "second"}],
+                parent_agent=parent,
+            )
+
+        self.assertIsInstance(
+            model_tools._last_resolved_tool_names,
+            threading.local,
+            "delegation replaced the thread-local with a plain value",
+        )
+        # And the accessor still works, i.e. writes don't raise afterwards.
+        model_tools.set_last_resolved_tool_names(["web_search"])
+        self.assertEqual(
+            model_tools.get_last_resolved_tool_names(), ["web_search"]
+        )
+
     def test_saved_tool_names_set_on_child_before_run(self):
         """_run_single_child must set _delegate_saved_tool_names on the child
-        from model_tools._last_resolved_tool_names before run_conversation."""
+        from model_tools' resolved tool names before run_conversation."""
         import model_tools
 
         parent = _make_mock_parent(depth=0)
         expected_tools = ["read_file", "web_search", "execute_code"]
-        model_tools._last_resolved_tool_names = list(expected_tools)
+        model_tools.set_last_resolved_tool_names(expected_tools)
 
         captured = {}
 

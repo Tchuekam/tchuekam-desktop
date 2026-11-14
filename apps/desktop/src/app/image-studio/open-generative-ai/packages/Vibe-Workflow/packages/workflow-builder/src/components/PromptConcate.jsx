@@ -3,7 +3,7 @@ import { Handle, Position, useReactFlow, useStore, useUpdateNodeInternals } from
 import { getRunId, getWorkflowId } from "./WorkflowStore";
 import { toast } from "react-hot-toast";
 import { IoClose } from "react-icons/io5";
-import { concatModels } from "./utility";
+import { concatModels, confirmActionToast } from "./utility";
 import { TbArrowMerge } from "react-icons/tb";
 import NodeOptionsMenu from "./NodeOptionsMenu";
 
@@ -141,11 +141,11 @@ const PromptConcate = ({ id, data, selected }) => {
   }, [formValues]);
 
   const handleDeleteNode = () => {
-    if (window.confirm(`Are you sure you want to delete this ${id} node?`)) {
+    confirmActionToast(`Are you sure you want to delete this ${id} node?`, () => {
       setNodes((nds) => nds.filter((n) => n.id !== id));
       setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
       toast.success(`Deleted node ${id}`);
-    };
+    });
   };
 
   const hasPrompt = properties && "prompt" in properties;

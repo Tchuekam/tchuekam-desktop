@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
+import {
+  playSpeechText,
+  prefetchSpeechText,
+  stopVoicePlayback,
+  wasVoicePlaybackStopped
+} from '@/lib/voice-playback'
 import { notify, notifyError } from '@/store/notifications'
 
 import { useMicRecorder } from './use-mic-recorder'
@@ -17,7 +22,7 @@ interface VoiceConversationOptions {
   busy: boolean
   enabled: boolean
   onFatalError?: () => void
-  onSubmit: (text: string) => Promise<void> | void
+  onSubmit: (text: string) => Promise<boolean | void> | boolean | void
   onTranscribeAudio?: (audio: Blob) => Promise<string>
   pendingResponse: () => PendingVoiceResponse | null
   consumePendingResponse: () => void
@@ -46,7 +51,7 @@ export function useVoiceConversation({
   const mutedRef = useRef(muted)
   const busyRef = useRef(busy)
   const statusRef = useRef<ConversationStatus>('idle')
-  const wasEnabledRef = useRef(enabled)
+  const wasEnabledRef = useRef(false)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -83,6 +88,22 @@ export function useVoiceConversation({
     }
 
     speechBufferRef.current = `${speechBufferRef.current}${text}`
+  }
+
+  const peekSpeechChunk = (): string | null => {
+    const buffer = speechBufferRef.current.replace(/\s+/g, ' ').trim()
+
+    if (!buffer) {
+      return null
+    }
+
+    const sentence = buffer.match(/^(.+?[.!?。！？])(?:\s+|$)/)
+
+    if (sentence?.[1] && sentence[1].length >= 8) {
+      return sentence[1].trim()
+    }
+
+    return null
   }
 
   const takeSpeechChunk = (force = false): string | null => {
@@ -163,11 +184,26 @@ export function useVoiceConversation({
             return
           }
 
+          consumePendingResponse()
           awaitingSpokenResponseRef.current = true
           resetSpeechBuffer()
-          await onSubmit(transcript)
           setStatus('thinking')
+
+          const submitted = await onSubmit(transcript)
+
+          if (submitted === false) {
+            awaitingSpokenResponseRef.current = false
+            resetSpeechBuffer()
+
+            if (enabledRef.current && !mutedRef.current && !busyRef.current) {
+              pendingStartRef.current = true
+            }
+
+            setStatus('idle')
+          }
         } catch (error) {
+          awaitingSpokenResponseRef.current = false
+          resetSpeechBuffer()
           notifyError(error, 'Voice transcription failed')
 
           if (enabledRef.current && !mutedRef.current && !busyRef.current) {
@@ -180,7 +216,7 @@ export function useVoiceConversation({
         turnClosingRef.current = false
       }
     },
-    [handle, onSubmit, onTranscribeAudio]
+    [consumePendingResponse, handle, onSubmit, onTranscribeAudio]
   )
 
   const startListening = useCallback(async () => {
@@ -200,6 +236,8 @@ export function useVoiceConversation({
         silenceLevel: 0.075,
         silenceMs: 1_250,
         idleSilenceMs: 12_000,
+        minSpeechMs: 260,
+        maxDipMs: 220,
         onError: error => {
           notifyError(error, 'Microphone failed')
           pendingStartRef.current = false
@@ -217,22 +255,39 @@ export function useVoiceConversation({
     }
   }, [handle, handleTurn, onFatalError])
 
-  const speak = useCallback(async (text: string) => {
-    setStatus('speaking')
+  const speak = useCallback(
+    async (text: string) => {
+      setStatus('speaking')
 
-    try {
-      await playSpeechText(text, { source: 'voice-conversation' })
-    } catch (error) {
-      notifyError(error, 'Voice playback failed')
-    } finally {
-      if (enabledRef.current) {
-        pendingStartRef.current = true
-        setStatus('idle')
-      } else {
+      const nextChunk = peekSpeechChunk()
+
+      if (nextChunk) {
+        prefetchSpeechText(nextChunk)
+      }
+
+      try {
+        const completed = await playSpeechText(text, { source: 'voice-conversation' })
+
+        if (!completed && wasVoicePlaybackStopped()) {
+          awaitingSpokenResponseRef.current = false
+          consumePendingResponse()
+          resetSpeechBuffer()
+        }
+      } catch (error) {
+        awaitingSpokenResponseRef.current = false
+        consumePendingResponse()
+        resetSpeechBuffer()
+        notifyError(error, 'Voice playback failed')
+      } finally {
+        if (enabledRef.current && !awaitingSpokenResponseRef.current) {
+          pendingStartRef.current = true
+        }
+
         setStatus('idle')
       }
-    }
-  }, [])
+    },
+    [consumePendingResponse]
+  )
 
   const start = useCallback(async () => {
     if (!onTranscribeAudio) {
@@ -270,8 +325,19 @@ export function useVoiceConversation({
   const stopTurn = useCallback(() => {
     if (statusRef.current === 'listening') {
       void handleTurn(true)
+
+      return
     }
-  }, [handleTurn])
+
+    if (statusRef.current === 'speaking') {
+      awaitingSpokenResponseRef.current = false
+      consumePendingResponse()
+      resetSpeechBuffer()
+      stopVoicePlayback()
+      pendingStartRef.current = true
+      setStatus('idle')
+    }
+  }, [consumePendingResponse, handleTurn])
 
   const toggleMute = useCallback(() => {
     setMuted(value => {
@@ -299,7 +365,13 @@ export function useVoiceConversation({
         return
       }
 
-      if (statusRef.current !== 'listening') {
+      const target = event.target as HTMLElement | null
+
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+
+      if (statusRef.current !== 'listening' && statusRef.current !== 'speaking') {
         return
       }
 

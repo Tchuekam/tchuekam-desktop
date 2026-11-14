@@ -133,8 +133,15 @@ def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, An
     agent.request_overrides = overrides
 
 
-def _resolve_auto_fallback_chain(primary_provider: str) -> list:
-    """Automatically build an emergency fallback provider chain from configured env keys."""
+def _resolve_auto_fallback_chain(primary_provider: str) -> List[Dict[str, str]]:
+    """Build an emergency fallback provider chain from the configured env keys.
+
+    Module scope is load-bearing: agent/conversation_loop.py imports this by
+    name when a rate limit arrives and no fallback chain was configured. It
+    used to be nested inside init_agent(), where it was both unreachable from
+    outside and never called locally — so that import raised ImportError on
+    the first 429 and took the whole turn down instead of failing over.
+    """
     try:
         from hermes_cli.config import load_env
         env = load_env()
@@ -146,7 +153,7 @@ def _resolve_auto_fallback_chain(primary_provider: str) -> list:
         return bool(val.strip())
 
     primary = (primary_provider or "").strip().lower()
-    chain = []
+    chain: List[Dict[str, str]] = []
 
     # 1. Groq (Fast & generous rate limits)
     if primary != "groq" and (_has_key("GROQ_API_KEY") or _has_key("GROQ_API_KEYS")):
@@ -916,8 +923,6 @@ def init_agent(
         except Exception as e:
             raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
     
-
-
     # Provider fallback chain — ordered list of backup providers tried
     # when the primary is exhausted (rate-limit, overload, connection
     # failure).  Supports both legacy single-dict ``fallback_model`` and

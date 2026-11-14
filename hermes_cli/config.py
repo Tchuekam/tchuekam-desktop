@@ -2866,6 +2866,14 @@ OPTIONAL_ENV_VARS = {
         "password": True,
         "category": "tool",
     },
+    "MUAPI_KEY": {
+        "description": "MuAPI key for Image Studio generation and editing",
+        "prompt": "MuAPI key",
+        "url": "https://muapi.ai",
+        "tools": ["image_studio"],
+        "password": True,
+        "category": "tool",
+    },
     "VOICE_TOOLS_OPENAI_KEY": {
         "description": "OpenAI API key for voice transcription (Whisper) and OpenAI TTS",
         "prompt": "OpenAI API Key (for Whisper STT + TTS)",

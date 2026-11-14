@@ -473,16 +473,48 @@ def get_provider(name: str) -> Optional[ProviderDef]:
 
 
 def get_label(provider_id: str) -> str:
-    """Get a human-readable display name for a provider."""
+    """Get a human-readable display name for a provider.
+
+    Resolution order, most specific first:
+
+    1. ``_LABEL_OVERRIDES`` — this module's own disambiguations (e.g. the
+       separate xAI API-key and OAuth entries the model picker needs).
+    2. ``hermes_cli.models._PROVIDER_LABELS`` — the hand-curated display map
+       the rest of the CLI renders from.
+    3. The models.dev provider name, when it carries one of its own.
+    4. The canonical id, as a last resort.
+
+    Step 2 matters: for providers Hermes defines itself, ``get_provider()``
+    builds a ProviderDef whose ``name`` falls back to the raw id (see
+    ``_LABEL_OVERRIDES.get(canonical, canonical)`` below), so without it this
+    returned slugs like ``openrouter``/``deepseek``/``xai`` for 26 of 37
+    providers while ``provider_label()`` returned proper names — the two
+    helpers disagreed anywhere the UI mixed them.
+    """
     canonical = normalize_provider(provider_id)
 
     # Check label overrides first
     if canonical in _LABEL_OVERRIDES:
         return _LABEL_OVERRIDES[canonical]
 
-    # Try models.dev
+    # Then the curated display map shared with the model picker. Try the id as
+    # given before the canonical one: several aliases collapse onto a shared
+    # canonical but carry distinct labels (kimi-coding vs kimi-coding-cn both
+    # normalize to kimi-for-coding), and the caller's spelling is the more
+    # specific answer.
+    try:
+        from hermes_cli.models import _PROVIDER_LABELS
+
+        for key in ((provider_id or "").strip().lower(), canonical):
+            curated = _PROVIDER_LABELS.get(key)
+            if curated:
+                return curated
+    except Exception:
+        pass
+
+    # Try models.dev — but only when it has a real name rather than the id.
     pdef = get_provider(canonical)
-    if pdef:
+    if pdef and pdef.name and pdef.name != canonical:
         return pdef.name
 
     return canonical

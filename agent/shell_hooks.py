@@ -380,7 +380,7 @@ def _spawn(spec: ShellHookSpec, stdin_json: str) -> Dict[str, Any]:
         "error": None,
     }
     try:
-        argv = shlex.split(os.path.expanduser(spec.command))
+        argv = shlex.split(os.path.expanduser(spec.command), posix=(sys.platform != "win32"))
     except ValueError as exc:
         result["error"] = f"command {spec.command!r} cannot be parsed: {exc}"
         return result
@@ -388,20 +388,37 @@ def _spawn(spec: ShellHookSpec, stdin_json: str) -> Dict[str, Any]:
         result["error"] = "empty command"
         return result
 
+    if sys.platform == "win32" and (argv[0].endswith(".sh") or argv[0].endswith(".bash")):
+        from tools.environments.local import _find_bash
+        argv = [_find_bash(), argv[0]] + argv[1:]
+
     t0 = time.monotonic()
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             argv,
-            input=stdin_json,
-            capture_output=True,
-            timeout=spec.timeout,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             shell=False,
         )
-    except subprocess.TimeoutExpired:
-        result["timed_out"] = True
-        result["elapsed_seconds"] = round(time.monotonic() - t0, 3)
-        return result
+        try:
+            stdout, stderr = proc.communicate(input=stdin_json, timeout=spec.timeout)
+        except subprocess.TimeoutExpired:
+            if sys.platform == "win32":
+                try:
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+                except Exception:
+                    proc.kill()
+            else:
+                proc.kill()
+            try:
+                proc.communicate(timeout=2.0)
+            except Exception:
+                pass
+            result["timed_out"] = True
+            result["elapsed_seconds"] = round(time.monotonic() - t0, 3)
+            return result
     except FileNotFoundError:
         result["error"] = "command not found"
         return result
@@ -413,8 +430,8 @@ def _spawn(spec: ShellHookSpec, stdin_json: str) -> Dict[str, Any]:
         return result
 
     result["returncode"] = proc.returncode
-    result["stdout"] = proc.stdout or ""
-    result["stderr"] = proc.stderr or ""
+    result["stdout"] = stdout or ""
+    result["stderr"] = stderr or ""
     result["elapsed_seconds"] = round(time.monotonic() - t0, 3)
     return result
 
@@ -732,7 +749,7 @@ def _command_script_path(command: str) -> str:
     common bare-path form.
     """
     try:
-        parts = shlex.split(command)
+        parts = shlex.split(command, posix=(sys.platform != "win32"))
     except ValueError:
         return command
     if not parts:
@@ -741,7 +758,7 @@ def _command_script_path(command: str) -> str:
         if part.lower().endswith(_SCRIPT_EXTENSIONS):
             return part
     for part in parts:
-        if "/" in part or part.startswith("~"):
+        if "/" in part or "\\" in part or part.startswith("~"):
             return part
     return parts[0]
 
@@ -789,6 +806,18 @@ def allowlist_entry_for(event: str, command: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _expand_user_path(path: str) -> str:
+    """Expand ~ respecting HOME env var across all platforms (including Windows)."""
+    if path.startswith("~"):
+        home = os.environ.get("HOME")
+        if home:
+            if path == "~":
+                return home
+            if path.startswith("~/") or path.startswith("~\\"):
+                return os.path.join(home, path[2:])
+    return os.path.expanduser(path)
+
+
 def script_mtime_iso(command: str) -> Optional[str]:
     """ISO-8601 mtime of the resolved script path, or ``None`` if the
     script is missing."""
@@ -796,7 +825,7 @@ def script_mtime_iso(command: str) -> Optional[str]:
     if not path:
         return None
     try:
-        expanded = os.path.expanduser(path)
+        expanded = _expand_user_path(path)
         return datetime.fromtimestamp(
             os.path.getmtime(expanded), tz=timezone.utc,
         ).isoformat().replace("+00:00", "Z")
@@ -815,13 +844,15 @@ def script_is_executable(command: str) -> bool:
     path = _command_script_path(command)
     if not path:
         return False
-    expanded = os.path.expanduser(path)
+    expanded = _expand_user_path(path)
     if not os.path.isfile(expanded):
         return False
     try:
-        argv = shlex.split(command)
+        argv = shlex.split(command, posix=(sys.platform != "win32"))
     except ValueError:
         return False
+    if sys.platform == "win32":
+        return os.access(expanded, os.R_OK)
     is_bare_invocation = bool(argv) and argv[0] == path
     required = os.X_OK if is_bare_invocation else os.R_OK
     return os.access(expanded, required)

@@ -6,27 +6,36 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
+    nodejs \
+    npm \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
 COPY requirements-backend.txt ./
 RUN pip install --no-cache-dir -r requirements-backend.txt
 
-# Copy backend and biocompute modules
-COPY tchuekam_backend/ ./tchuekam_backend/
-COPY biocompute/ ./biocompute/
-COPY pyproject.toml ./
+# Copy application code and agent/gateway modules
+COPY . .
+
+# Install the package so hermes CLI and entrypoints are available
+RUN pip install --no-cache-dir -e .
 
 # Environment defaults
 ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
 ENV PORT=8000
+ENV HERMES_DASHBOARD_INSECURE=1
+ENV HERMES_DASHBOARD_TUI=1
+ENV HERMES_HOME=/app/data
+
+RUN mkdir -p /app/data
 
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 # Start command
-CMD ["sh", "-c", "uvicorn tchuekam_backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --insecure --skip-build --no-open"]

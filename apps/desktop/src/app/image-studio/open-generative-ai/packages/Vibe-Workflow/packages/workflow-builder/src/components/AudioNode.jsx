@@ -7,7 +7,7 @@ import { toast } from "react-hot-toast";
 import { IoClose, IoTrashOutline } from "react-icons/io5";
 import { AiOutlineAudio } from "react-icons/ai";
 import UploadNode from "./UploadNode";
-import { audioModels, downloadFile } from "./utility";
+import { audioModels, downloadFile, confirmActionToast } from "./utility";
 import AudioPlayer from "./AudioPlayer";
 import axios from "axios";
 import { SlOptions } from "react-icons/sl";
@@ -295,11 +295,11 @@ const AudioGeneration = ({ id, data, selected }) => {
   };
 
   const handleDeleteNode = () => {
-    if (window.confirm(`Are you sure you want to delete this ${id} node?`)) {
+    confirmActionToast(`Are you sure you want to delete this ${id} node?`, () => {
       setNodes((nds) => nds.filter((n) => n.id !== id));
       setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
       toast.success(`Deleted node ${id}`);
-    };
+    });
   };
 
   const hasPrompt = properties && "prompt" in properties && !data.selectedModel?.id.includes("passthrough");
@@ -363,7 +363,7 @@ const AudioGeneration = ({ id, data, selected }) => {
     const currentHistory = outputHistory[currentHistoryIndex];
     if (!currentHistory || !currentHistory.node_run_id) return;
 
-    if (window.confirm("Are you sure you want to delete this history entry?")) {
+    confirmActionToast("Are you sure you want to delete this history entry?", async () => {
       try {
         await axios.delete(`/api/workflow/node-run/${currentHistory.node_run_id}`);
         const newHistory = outputHistory.filter((_, i) => i !== currentHistoryIndex);
@@ -383,7 +383,7 @@ const AudioGeneration = ({ id, data, selected }) => {
         toast.error(error.response?.data?.detail || "Failed to delete history entry");
         console.error(error);
       }
-    }
+    });
   };
 
   useEffect(() => {

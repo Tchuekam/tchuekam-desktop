@@ -18,9 +18,10 @@ param(
     [string]$Branch = "main",
     # -Commit and -Tag are higher-precedence variants of -Branch for users
     # who need reproducible installs (desktop installer pinning, CI, release
-    # bundles).  When set, the repository stage clones $Branch (faster than
-    # cloning the full default-branch history) and then `git checkout`s the
-    # exact ref.  Precedence: Commit > Tag > Branch.
+    # bundles).  When set, the repository stage clones the remote's default
+    # branch and then `git checkout`s the exact ref, so -Branch only matters as
+    # the fallback when that ref is not on the remote (see Set-RepositoryPin:
+    # that is a warning, not a failure).  Precedence: Commit > Tag > Branch.
     [string]$Commit = "",
     [string]$Tag = "",
     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
@@ -1000,10 +1001,69 @@ function Install-SystemPackages {
 # Installation
 # ============================================================================
 
+# Check out the ref the caller pinned (Commit > Tag) as a detached HEAD.
+#
+# A pin the remote does not have -- an unpushed commit, a deleted tag, a typo --
+# must not be what makes the install fail: it falls back to the tip of $Branch
+# with a warning, because a working agent on a nearby revision beats no agent at
+# all.  That makes the pin a best effort, not a guarantee: the stage still
+# succeeds, so a caller that needs an exact revision must check `git rev-parse
+# HEAD` afterwards.
+#
+# A pin the remote DOES have but that cannot be checked out (local edits that
+# conflict, locked files) is a real failure and throws with git's own message.
+#
+# Callers wrap this in EAP=Continue (git writes progress to stderr).
+function Set-RepositoryPin {
+    if ($Commit) {
+        Write-Info "Pinning to commit $Commit..."
+        # Fetch it explicitly: a tag-less commit SHA isn't always reachable from
+        # any one branch fetch.
+        git -c windows.appendAtomically=false fetch origin $Commit
+        git -c windows.appendAtomically=false cat-file -e "$Commit^{commit}" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            git -c windows.appendAtomically=false checkout --detach $Commit
+            if ($LASTEXITCODE -ne 0) { throw "git checkout $Commit failed (exit $LASTEXITCODE)" }
+            return
+        }
+        Write-Warn "Pinned commit $Commit is not available from the remote."
+    } elseif ($Tag) {
+        Write-Info "Pinning to tag $Tag..."
+        git -c windows.appendAtomically=false fetch origin "refs/tags/${Tag}:refs/tags/${Tag}"
+        git -c windows.appendAtomically=false rev-parse -q --verify "refs/tags/$Tag^{commit}" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            git -c windows.appendAtomically=false checkout --detach "refs/tags/$Tag"
+            if ($LASTEXITCODE -ne 0) { throw "git checkout tag $Tag failed (exit $LASTEXITCODE)" }
+            return
+        }
+        Write-Warn "Pinned tag $Tag is not available from the remote."
+    } else {
+        return
+    }
+
+    Write-Warn "Falling back to the tip of branch $Branch."
+    git -c windows.appendAtomically=false fetch origin $Branch
+    git -c windows.appendAtomically=false checkout $Branch
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "Could not check out branch $Branch (is it on the remote?); leaving the checkout where it is."
+        return
+    }
+    # An existing install already has a local branch of that name and it is
+    # usually behind the remote: bring it to the tip, as the unpinned update path
+    # does.  (A tag checked out by name is detached and has nothing to pull.)
+    git -c windows.appendAtomically=false symbolic-ref -q HEAD 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        git -c windows.appendAtomically=false pull --ff-only origin $Branch
+        if ($LASTEXITCODE -ne 0) { Write-Warn "Could not fast-forward $Branch; leaving it on its current commit." }
+    }
+}
+
 function Install-Repository {
     Write-Info "Installing to $InstallDir..."
 
     $didUpdate = $false
+    $installedFromArchive = $false
+    $archiveLabel = ""
 
     if (Test-Path $InstallDir) {
         # Test-Path "$InstallDir\.git" returns True when .git is a file OR a
@@ -1049,16 +1109,8 @@ function Install-Repository {
                 # Precedence: Commit > Tag > Branch.  Commit and Tag check
                 # out as detached HEAD intentionally -- they're meant to be
                 # reproducible pins, not branches the user pulls into.
-                if ($Commit) {
-                    # Make sure we have the commit locally (a tag-less commit
-                    # SHA isn't always reachable from any one branch fetch).
-                    git -c windows.appendAtomically=false fetch origin $Commit
-                    git -c windows.appendAtomically=false checkout --detach $Commit
-                    if ($LASTEXITCODE -ne 0) { throw "git checkout $Commit failed (exit $LASTEXITCODE)" }
-                } elseif ($Tag) {
-                    git -c windows.appendAtomically=false fetch origin "refs/tags/${Tag}:refs/tags/${Tag}"
-                    git -c windows.appendAtomically=false checkout --detach "refs/tags/$Tag"
-                    if ($LASTEXITCODE -ne 0) { throw "git checkout tag $Tag failed (exit $LASTEXITCODE)" }
+                if ($Commit -or $Tag) {
+                    Set-RepositoryPin
                 } else {
                     git -c windows.appendAtomically=false checkout $Branch
                     if ($LASTEXITCODE -ne 0) { throw "git checkout $Branch failed (exit $LASTEXITCODE)" }
@@ -1101,11 +1153,19 @@ function Install-Repository {
         $env:GIT_CONFIG_VALUE_0 = "false"
         git config --global windows.appendAtomically false 2>$null
 
+        # A commit or tag pin decides what gets checked out, so the branch is
+        # only a hint then.  Cloning --branch <name> fails outright when that
+        # branch was never pushed or has been deleted since -- desktop builds are
+        # stamped with whatever branch they were built on -- which used to take
+        # the whole first-launch install down even though the pin was fine.
+        $branchArgs = @()
+        if (-not $Commit -and -not $Tag) { $branchArgs = @('--branch', $Branch) }
+
         # Try SSH first, then HTTPS, with -c flag for atomic write fix
         Write-Info "Trying SSH clone..."
         $env:GIT_SSH_COMMAND = "ssh -o BatchMode=yes -o ConnectTimeout=5"
         try {
-            git -c windows.appendAtomically=false clone --branch $Branch --recurse-submodules $RepoUrlSsh $InstallDir
+            git -c windows.appendAtomically=false clone @branchArgs --recurse-submodules $RepoUrlSsh $InstallDir
             if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
         } catch { }
         $env:GIT_SSH_COMMAND = $null
@@ -1114,7 +1174,7 @@ function Install-Repository {
             if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
             Write-Info "SSH failed, trying HTTPS..."
             try {
-                git -c windows.appendAtomically=false clone --branch $Branch --recurse-submodules $RepoUrlHttps $InstallDir
+                git -c windows.appendAtomically=false clone @branchArgs --recurse-submodules $RepoUrlHttps $InstallDir
                 if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
             } catch { }
         }
@@ -1123,24 +1183,40 @@ function Install-Repository {
         if (-not $cloneSuccess) {
             if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
             Write-Warn "Git clone failed -- downloading ZIP archive instead..."
+            $zipPath = $null
+            $extractPath = "$env:TEMP\hermes-agent-extract"
             try {
-                # Pick the ZIP URL for the most-specific ref the caller asked
-                # for.  GitHub supports archive URLs for commits, tags, and
-                # branches; we honour Commit > Tag > Branch.
-                if ($Commit) {
-                    $zipUrl = "https://github.com/Tchuekam/tchuekam-desktop/archive/$Commit.zip"
-                    $zipLabel = $Commit
-                } elseif ($Tag) {
-                    $zipUrl = "https://github.com/Tchuekam/tchuekam-desktop/archive/refs/tags/$Tag.zip"
-                    $zipLabel = $Tag
-                } else {
-                    $zipUrl = "https://github.com/Tchuekam/tchuekam-desktop/archive/refs/heads/$Branch.zip"
-                    $zipLabel = $Branch
-                }
-                $zipPath = "$env:TEMP\hermes-agent-$zipLabel.zip"
-                $extractPath = "$env:TEMP\hermes-agent-extract"
+                # GitHub supports archive URLs for commits, tags, and branches.
+                # Try the most-specific ref the caller asked for first (Commit >
+                # Tag > Branch), then fall back to the branch and to main: an
+                # unpushed commit 404s, but a branch archive still gives a
+                # working checkout.
+                $zipBase = "https://github.com/Tchuekam/tchuekam-desktop/archive"
+                $zipCandidates = @()
+                if ($Commit) { $zipCandidates += ,@("$zipBase/$Commit.zip", $Commit) }
+                if ($Tag) { $zipCandidates += ,@("$zipBase/refs/tags/$Tag.zip", $Tag) }
+                $zipCandidates += ,@("$zipBase/refs/heads/$Branch.zip", $Branch)
+                if ($Branch -ne "main") { $zipCandidates += ,@("$zipBase/refs/heads/main.zip", "main") }
 
-                Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+                foreach ($candidate in $zipCandidates) {
+                    $zipUrl = $candidate[0]
+                    # Branch names can contain "/" (fix/foo), which is not a
+                    # valid file name -- sanitise before using it in the path.
+                    $zipLabel = $candidate[1] -replace '[^A-Za-z0-9._-]', '_'
+                    $candidatePath = "$env:TEMP\hermes-agent-$zipLabel.zip"
+                    try {
+                        Invoke-WebRequest -Uri $zipUrl -OutFile $candidatePath -UseBasicParsing
+                        $zipPath = $candidatePath
+                        $archiveLabel = $candidate[1]
+                        break
+                    } catch {
+                        Write-Warn "Archive $zipUrl unavailable: $_"
+                        # A failed download can leave a partial file behind.
+                        Remove-Item -Force $candidatePath -ErrorAction SilentlyContinue
+                    }
+                }
+                if (-not $zipPath) { throw "no archive could be downloaded" }
+
                 if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
                 Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
 
@@ -1151,22 +1227,31 @@ function Install-Repository {
                     Move-Item $extractedDir.FullName $InstallDir -Force
                     Write-Success "Downloaded and extracted"
 
-                    # Initialize git repo so updates work later
+                    # Initialize git repo so updates work later.  Git's stderr
+                    # hints (e.g. about the initial branch name) would abort this
+                    # under the script-wide EAP=Stop, so run it under Continue.
                     Push-Location $InstallDir
-                    git -c windows.appendAtomically=false init 2>$null
-                    git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null
-                    git remote add origin $RepoUrlHttps 2>$null
-                    Pop-Location
+                    $initEAP = $ErrorActionPreference
+                    $ErrorActionPreference = "Continue"
+                    try {
+                        git -c windows.appendAtomically=false init 2>$null
+                        git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null
+                        git remote add origin $RepoUrlHttps 2>$null
+                    } finally {
+                        $ErrorActionPreference = $initEAP
+                        Pop-Location
+                    }
                     Write-Success "Git repo initialized for future updates"
 
                     $cloneSuccess = $true
+                    $installedFromArchive = $true
                 }
-
-                # Cleanup temp files
-                Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
-                Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
             } catch {
                 Write-Err "ZIP download also failed: $_"
+            } finally {
+                # Cleanup temp files, after a failed attempt as well
+                if ($zipPath) { Remove-Item -Force $zipPath -ErrorAction SilentlyContinue }
+                Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
             }
         }
 
@@ -1179,32 +1264,28 @@ function Install-Repository {
     Push-Location $InstallDir
     git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null
 
-    # Post-clone pin: when a clone (or ZIP-fallback init) just landed us on
-    # $Branch's tip, honour the higher-precedence $Commit / $Tag by checking
-    # the exact ref out as a detached HEAD.  Skipped for the in-place update
-    # path (above) since that already routed via the same precedence.
-    if (-not $didUpdate) {
+    # Post-clone pin: the clone landed on the remote's default branch (or on
+    # $Branch when nothing is pinned), so honour the higher-precedence $Commit /
+    # $Tag by checking the exact ref out as a detached HEAD -- or fall back to
+    # the tip of $Branch when the remote doesn't have it (Set-RepositoryPin).
+    # Skipped for the in-place update path (above), which already routed through
+    # Set-RepositoryPin, and for an archive install: its repository has no
+    # history to check anything out of, and the archive is already the closest
+    # ref that could be had.
+    if (-not $didUpdate -and $installedFromArchive) {
+        $pinnedRef = if ($Commit) { $Commit } elseif ($Tag) { $Tag } else { "" }
+        if ($pinnedRef -and $archiveLabel -ne $pinnedRef) {
+            Write-Warn "The archive for the pinned ref was not available; installed the archive of $archiveLabel instead."
+        }
+        Write-Info "Installed from an archive of $archiveLabel (the checkout has no git history, so 'hermes update' will not work until it is re-cloned)."
+    } elseif (-not $didUpdate) {
         # Same EAP=Continue wrap as the update path -- git fetch's 'From <url>'
         # info line goes to stderr and would terminate the script under the
         # global EAP=Stop otherwise.  We check $LASTEXITCODE for real errors.
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
-            if ($Commit) {
-                Write-Info "Pinning to commit $Commit..."
-                git -c windows.appendAtomically=false fetch origin $Commit
-                git -c windows.appendAtomically=false checkout --detach $Commit
-                if ($LASTEXITCODE -ne 0) {
-                    throw "git checkout $Commit failed (exit $LASTEXITCODE)"
-                }
-            } elseif ($Tag) {
-                Write-Info "Pinning to tag $Tag..."
-                git -c windows.appendAtomically=false fetch origin "refs/tags/${Tag}:refs/tags/${Tag}"
-                git -c windows.appendAtomically=false checkout --detach "refs/tags/$Tag"
-                if ($LASTEXITCODE -ne 0) {
-                    throw "git checkout tag $Tag failed (exit $LASTEXITCODE)"
-                }
-            }
+            Set-RepositoryPin
         } finally {
             $ErrorActionPreference = $prevEAP
         }

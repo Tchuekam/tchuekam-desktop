@@ -22,13 +22,6 @@ const WorkflowListingClient = ({ initialWorkflowList }) => {
   const [workflowName, setWorkflowName] = useState("");
   const [renameId, setRenameId] = useState(null);
 
-  useEffect(() => {
-    const fromBuilder = sessionStorage.getItem("fromWorkflowBuilder");
-    if (fromBuilder) {
-      sessionStorage.removeItem("fromWorkflowBuilder");
-      window.location.reload();
-    }
-  }, []);
 
   const getUserWorkflowDefs = () => {
     setLoading(true);
@@ -47,21 +40,47 @@ const WorkflowListingClient = ({ initialWorkflowList }) => {
   };
 
   const handleDeleteWorkflow = (deleteId) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this workflow? This action cannot be undone."
-    );
-    if (!confirmDelete) return;
-
-    axios.delete(`/api/workflow/delete-workflow-def/${deleteId}`)
-      .then(() => {
-        setWorkflowList(prev => prev.filter(w => w.id !== deleteId));
-        setDropDown(0);
-        toast.success("Workflow deleted successfully");
-      })
-      .catch((error) => {
-        console.error(error);
-        toast.error(error.response?.data?.error || "Failed to delete workflow");
-      });
+    toast((t) => (
+      <div className="flex flex-col gap-2 p-1 min-w-[220px]">
+        <div className="text-xs font-semibold text-white/90">Delete this workflow? This cannot be undone.</div>
+        <div className="flex justify-end gap-2 mt-1">
+          <button
+            type="button"
+            onClick={() => toast.dismiss(t.id)}
+            className="px-2.5 py-1 text-[11px] rounded bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              toast.dismiss(t.id);
+              axios.delete(`/api/workflow/delete-workflow-def/${deleteId}`)
+                .then(() => {
+                  setWorkflowList(prev => prev.filter(w => w.id !== deleteId));
+                  setDropDown(0);
+                  toast.success("Workflow deleted successfully");
+                })
+                .catch((error) => {
+                  console.error(error);
+                  toast.error(error.response?.data?.error || "Failed to delete workflow");
+                });
+            }}
+            className="px-2.5 py-1 text-[11px] rounded bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 6000,
+      style: {
+        background: '#18181b',
+        color: '#ffffff',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: '12px',
+      },
+    });
   };
 
   const handleRenameWorkflow = (id, newName) => {
@@ -110,7 +129,12 @@ const WorkflowListingClient = ({ initialWorkflowList }) => {
     setLoading(true);
     axios.post("/api/workflow/create", workflowPayload)
       .then((response) => {
-        window.location.href = `/workflow/${response.data.workflow_id}`;
+        const wfId = response.data.workflow_id;
+        if (typeof window !== 'undefined' && window.location.hash.startsWith('#/image-studio')) {
+          window.location.hash = `#/image-studio?tab=workflows&workflowId=${wfId}`;
+        } else {
+          window.location.href = `/workflow/${wfId}`;
+        }
       })
       .catch((error) => {
         console.error(error);

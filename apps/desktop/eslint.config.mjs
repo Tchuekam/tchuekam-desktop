@@ -25,7 +25,7 @@ const customRules = {
 
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', 'src/**/*.js']
+    ignores: ['**/node_modules/**', '**/dist/**', '**/dist-web/**', 'src/**/*.js', 'src/app/image-studio/open-generative-ai/**']
   },
   js.configs.recommended,
   {
@@ -114,6 +114,32 @@ export default [
       ecmaVersion: 'latest',
       globals: { ...globals.node },
       sourceType: 'commonjs'
+    },
+    rules: {
+      // The Electron main process is full of deliberate best-effort cleanup —
+      // unlinking a temp file that may already be gone, sending to a window
+      // that may already be destroyed, killing a child that may have exited.
+      // `catch {}` is the intent there, and js.configs.recommended flags all
+      // ~20 of them as errors, which is what kept `npm run lint` red. Empty
+      // if/for/while blocks are still errors; only the catch is allowed.
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      // Unused *variables* stay an error — that signal is worth keeping in
+      // main-process code. Parameters prefixed with `_` are opt-out, for
+      // handlers that must match a signature (or accept an options bag whose
+      // keys this particular platform path does not honour yet).
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'all' }]
+    }
+  },
+  {
+    // `.mjs` matched none of the blocks above, so the vendored Next configs
+    // under src/app/image-studio/** were linted with no globals at all and
+    // reported `'process' is not defined`. They are Node ESM.
+    files: ['**/*.mjs'],
+    ignores: ['**/node_modules/**', '**/dist/**'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: { ...globals.node },
+      sourceType: 'module'
     }
   },
   {

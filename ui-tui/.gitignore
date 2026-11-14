@@ -1,4 +1,4 @@
-dist/
+# dist/ (tracked for cloud deployment)
 node_modules/
 src/*.js
 docs/

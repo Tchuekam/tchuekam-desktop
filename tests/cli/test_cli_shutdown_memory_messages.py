@@ -22,7 +22,10 @@ from unittest.mock import MagicMock, patch
 @patch("hermes_cli.plugins.invoke_hook")
 def test_cleanup_forwards_session_messages(mock_invoke_hook):
     """_run_cleanup forwards a populated ``_session_messages`` list."""
-    import cli as cli_mod
+    # cli.py re-exports _run_cleanup but the cleanup state (_active_agent_ref,
+    # _cleanup_done) lives in hermes_cli.cli_helpers, so the globals have to be
+    # set there — setting them on `cli` is a no-op.
+    import hermes_cli.cli_helpers as cli_mod
 
     transcript = [
         {"role": "user", "content": "remember my dog is named Biscuit"},
@@ -49,7 +52,10 @@ def test_cleanup_empty_list_still_forwarded(mock_invoke_hook):
     """An agent that initialised but ran no turns has an empty list.
     Forwarding it (rather than falling through) matches the gateway-side
     behaviour and is explicit to providers."""
-    import cli as cli_mod
+    # cli.py re-exports _run_cleanup but the cleanup state (_active_agent_ref,
+    # _cleanup_done) lives in hermes_cli.cli_helpers, so the globals have to be
+    # set there — setting them on `cli` is a no-op.
+    import hermes_cli.cli_helpers as cli_mod
 
     agent = MagicMock()
     agent.session_id = "cli-session-id"
@@ -73,7 +79,10 @@ def test_cleanup_non_list_attribute_falls_back_to_no_arg(mock_invoke_hook):
     back to the no-arg path rather than passing a garbage value to
     providers expecting ``List[Dict]``.  This keeps existing CLI test
     suites that use bare ``MagicMock()`` agents green."""
-    import cli as cli_mod
+    # cli.py re-exports _run_cleanup but the cleanup state (_active_agent_ref,
+    # _cleanup_done) lives in hermes_cli.cli_helpers, so the globals have to be
+    # set there — setting them on `cli` is a no-op.
+    import hermes_cli.cli_helpers as cli_mod
 
     agent = MagicMock()
     agent.session_id = "cli-session-id"
@@ -93,7 +102,10 @@ def test_cleanup_non_list_attribute_falls_back_to_no_arg(mock_invoke_hook):
 @patch("hermes_cli.plugins.invoke_hook")
 def test_cleanup_provider_exception_is_swallowed(mock_invoke_hook):
     """A raising ``shutdown_memory_provider`` must not crash CLI exit."""
-    import cli as cli_mod
+    # cli.py re-exports _run_cleanup but the cleanup state (_active_agent_ref,
+    # _cleanup_done) lives in hermes_cli.cli_helpers, so the globals have to be
+    # set there — setting them on `cli` is a no-op.
+    import hermes_cli.cli_helpers as cli_mod
 
     agent = MagicMock()
     agent.session_id = "cli-session-id"

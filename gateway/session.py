@@ -688,7 +688,14 @@ class SessionStore:
         self.config = config
         self._entries: Dict[str, SessionEntry] = {}
         self._loaded = False
-        self._lock = threading.Lock()
+        # Reentrant on purpose. `_save_sync()` snapshots `_entries` under this
+        # lock because it also runs on an executor thread via `_save_async()` /
+        # `_save()`, where no lock is held. But every synchronous mutator
+        # (get_or_create_session, reset_session, switch_session, prune_old_entries,
+        # suspend_recently_active, ...) calls `_save()` from *inside* its own
+        # `with self._lock:` block, and with a plain Lock that second acquisition
+        # deadlocks the thread forever whenever there is no running event loop.
+        self._lock = threading.RLock()
         self._has_active_processes_fn = has_active_processes_fn
         
         # Initialize SQLite session database

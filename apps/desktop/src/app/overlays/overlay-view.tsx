@@ -48,7 +48,7 @@ export function OverlayView({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/22 p-3 backdrop-blur-[0.125rem] sm:p-6"
+      className="fixed inset-0 z-[80] bg-black/22 p-2 backdrop-blur-[0.125rem] sm:p-6"
       onClick={event => {
         if (event.target === event.currentTarget) {
           closeOverlay()
@@ -62,16 +62,16 @@ export function OverlayView({
           rootClassName
         )}
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
+        <div className="pointer-events-none flex items-center gap-2 border-b border-(--ui-stroke-tertiary)/70 px-2.5 py-2 sm:absolute sm:inset-x-0 sm:top-0 sm:z-10 sm:block sm:h-[calc(var(--titlebar-height)+0.1875rem)] sm:border-b-0 sm:p-0 [-webkit-app-region:drag]">
           {headerContent && (
-            <div className="pointer-events-auto absolute left-1/2 top-[calc(1rem+var(--titlebar-height)/2)] -translate-x-1/2 -translate-y-1/2 [-webkit-app-region:no-drag]">
+            <div className="pointer-events-auto min-w-0 flex-1 sm:absolute sm:left-1/2 sm:top-[calc(1rem+var(--titlebar-height)/2)] sm:flex-none sm:-translate-x-1/2 sm:-translate-y-1/2 [-webkit-app-region:no-drag]">
               {headerContent}
             </div>
           )}
 
           <Button
             aria-label={closeLabel}
-            className="pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] h-7 w-7 -translate-y-1/2 rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground [-webkit-app-region:no-drag]"
+            className="pointer-events-auto ml-auto h-7 w-7 shrink-0 rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground sm:absolute sm:right-3 sm:top-[calc(0.1875rem+var(--titlebar-height)/2)] sm:ml-0 sm:-translate-y-1/2 [-webkit-app-region:no-drag]"
             onClick={closeOverlay}
             size="icon"
             variant="ghost"

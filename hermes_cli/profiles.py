@@ -844,17 +844,34 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> Optional[dict
             "user_modified": [],
             "skipped_opt_out": True,
         }
+    # Must be a subprocess, exactly as the docstring says. tools/skills_sync.py
+    # resolves HERMES_HOME / SKILLS_DIR / MANIFEST_FILE / SYNC_STAMP_FILE at
+    # *import* time, so setting os.environ["HERMES_HOME"] in this process and
+    # calling sync_skills() in-process seeds the home that was active when the
+    # module was first imported — normally the default ~/.hermes — instead of
+    # the new profile. The new profile got no bundled skills and the default
+    # profile's manifest and sync stamp were rewritten underneath it.
+    project_root = Path(__file__).parent.parent.resolve()
     try:
-        old_home = os.environ.get("HERMES_HOME")
-        os.environ["HERMES_HOME"] = str(profile_dir)
-        try:
-            from tools.skills_sync import sync_skills
-            return sync_skills(quiet=quiet)
-        finally:
-            if old_home is not None:
-                os.environ["HERMES_HOME"] = old_home
-            else:
-                os.environ.pop("HERMES_HOME", None)
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import json; from tools.skills_sync import sync_skills; "
+             "r = sync_skills(quiet=True); print(json.dumps(r))"],
+            env={**os.environ, "HERMES_HOME": str(profile_dir)},
+            cwd=str(project_root),
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return json.loads(result.stdout.strip())
+        if not quiet:
+            print(f"⚠ Skill seeding returned exit code {result.returncode}")
+            if result.stderr.strip():
+                print(f"  {result.stderr.strip()[:200]}")
+        return None
+    except subprocess.TimeoutExpired:
+        if not quiet:
+            print("⚠ Skill seeding timed out (60s)")
+        return None
     except Exception as e:
         if not quiet:
             print(f"⚠ Skill seeding failed: {e}")

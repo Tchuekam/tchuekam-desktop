@@ -139,10 +139,18 @@ computer-use = ["mcp==1.26.0", "starlette==1.0.1"]  # starlette: CVE-2026-48710
 acp = ["agent-client-protocol==0.9.0"]
 # biocompute: the BioCompute subsystem (biological neural computing). Scientific
 # stack, needed only by users running neural recording/analysis/benchmarking --
-# per the scope rule above, this stays out of core `dependencies`. numpy is
-# already core. Nothing here is a hard import for `import biocompute`; the heavy
-# packages are imported lazily by the layers that need them.
+# per the scope rule above, this stays out of core `dependencies`.
+#
+# numpy is NOT core (it only appears in [voice] and in LAZY_DEPS under
+# stt.faster_whisper), and `biocompute.core.schema` imports it at module
+# scope, so it has to be pinned here too. Without it the extra installs
+# scipy/scikit-learn/matplotlib/h5py and then `import biocompute.core.schema`
+# still dies with ModuleNotFoundError: numpy. The deployed backend hid this
+# because requirements-backend.txt lists numpy separately.
+#
+# scipy and scikit-learn are imported lazily by the layers that need them.
 biocompute = [
+  "numpy==2.4.3",
   "scipy==1.17.1",
   "scikit-learn==1.9.0",
   "matplotlib==3.11.1",

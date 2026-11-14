@@ -191,7 +191,7 @@ ENV npm_config_install_links=false
 RUN npm install --prefer-offline --no-audit && \
     npx playwright install --with-deps chromium --only-shell && \
     npm cache clean --force && \
-    chown -R hermes:hermes node_modules ui-tui
+    chown -R hermes:hermes /opt/hermes/node_modules /opt/hermes/ui-tui
 
 # ---------- Layer-cached Python dependency install ----------
 # Copy only pyproject.toml + uv.lock so the Python dep resolve + wheel

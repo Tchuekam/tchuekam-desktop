@@ -1,0 +1,23 @@
+{
+  "short_name": "TchueKAM",
+  "name": "TchueKAM — The AI Operating System",
+  "description": "Native desktop and mobile AI assistant for business and automation.",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/hermes.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#07070d",
+  "theme_color": "#00E5FF",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "categories": ["business", "productivity", "utilities"]
+}

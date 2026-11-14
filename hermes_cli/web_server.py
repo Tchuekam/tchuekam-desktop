@@ -62,7 +62,7 @@ from utils import env_var_enabled
 try:
     from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 except ImportError:
@@ -74,7 +74,7 @@ except ImportError:
         _lazy_ensure("tool.dashboard", prompt=False)
         from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
         from fastapi.staticfiles import StaticFiles
         from pydantic import BaseModel
     except Exception:
@@ -86,6 +86,8 @@ except ImportError:
 _custom_web_dist = os.environ.get("HERMES_WEB_DIST")
 if _custom_web_dist and Path(_custom_web_dist).exists():
     WEB_DIST = Path(_custom_web_dist)
+elif (PROJECT_ROOT / "apps" / "desktop" / "dist-web").exists():
+    WEB_DIST = PROJECT_ROOT / "apps" / "desktop" / "dist-web"
 else:
     WEB_DIST = Path(__file__).parent / "web_dist"
 _log = logging.getLogger(__name__)
@@ -106,6 +108,18 @@ _log = logging.getLogger(__name__)
 async def _lifespan(app: "FastAPI"):
     app.state.event_channels = {}  # dict[str, set]
     app.state.event_lock = asyncio.Lock()
+    try:
+        from tchuekam_backend.core.database import init_db, SessionLocal
+        from tchuekam_backend.services.rbac_service import RbacService
+        init_db()
+        db = SessionLocal()
+        try:
+            rbac = RbacService(db)
+            rbac.seed_default_roles_and_permissions()
+        finally:
+            db.close()
+    except Exception as e:
+        _log.debug("tchuekam_backend DB initialization skipped or error: %s", e)
     yield
 
 
@@ -127,6 +141,12 @@ def _get_event_state(app: "FastAPI"):
 
 
 app = FastAPI(title="TchuekaM Agent", version=__version__, lifespan=_lifespan)
+
+try:
+    from tchuekam_backend.api.router import api_router as _tchuekam_backend_router
+    app.include_router(_tchuekam_backend_router, prefix="/api/v1")
+except Exception as _e:
+    _log.debug("tchuekam_backend api_router skipped: %s", _e)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
@@ -191,7 +211,9 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 from hermes_cli.dashboard_auth.public_paths import (
     PUBLIC_API_PATHS as _PUBLIC_API_PATHS,
+    allows_saas_api_passthrough as _allows_saas_api_passthrough,
 )
+from hermes_cli.download_targets import DOWNLOAD_ALIASES, DOWNLOAD_ASSETS
 
 
 def _has_valid_session_token(request: Request) -> bool:
@@ -346,6 +368,8 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     path = request.url.path
     if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
+        if _allows_saas_api_passthrough(path, request.headers.get("authorization", "")):
+            return await call_next(request)
         if not _has_valid_session_token(request):
             return JSONResponse(
                 status_code=401,
@@ -689,6 +713,20 @@ def _probe_gateway_health() -> tuple[bool, dict | None]:
         except Exception:
             continue
     return False, None
+
+
+@app.get("/health")
+@app.get("/healthz")
+@app.get("/api/health")
+@app.get("/api/v1/health")
+async def health_check():
+    """Railway and PaaS liveness / readiness probe."""
+    return {
+        "status": "healthy",
+        "service": "tchuekam-agent",
+        "version": __version__,
+        "timestamp": time.time(),
+    }
 
 
 @app.get("/api/status")
@@ -1233,8 +1271,14 @@ async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
 
         from tools.transcription_tools import transcribe_audio
 
+        def _do_transcribe(path: str):
+            try:
+                return transcribe_audio(path, allow_fallback=True)
+            except TypeError:
+                return transcribe_audio(path)
+
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, transcribe_audio, temp_path)
+        result = await loop.run_in_executor(None, _do_transcribe, temp_path)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1248,16 +1292,62 @@ async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
                 pass
 
     if not result.get("success"):
+        err_msg = str(result.get("error") or "")
+        if "empty transcript" in err_msg.lower():
+            return {
+                "ok": True,
+                "transcript": "",
+                "provider": result.get("provider"),
+                "filtered": True,
+            }
         raise HTTPException(
             status_code=400,
-            detail=result.get("error") or "Transcription failed",
+            detail=err_msg or "Transcription failed",
         )
+
+    raw_transcript = str(result.get("transcript") or "").strip()
+    try:
+        from tools.voice_mode import is_whisper_hallucination, strip_non_speech_audio_tags
+
+        if is_whisper_hallucination(raw_transcript):
+            return {
+                "ok": True,
+                "transcript": "",
+                "provider": result.get("provider"),
+                "filtered": True,
+            }
+        raw_transcript = strip_non_speech_audio_tags(raw_transcript)
+    except Exception:
+        pass
 
     return {
         "ok": True,
-        "transcript": str(result.get("transcript") or "").strip(),
+        "transcript": raw_transcript,
         "provider": result.get("provider"),
     }
+
+
+def _detect_audio_mime_type(audio_bytes: bytes, file_path: str) -> str:
+    """Detect actual audio MIME type from magic bytes with file-extension fallback."""
+    if len(audio_bytes) >= 12 and audio_bytes[:4] == b"RIFF" and audio_bytes[8:12] == b"WAVE":
+        return "audio/wav"
+    if len(audio_bytes) >= 4 and audio_bytes[:4] == b"OggS":
+        return "audio/ogg"
+    if len(audio_bytes) >= 4 and audio_bytes[:4] == b"fLaC":
+        return "audio/flac"
+    if len(audio_bytes) >= 3 and audio_bytes[:3] == b"ID3":
+        return "audio/mpeg"
+    if len(audio_bytes) >= 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0:
+        return "audio/mpeg"
+
+    ext = os.path.splitext(file_path)[1].lower()
+    return {
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/ogg",
+        ".wav": "audio/wav",
+        ".flac": "audio/flac",
+    }.get(ext, "audio/mpeg")
 
 
 class TTSSpeakRequest(BaseModel):
@@ -1336,8 +1426,15 @@ async def speak_text(payload: TTSSpeakRequest):
 
     try:
         from tools.tts_tool import text_to_speech_tool
+
+        def _do_speak(txt: str):
+            try:
+                return text_to_speech_tool(txt, allow_fallback=True)
+            except TypeError:
+                return text_to_speech_tool(txt)
+
         loop = asyncio.get_running_loop()
-        result_json = await loop.run_in_executor(None, text_to_speech_tool, text)
+        result_json = await loop.run_in_executor(None, _do_speak, text)
     except Exception as exc:
         _log.exception("Desktop voice TTS failed")
         raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {exc}")
@@ -1357,15 +1454,6 @@ async def speak_text(payload: TTSSpeakRequest):
     if not file_path or not os.path.isfile(file_path):
         raise HTTPException(status_code=500, detail="Audio file missing")
 
-    ext = os.path.splitext(file_path)[1].lower()
-    mime_type = {
-        ".mp3": "audio/mpeg",
-        ".ogg": "audio/ogg",
-        ".opus": "audio/ogg",
-        ".wav": "audio/wav",
-        ".flac": "audio/flac",
-    }.get(ext, "audio/mpeg")
-
     try:
         with open(file_path, "rb") as fh:
             audio_bytes = fh.read()
@@ -1377,6 +1465,10 @@ async def speak_text(payload: TTSSpeakRequest):
         except OSError:
             pass
 
+    if not audio_bytes:
+        raise HTTPException(status_code=500, detail="Generated audio file is empty")
+
+    mime_type = _detect_audio_mime_type(audio_bytes, file_path)
     encoded = base64.b64encode(audio_bytes).decode("ascii")
     return {
         "ok": True,
@@ -2041,6 +2133,7 @@ _CREDENTIAL_PROBES: dict[str, tuple[str, str]] = {
     "OPENAI_API_KEY": ("https://api.openai.com/v1/models", "bearer"),
     "XAI_API_KEY": ("https://api.x.ai/v1/models", "bearer"),
     "GEMINI_API_KEY": ("https://generativelanguage.googleapis.com/v1beta/models", "query"),
+    "MUAPI_KEY": ("https://api.muapi.ai/api/v1/account/balance", "x-api-key"),
 }
 
 
@@ -2072,6 +2165,25 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
         except Exception:
             return {"ok": False, "reachable": False, "message": f"Could not reach {url}."}
 
+    if key == "FAL_KEY":
+        # fal.ai has no free "whoami" endpoint. An empty request to a queue
+        # endpoint is rejected *before* any job is created or billed: a bad key
+        # gets 401/403, a good key gets 400/422 (missing prompt).
+        try:
+            with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
+                resp = client.post(
+                    "https://queue.fal.run/fal-ai/flux/schnell",
+                    headers={"Authorization": f"Key {value}", "Content-Type": "application/json"},
+                    json={},
+                )
+        except Exception:
+            return {"ok": False, "reachable": False, "message": "Could not reach fal.ai to verify the key."}
+        if resp.status_code in (401, 403):
+            return {"ok": False, "reachable": True, "message": "That API key was rejected. Double-check it and try again."}
+        if resp.status_code in (400, 422, 429):
+            return {"ok": True, "reachable": True, "message": ""}
+        return {"ok": False, "reachable": False, "message": f"Could not verify the key (HTTP {resp.status_code})."}
+
     probe = _CREDENTIAL_PROBES.get(key)
     if not probe:
         # No probe for this provider — can't validate, don't block.
@@ -2082,6 +2194,8 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
     params = {}
     if auth == "bearer":
         headers["Authorization"] = f"Bearer {value}"
+    elif auth == "x-api-key":
+        headers["x-api-key"] = value
     else:
         params["key"] = value
 
@@ -7139,18 +7253,24 @@ def _normalise_prefix(raw: Optional[str]) -> str:
 
 class ImageGenerateRequest(BaseModel):
     prompt: str
-    style: str
-    aspectRatio: str
-    quality: str
-    model: str
+    style: str = "photorealistic"
+    aspectRatio: str = "16:9"
+    quality: str = "medium"
+    model: Optional[str] = None
+    provider: Optional[str] = None
     numImages: int = 1
+    workspaceId: Optional[str] = None
+    conversationId: Optional[str] = None
+    clientRequestId: Optional[str] = None
 
 class ImageEditRequest(BaseModel):
     image: str
     mask: Optional[str] = None
-    operation: str
+    operation: str = "upscale"
     prompt: Optional[str] = None
     options: Optional[Dict[str, Any]] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 class ImageAnalyzeRequest(BaseModel):
     image: str
@@ -7162,10 +7282,25 @@ class ImageOCRRequest(BaseModel):
 
 class LibraryItemSave(BaseModel):
     id: str
-    name: str
+    name: Optional[str] = None
     url: str
+    prompt: Optional[str] = None
+    provider: Optional[str] = "fal"
+    model: Optional[str] = None
+    studioType: Optional[str] = "image"
+    parameters: Optional[Dict[str, Any]] = None
+    dimensions: Optional[Dict[str, int]] = None
+    duration: Optional[float] = None
+    mimeType: Optional[str] = None
+    localPath: Optional[str] = None
+    userId: Optional[str] = "default"
+    workspaceId: Optional[str] = "default"
+    conversationId: Optional[str] = None
+    jobId: Optional[str] = None
+    status: Optional[str] = "completed"
     tags: List[str] = []
     favorite: bool = False
+    createdAt: Optional[int] = None
 
 class SavedPromptSave(BaseModel):
     id: str
@@ -7180,18 +7315,8 @@ def _get_image_studio_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-def _load_library() -> List[Dict[str, Any]]:
-    p = _get_image_studio_dir() / "library.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return []
 
-def _save_library(data: List[Dict[str, Any]]):
-    p = _get_image_studio_dir() / "library.json"
-    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
 
 def _load_prompts() -> List[Dict[str, Any]]:
     p = _get_image_studio_dir() / "prompts.json"
@@ -7207,150 +7332,510 @@ def _save_prompts(data: List[Dict[str, Any]]):
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+@app.get("/api/images/models")
+async def api_images_models():
+    try:
+        from agent.image_studio_service import get_synchronized_model_catalog
+        return {"success": True, "catalog": get_synchronized_model_catalog()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/images/providers")
+async def api_images_providers():
+    try:
+        from agent.image_studio_service import get_providers_info
+        return {"success": True, "providers": get_providers_info()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/api/images/generate")
 async def api_images_generate(req: ImageGenerateRequest):
+    """Run one generation as a persisted job (REQUESTED -> ... -> COMPLETED/FAILED).
+
+    ``clientRequestId`` makes the call idempotent: re-sending it returns the
+    existing job instead of generating (and billing) again.
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    import agent.image_studio_service as studio
+
     try:
-        from agent.image_gen_registry import get_active_provider
-        provider = get_active_provider()
-        if provider and provider.is_available():
-            res = provider.generate(prompt=req.prompt, aspect_ratio=req.aspectRatio)
-            if res.get("success"):
-                image_url = res.get("image")
-                if image_url:
-                    if os.path.exists(image_url):
-                        with open(image_url, "rb") as f:
-                            b64 = base64.b64encode(f.read()).decode("utf-8")
-                        return {"success": True, "images": [f"data:image/png;base64,{b64}"]}
-                    return {"success": True, "images": [image_url]}
+        job, created = studio.create_job(
+            "image",
+            {"prompt": req.prompt, "model": req.model, "provider": req.provider,
+             "aspectRatio": req.aspectRatio, "quality": req.quality, "style": req.style},
+            workspace_id=req.workspaceId,
+            client_request_id=req.clientRequestId,
+        )
+        if not created:
+            asset = None
+            if job.get("assetIds"):
+                asset = studio.get_asset(job["assetIds"][0], req.workspaceId)
+            return _image_job_response(job, asset, duplicate=True)
+
+        from agent.image_gen_registry import get_active_provider, get_provider
+        from hermes_cli.plugins import _ensure_plugins_discovered
+
+        _ensure_plugins_discovered()
+        name = (req.provider or "").strip().lower()
+        provider = get_provider(name) if name else (get_active_provider() or get_provider("fal"))
+        # An explicit provider is never silently swapped for another one.
+
+        result = await run_in_threadpool(
+            studio.execute_generation,
+            job["id"],
+            provider,
+            req.prompt,
+            model=req.model,
+            parameters={"aspectRatio": req.aspectRatio, "quality": req.quality, "style": req.style},
+            workspace_id=req.workspaceId,
+            conversation_id=req.conversationId,
+        )
+        return _image_job_response(result["job"], result["asset"])
     except Exception as e:
-        _log.warning("Image provider call failed, falling back: %s", e)
+        _log.error("Image generation failed: %s", e, exc_info=True)
+        etype, msg = studio.normalize_provider_error(e)
+        return {"success": False, "error": msg, "error_type": etype}
 
-    import random
-    colors = {
-        "photorealistic": ["#1A1A2E", "#16213E", "#0F3460"],
-        "anime": ["#FFB7B2", "#FFDAC1", "#E2F0CB"],
-        "cinematic": ["#111111", "#1B2A47", "#0A1931"],
-        "watercolor": ["#E8F0FE", "#F6E7D8", "#F5C7A9"],
-        "sketch": ["#F8F9FA", "#DEE2E6", "#6C757D"],
-        "pixel art": ["#3D0066", "#5E00B8", "#190033"],
-        "3d render": ["#6A0572", "#AB0885", "#350136"],
-        "oil painting": ["#3F2B96", "#A8C0FF", "#3A6073"],
-        "logo": ["#FFFFFF", "#000000", "#12131C"],
-        "icon": ["#3E54AC", "#BFACE2", "#ECF2FF"],
-        "flat illustration": ["#54B435", "#82CD47", "#F0FF42"],
-        "concept art": ["#2C3E50", "#3498DB", "#2980B9"]
+
+def _image_job_response(job: Dict[str, Any], asset: Optional[Dict[str, Any]], duplicate: bool = False) -> Dict[str, Any]:
+    """Shape a job (+asset) into the JSON the desktop/web clients consume."""
+    ok = job.get("state") == "COMPLETED" and asset is not None
+    out: Dict[str, Any] = {
+        "success": ok,
+        "jobId": job.get("id"),
+        "state": job.get("state"),
+        "duplicate": duplicate,
     }
-    selected_colors = colors.get(req.style.lower(), ["#8B46FF", "#3D7BFF", "#FF5D73"])
-    
-    images = []
-    for i in range(req.numImages):
-        rand_id = random.randint(100, 999)
-        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%">
-            <defs>
-                <linearGradient id="g{i}_{rand_id}" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="{selected_colors[0]}" />
-                    <stop offset="50%" stop-color="{selected_colors[1] if len(selected_colors) > 1 else '#8B46FF'}" />
-                    <stop offset="100%" stop-color="{selected_colors[2] if len(selected_colors) > 2 else '#FF5D73'}" />
-                </linearGradient>
-                <filter id="shadow">
-                    <feDropShadow dx="2" dy="2" stdDeviation="5" flood-opacity="0.5"/>
-                </filter>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#g{i}_{rand_id})" />
-            <circle cx="{200 + i*50}" cy="250" r="120" fill="white" fill-opacity="0.1" filter="url(#shadow)" />
-            <rect x="400" y="150" width="200" height="200" rx="20" fill="white" fill-opacity="0.08" transform="rotate({15 + i*10}, 500, 250)" />
-            <polygon points="300,400 450,200 600,400" fill="white" fill-opacity="0.05" />
-            <rect x="50" y="480" width="700" height="80" rx="10" fill="black" fill-opacity="0.4" />
-            <text x="70" y="515" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill-opacity="0.9">Prompt: {req.prompt[:75] + '...' if len(req.prompt) > 75 else req.prompt}</text>
-            <text x="70" y="540" fill="white" font-family="system-ui, sans-serif" font-size="12" fill-opacity="0.6">{req.style.title()} Style | {req.aspectRatio} | {req.quality.title()} Quality</text>
-        </svg>"""
-        b64_svg = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-        images.append(f"data:image/svg+xml;base64,{b64_svg}")
+    if ok:
+        url = asset.get("url") or ""
+        out["images"] = [url] if url else []
+        out["asset"] = asset
+        out["provider"] = asset.get("provider")
+        out["model"] = asset.get("model")
+    else:
+        out["error"] = job.get("error") or "Generation did not complete."
+        out["error_type"] = job.get("errorType") or "generation_failed"
+    return out
 
-    return {"success": True, "images": images}
+
+@app.get("/api/images/jobs/{job_id}")
+async def api_images_job_get(job_id: str, workspaceId: Optional[str] = None):
+    import agent.image_studio_service as studio
+
+    job = studio.get_job(job_id, workspaceId)
+    if not job:
+        return JSONResponse({"success": False, "error": "Job not found."}, status_code=404)
+    asset = studio.get_asset(job["assetIds"][0], workspaceId) if job.get("assetIds") else None
+    return _image_job_response(job, asset)
+
+
+@app.post("/api/images/jobs/{job_id}/cancel")
+async def api_images_job_cancel(job_id: str, workspaceId: Optional[str] = None):
+    import agent.image_studio_service as studio
+
+    job = studio.cancel_job(job_id, workspaceId)
+    if not job:
+        return JSONResponse({"success": False, "error": "Job not found."}, status_code=404)
+    return {"success": True, "jobId": job_id, "state": job.get("state")}
+
+
+@app.post("/api/images/assets/{asset_id}/materialize")
+async def api_images_asset_materialize(asset_id: str, workspaceId: Optional[str] = None):
+    """Make the asset available as a local file (chat ``image.attach`` needs a path)."""
+    from starlette.concurrency import run_in_threadpool
+
+    import agent.image_studio_service as studio
+
+    try:
+        path = await run_in_threadpool(studio.materialize_asset, asset_id, workspaceId)
+    except Exception as e:
+        _log.warning("Asset materialize failed for %s: %s", asset_id, e)
+        return JSONResponse({"success": False, "error": "The asset could not be retrieved."}, status_code=502)
+    if path is None:
+        return JSONResponse({"success": False, "error": "Asset not found."}, status_code=404)
+    return {"success": True, "path": str(path)}
+
+
+@app.get("/api/images/assets/{asset_id}/data")
+async def api_images_asset_data(asset_id: str, workspaceId: Optional[str] = None):
+    """Return a locally stored asset as a data URL (for assets with no remote URL)."""
+    from starlette.concurrency import run_in_threadpool
+
+    import agent.image_studio_service as studio
+
+    try:
+        data = await run_in_threadpool(studio.read_asset_data_url, asset_id, workspaceId)
+    except Exception as e:
+        _log.warning("Asset data read failed for %s: %s", asset_id, e)
+        return JSONResponse({"success": False, "error": "The asset could not be read."}, status_code=502)
+    if data is None:
+        return JSONResponse({"success": False, "error": "Asset not found."}, status_code=404)
+    return {"success": True, **data}
 
 
 @app.post("/api/images/edit")
 async def api_images_edit(req: ImageEditRequest):
-    op_label = req.operation.replace("-", " ").title()
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%">
-        <rect width="100%" height="100%" fill="#12131C" />
-        <circle cx="400" cy="300" r="200" fill="#8B46FF" fill-opacity="0.2" />
-        <text x="400" y="280" fill="white" font-family="system-ui, sans-serif" font-size="24" font-weight="bold" text-anchor="middle">AI Image Editor</text>
-        <text x="400" y="320" fill="#a3a3a3" font-family="system-ui, sans-serif" font-size="16" text-anchor="middle">Applied: {op_label}</text>
-        {f'<text x="400" y="360" fill="#3D7BFF" font-family="system-ui, sans-serif" font-size="14" text-anchor="middle">Prompt: {req.prompt}</text>' if req.prompt else ''}
-    </svg>"""
-    b64_svg = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-    return {"success": True, "image": f"data:image/svg+xml;base64,{b64_svg}"}
+    try:
+        from agent.image_studio_service import register_asset
+
+        if req.operation == "upscale":
+            import tools.image_generation_tool as _it
+            upscaled = _it._upscale_image(req.image, req.prompt or "high quality, detailed")
+            if upscaled and "url" in upscaled:
+                asset = register_asset(
+                    url=upscaled["url"],
+                    prompt=req.prompt or "Upscaled Image",
+                    provider="fal",
+                    model=_it.UPSCALER_MODEL,
+                    studio_type="image",
+                    parameters={"operation": "upscale"},
+                    status="completed",
+                )
+                return {"success": True, "image": upscaled["url"], "asset": asset}
+            return {
+                "success": False,
+                "error": "Upscaling failed. Ensure FAL_KEY is configured.",
+                "error_type": "upscale_failed",
+            }
+
+        return {
+            "success": False,
+            "error": f"Editing operation '{req.operation}' is not supported by the active provider.",
+            "error_type": "unsupported_operation",
+        }
+    except Exception as e:
+        _log.error("Image edit failed: %s", e, exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        }
+
+
+_VISION_MODE_PROMPTS = {
+    "describe": "Describe this image accurately and concisely. Only state what is visible.",
+    "diagram": "This is a diagram. Describe its structure: the components, how they connect, and the flow. Only state what is visible.",
+    "ui": "This is a user interface screenshot. List the visible UI components and their layout. Only state what is visible.",
+    "objects": "List the distinct objects visible, with approximate counts. Do not guess at things you cannot see.",
+    "scene": "Analyze the scene: setting, lighting, composition. Only state what is visible.",
+}
+
+
+async def _run_vision(image: str, prompt: str) -> Dict[str, Any]:
+    """Run the real vision backend on an http(s)/data-URL image.
+
+    Local filesystem paths from the client are rejected (arbitrary file read).
+    Returns ``{"success": False, "error_type": "vision_unavailable", ...}`` when
+    no vision model is configured — never canned text.
+    """
+    import re
+    import uuid
+
+    from tools.vision_tools import check_vision_requirements, vision_analyze_tool
+
+    if not check_vision_requirements():
+        return {"success": False, "error_type": "vision_unavailable",
+                "error": "No vision-capable model is configured. Set up a vision provider in Settings."}
+
+    image = (image or "").strip()
+    tmp_path: Optional[Path] = None
+    try:
+        if image.startswith("data:"):
+            m = re.match(r"data:(image/[\w.+-]+);base64,(.*)$", image, re.DOTALL)
+            if not m:
+                return {"success": False, "error_type": "invalid_image", "error": "Unsupported image data."}
+            raw_bytes = base64.b64decode(m.group(2))
+            if len(raw_bytes) > 20 * 1024 * 1024:
+                return {"success": False, "error_type": "invalid_image", "error": "Image is larger than 20 MB."}
+            ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(m.group(1), "png")
+            from agent.image_studio_service import get_image_studio_dir
+            tmp_path = get_image_studio_dir() / f"vision_{uuid.uuid4().hex}.{ext}"
+            tmp_path.write_bytes(raw_bytes)
+            target = str(tmp_path)
+        elif image.startswith(("http://", "https://")):
+            from tools.url_safety import is_safe_url
+            if not is_safe_url(image):
+                return {"success": False, "error_type": "invalid_image", "error": "That image URL is not allowed."}
+            target = image
+        else:
+            return {"success": False, "error_type": "invalid_image",
+                    "error": "Provide the image as an https URL or an uploaded image."}
+
+        result = json.loads(await vision_analyze_tool(target, prompt))
+        if not result.get("success"):
+            return {"success": False, "error_type": "vision_failed",
+                    "error": result.get("analysis") or "Vision analysis failed."}
+        return {"success": True, "text": result.get("analysis") or ""}
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+
+def _dominant_colors(image_data_url: str, count: int = 5) -> List[str]:
+    """Real palette extraction with Pillow (no model needed)."""
+    import io
+    import re
+
+    from PIL import Image
+
+    m = re.match(r"data:image/[\w.+-]+;base64,(.*)$", image_data_url.strip(), re.DOTALL)
+    if not m:
+        return []
+    img = Image.open(io.BytesIO(base64.b64decode(m.group(1)))).convert("RGB")
+    img.thumbnail((96, 96))
+    quant = img.quantize(colors=count, method=Image.Quantize.MEDIANCUT)
+    palette = quant.getpalette() or []
+    counts = sorted(quant.getcolors() or [], reverse=True)
+    return ["#%02X%02X%02X" % tuple(palette[i * 3:i * 3 + 3]) for _, i in counts[:count]]
 
 
 @app.post("/api/images/analyze")
 async def api_images_analyze(req: ImageAnalyzeRequest):
-    colors = ["#1A1A2E", "#16213E", "#0F3460", "#E94560", "#FFFFFF"]
-    if req.mode == "color":
-        result = "Dominant color palette extracted from the uploaded image. The colors are harmoniously distributed, representing a modern dark tech style with vibrant red accents."
-    elif req.mode == "describe":
-        result = "The image is a high-resolution, professionally composed visual containing geometric elements, abstract gradients, and soft lighting overlays. The central composition is centered with circular and rectangular shape definitions, creating a balanced and premium desktop UI environment."
-    elif req.mode == "qa":
-        q = req.question or "What is in this image?"
-        result = f"Regarding your question '{q}': The image contains abstract layered shapes with purple, blue, and dark pink gradients. It has a modern visual design typical of premium technology illustrations and product banners."
-    elif req.mode == "diagram":
-        result = "Diagram Analysis:\n- Flow Architecture: Central nodes connect circular elements with high opacity to side rectangles.\n- Key Components: 1. Core Hub (Center), 2. Side Panel components, 3. Connection channels.\n- Visual representation of a modular system routing data in a low-latency pipeline."
-    elif req.mode == "ui":
-        result = "UI Components Identified:\n- Sidebar Nav container (left-aligned with custom icons)\n- Primary Action Button (gradient background at center-bottom)\n- Main Panel viewport showing active workspace canvas\n- Control panels on the right side."
-    elif req.mode == "objects":
-        result = "Objects Detected:\n- Circular gradient bubble (qty: 1, confidence: 98%)\n- Rounded container panel (qty: 1, confidence: 95%)\n- UI control buttons (qty: 4, confidence: 91%)"
-    else:
-        result = "Scene Analysis: A high-end workspace scene featuring soft, ambient light sources casting beautiful gradients. The setup is extremely clean, minimalist, and optimized for creative work."
+    mode = (req.mode or "describe").lower()
+    if mode == "color":
+        try:
+            colors = _dominant_colors(req.image)
+        except Exception as e:
+            _log.warning("Palette extraction failed: %s", e)
+            colors = []
+        if not colors:
+            return {"success": False, "error_type": "invalid_image",
+                    "error": "Could not read colors from that image (upload it as an image file)."}
+        return {"success": True, "colors": colors, "result": "Dominant colors: " + ", ".join(colors)}
 
-    return {"success": True, "result": result, "colors": colors}
+    if mode == "qa":
+        prompt = (req.question or "").strip() or "What is in this image?"
+    else:
+        prompt = _VISION_MODE_PROMPTS.get(mode, _VISION_MODE_PROMPTS["describe"])
+    out = await _run_vision(req.image, prompt)
+    if not out["success"]:
+        return out
+    return {"success": True, "result": out["text"], "colors": []}
+
+
+def _extract_pdf_bytes_text(pdf_bytes: bytes) -> str:
+    """Extract readable text from PDF bytes using pymupdf/pypdf or built-in zlib stream parsing."""
+    import re
+    import zlib
+
+    try:
+        import fitz  # PyMuPDF
+
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        pages = [page.get_text("text").strip() for page in doc]
+        joined = "\n\n".join(p for p in pages if p)
+        if joined:
+            return joined
+    except Exception:
+        pass
+
+    chunks: list[str] = []
+    raw_latin = pdf_bytes.decode("latin1", errors="ignore")
+
+    def _collect_literals(stream_str: str) -> None:
+        for match in re.finditer(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*(?:Tj|')", stream_str):
+            txt = (
+                match.group(1)
+                .replace(r"\n", "\n")
+                .replace(r"\r", "\r")
+                .replace(r"\t", " ")
+                .replace(r"\(", "(")
+                .replace(r"\)", ")")
+                .replace(r"\\", "\\")
+            ).strip()
+            if txt and re.search(r"[A-Za-z0-9À-ÿ]", txt):
+                chunks.append(txt)
+
+    _collect_literals(raw_latin)
+
+    for stream_match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf_bytes, re.DOTALL):
+        stream_data = stream_match.group(1)
+        try:
+            decompressed = zlib.decompress(stream_data).decode("latin1", errors="ignore")
+            _collect_literals(decompressed)
+        except Exception:
+            continue
+
+    return "\n".join(chunks).strip()
 
 
 @app.post("/api/images/ocr")
 async def api_images_ocr(req: ImageOCRRequest):
-    extracted_text = (
-        "TchuekaM Image Studio OCR Result\n"
-        "=================================\n"
-        "Date: 2026-07-17\n"
-        "Invoice No: INV-98124\n\n"
-        "Description          | Qty | Price (FCFA)\n"
-        "---------------------|-----|-------------\n"
-        "AI Image Generation  |  10 |   5,000\n"
-        "AI Image Inpainting  |   5 |   2,500\n"
-        "OCR Text Extraction  |  20 |   1,000\n\n"
-        "Total Amount: 8,500 FCFA\n"
-        "Payment Method: Mobile Money (MoMo)\n"
-        "Thank you for your business!"
+    raw_img = (req.image or "").strip()
+    if raw_img.startswith("data:application/pdf;base64,"):
+        try:
+            extracted = _extract_pdf_bytes_text(base64.b64decode(raw_img.split(",", 1)[1]))
+        except Exception:
+            extracted = ""
+        if extracted:
+            return {"success": True, "text": extracted}
+        return {"success": False, "error_type": "no_text_layer",
+                "error": "This PDF has no embedded text layer; export a page as an image to OCR it."}
+
+    out = await _run_vision(
+        raw_img,
+        "Transcribe all visible text exactly as written, preserving line breaks. "
+        "Mark anything unclear as [illegible]. Never guess. Output only the transcription.",
     )
-    return {"success": True, "text": extracted_text}
+    if not out["success"]:
+        return out
+    return {"success": True, "text": out["text"]}
+
+
+class BusinessOcrRequest(BaseModel):
+    data_url: str
+    file_name: Optional[str] = "document"
+    mime_type: Optional[str] = "application/pdf"
+
+
+@app.post("/api/business/ocr")
+async def api_business_ocr(req: BusinessOcrRequest):
+    raw = (req.data_url or "").strip()
+    if "," in raw:
+        raw_b64 = raw.split(",", 1)[1]
+    else:
+        raw_b64 = raw
+
+    try:
+        file_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid base64 file payload."}, status_code=400)
+
+    mime = (req.mime_type or "").lower()
+    fname = (req.file_name or "document").lower()
+
+    if "pdf" in mime or fname.endswith(".pdf") or file_bytes.startswith(b"%PDF"):
+        text = _extract_pdf_bytes_text(file_bytes)
+        if text:
+            return {"ok": True, "text": text}
+        return {
+            "ok": True,
+            "text": f"[{req.file_name}]\n[illegible — scanned PDF contains no embedded text layer. Unclear text is marked [illegible], never guessed.]",
+        }
+
+    # Try plain UTF-8 text if small text payload
+    try:
+        decoded_utf8 = file_bytes.decode("utf-8")
+        if decoded_utf8.strip() and "\ufffd" not in decoded_utf8:
+            return {"ok": True, "text": decoded_utf8.strip()}
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "text": f"[{req.file_name}]\n[illegible — connect a vision model provider to extract text from raster images. Unclear text is marked [illegible], never guessed.]",
+    }
+
+
+class BusinessAiRequest(BaseModel):
+    operation: str
+    input: str
+    language: Optional[str] = "fr"
+    targetLanguage: Optional[str] = None
+    context: Optional[str] = None
+
+
+@app.post("/api/business/ai")
+async def api_business_ai(req: BusinessAiRequest):
+    grounding = (
+        "Do not invent names, dates, amounts, credentials, or legal terms. "
+        "Mark any missing or unconfirmed fact as [to confirm]. "
+        f"Respond only with the updated section text in {'French' if (req.targetLanguage or req.language) == 'fr' else 'English'}."
+    )
+    prompt = f"Operation: {req.operation}\nContext: {req.context or ''}\nInput:\n{req.input}\n\n{grounding}"
+    try:
+        from agent.auxiliary_client import call_llm
+
+        resp = call_llm(
+            messages=[
+                {"role": "system", "content": grounding},
+                {"role": "user", "content": prompt},
+            ],
+            task="fast",
+            max_tokens=600,
+        )
+        content = (
+            resp.choices[0].message.content.strip()
+            if resp and getattr(resp, "choices", None)
+            else ""
+        )
+        if content:
+            return {"ok": True, "output": content}
+    except Exception:
+        pass
+
+    return {"ok": False, "output": ""}
 
 
 @app.get("/api/images/library")
-async def api_images_library_get():
-    items = _load_library()
-    return {"success": True, "items": items}
+async def api_images_library_get(
+    studioType: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    search: Optional[str] = None,
+    workspaceId: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    from agent.image_studio_service import list_assets
+
+    try:
+        items = list_assets(
+            studio_type=studioType, provider=provider, model=model, search=search,
+            workspace_id=workspaceId, limit=min(max(limit, 1), 500), offset=max(offset, 0),
+        )
+    except Exception as e:
+        _log.error("Failed to list studio library assets: %s", e)
+        return JSONResponse({"success": False, "error": "Could not read the asset history."}, status_code=500)
+    # Never ship a local filesystem path to the client; expose only whether bytes exist.
+    safe = []
+    for it in items:
+        it = dict(it)
+        it["hasLocalFile"] = bool(it.pop("localPath", None))
+        safe.append(it)
+    return {"success": True, "items": safe}
 
 
 @app.post("/api/images/library")
 async def api_images_library_save(item: LibraryItemSave):
-    items = _load_library()
-    existing_idx = next((i for i, x in enumerate(items) if x["id"] == item.id), None)
-    new_item = item.dict()
-    if existing_idx is not None:
-        new_item["createdAt"] = items[existing_idx].get("createdAt", int(time.time() * 1000))
-        items[existing_idx] = new_item
-    else:
-        new_item["createdAt"] = int(time.time() * 1000)
-        items.append(new_item)
-    _save_library(items)
-    return {"success": True, "item": new_item}
+    from agent.image_studio_service import register_asset
+
+    try:
+        saved = register_asset(
+            asset_id=item.id, url=item.url, prompt=item.prompt or item.name or "",
+            provider=item.provider or "fal", model=item.model or "default",
+            studio_type=item.studioType or "image", parameters=item.parameters,
+            dimensions=item.dimensions, duration=item.duration, mime_type=item.mimeType,
+            user_id=item.userId or "default", workspace_id=item.workspaceId or "default",
+            conversation_id=item.conversationId, job_id=item.jobId,
+            status=item.status or "completed", tags=item.tags, favorite=item.favorite,
+        )  # client-supplied localPath is intentionally ignored
+    except PermissionError:
+        return JSONResponse({"success": False, "error": "Asset id is not available."}, status_code=409)
+    except ValueError as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=422)
+    except Exception as e:
+        _log.error("Failed to save asset: %s", e)
+        return JSONResponse({"success": False, "error": "Could not save the asset."}, status_code=500)
+    saved = dict(saved)
+    saved["hasLocalFile"] = bool(saved.pop("localPath", None))
+    return {"success": True, "item": saved}
 
 
 @app.delete("/api/images/library/{item_id}")
-async def api_images_library_delete(item_id: str):
-    items = _load_library()
-    filtered = [x for x in items if x["id"] != item_id]
-    _save_library(filtered)
+async def api_images_library_delete(item_id: str, workspaceId: Optional[str] = None):
+    from agent.image_studio_service import delete_asset
+
+    try:
+        deleted = delete_asset(item_id, workspace_id=workspaceId)
+    except Exception as e:
+        _log.error("Failed to delete asset: %s", e)
+        return JSONResponse({"success": False, "error": "Could not delete the asset."}, status_code=500)
+    if not deleted:
+        return JSONResponse({"success": False, "error": "Asset not found."}, status_code=404)
     return {"success": True}
 
 
@@ -7471,6 +7956,10 @@ def mount_spa(application: FastAPI):
         return Response(content=css, media_type="text/css")
 
     application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+    if (WEB_DIST / "ds-assets").is_dir():
+        application.mount("/ds-assets", StaticFiles(directory=WEB_DIST / "ds-assets"), name="ds-assets")
+    if (WEB_DIST / "hermes-frames").is_dir():
+        application.mount("/hermes-frames", StaticFiles(directory=WEB_DIST / "hermes-frames"), name="hermes-frames")
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str, request: Request):
@@ -8386,55 +8875,308 @@ def _mount_plugin_api_routes():
 
 # ---------------------------------------------------------------------------
 # Direct Application Download Endpoints
-# Direct self-hosted installer download for Windows, macOS, and Linux.
+#
+# A download is only useful if the bytes that come back are an installer.  This
+# site once served 66-byte text files named ``TchueKAM-Setup.exe``; Windows
+# answered "This app can't run on your PC" because the file was never an
+# executable.  So these endpoints refuse to hand over anything that does not
+# look like a real installer, and fall back to the published GitHub release
+# asset, which is the artifact the release pipeline verified.
 # ---------------------------------------------------------------------------
 
-_DOWNLOAD_ASSETS = {
-    "windows": {"filename": "TchueKAM-Setup.exe", "media_type": "application/x-msdownload"},
-    "mac-arm64": {"filename": "TchueKAM-Mac-arm64.dmg", "media_type": "application/x-apple-diskimage"},
-    "mac-x64": {"filename": "TchueKAM-Mac-x64.dmg", "media_type": "application/x-apple-diskimage"},
-    "linux": {"filename": "TchueKAM-Linux.AppImage", "media_type": "application/x-executable"},
+# The download target tables live in hermes_cli.download_targets so that the
+# public auth allowlist derives from exactly the same aliases this endpoint
+# accepts -- otherwise a working link can silently start answering 401.
+_DOWNLOAD_ASSETS = DOWNLOAD_ASSETS
+_DOWNLOAD_ALIASES = DOWNLOAD_ALIASES
+
+# Real installers are tens of megabytes.  A file far below this is a placeholder
+# or a failed download, and serving it as "TchueKAM-Setup.exe" is how users ended
+# up with an installer that would not open -- so it is never served.
+_MIN_INSTALLER_BYTES = 1_000_000
+
+# The first bytes that make a file what its name claims.  Checked before any
+# local file is served, because size alone would still pass a megabyte of text.
+# The release pipeline (scripts/verify_release_artifacts.py) does the deeper
+# structural checks; here we only need to catch files that are not installers.
+_INSTALLER_MAGIC = {
+    ".exe": (b"MZ",),
+    ".msi": (b"MZ", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+    ".appimage": (b"\x7fELF",),
+    ".apk": (b"PK\x03\x04",),
+    ".zip": (b"PK\x03\x04",),
 }
 
+# GitHub resolves releases/latest/download/<name> to the newest release's asset
+# of that name.  It has to be the public repo: a private one answers 404.
+_RELEASE_DOWNLOAD_BASE = "https://github.com/Tchuekam/tchuekam-desktop/releases/latest/download"
+_RELEASE_API_URL = "https://api.github.com/repos/Tchuekam/tchuekam-desktop/releases/latest"
+_RELEASE_PAGE_URL = "https://github.com/Tchuekam/tchuekam-desktop/releases/latest"
 
-@app.get("/api/download/{target}")
-@app.get("/downloads/{target}")
-async def download_installer_file(target: str):
-    """Direct application installer download without external redirects or GitHub links."""
-    key = target.lower().strip()
-    if key in ("windows", "windows-64bit", "win", "exe", "setup"):
-        asset = _DOWNLOAD_ASSETS["windows"]
-    elif key in ("mac-arm64", "mac-arm", "mac-m1", "mac-silicon"):
-        asset = _DOWNLOAD_ASSETS["mac-arm64"]
-    elif key in ("mac-x64", "mac-intel", "mac"):
-        asset = _DOWNLOAD_ASSETS["mac-x64"]
-    elif key in ("linux", "appimage"):
-        asset = _DOWNLOAD_ASSETS["linux"]
-    else:
-        asset = _DOWNLOAD_ASSETS["windows"]
+# What the published release actually contains, so the website can offer the
+# platforms that exist and show real sizes instead of guesses.  Refreshed at
+# most this often; a failure leaves the previous answer in place.
+_RELEASE_INFO_TTL_SECONDS = 600
+# A failed lookup is cached far more briefly than a good one: one network blip
+# should not hide every download for ten minutes, but it also must not turn
+# each page load into another outbound request.
+_RELEASE_INFO_FAILURE_TTL_SECONDS = 30
+_release_info_cache: dict = {"expires_at": 0.0, "data": None}
 
-    filename = asset["filename"]
-    media_type = asset["media_type"]
 
+def _resolve_download_target(target: str) -> dict:
+    """Map any spelling of a platform to the asset that serves it.
+
+    Anything unrecognised resolves to the Windows installer rather than
+    erroring: a download link that has drifted should still hand the visitor a
+    working product, not a stack trace.
+    """
+    key = (target or "").lower().strip()
+    platform = _DOWNLOAD_ALIASES.get(key, "windows")
+    return _DOWNLOAD_ASSETS.get(platform) or _DOWNLOAD_ASSETS["windows"]
+
+
+def _platform_from_user_agent(user_agent: str) -> str:
+    """Pick the right installer for whoever is asking.
+
+    The website has one Download button; this is what makes it give a Mac user
+    a .dmg and a Windows user an .exe.  Order matters -- an Android UA also
+    contains "Linux", and an Apple Silicon Mac reports differently depending on
+    the browser, so we check the most specific markers first.
+    """
+    ua = (user_agent or "").lower()
+    if "android" in ua:
+        return "android"
+    if "windows" in ua or "win64" in ua or "win32" in ua:
+        return "windows"
+    if "iphone" in ua or "ipad" in ua or "ipod" in ua:
+        # iOS has no desktop installer; the Mac build is the closest honest answer.
+        return "mac-arm64"
+    if "mac os" in ua or "macintosh" in ua or "darwin" in ua:
+        # Safari and Chrome both still report Intel on Apple Silicon, so the
+        # architecture cannot be read reliably from the UA.  arm64 is the
+        # correct default for every Mac sold since 2020, and the x64 build
+        # stays reachable by its explicit link.
+        if "intel mac os x 10_" in ua and "arm" not in ua:
+            return "mac-arm64"
+        return "mac-arm64"
+    if "linux" in ua or "x11" in ua:
+        return "linux"
+    return "windows"
+
+
+def _looks_like_a_real_installer(path: Path) -> bool:
+    """True when this file's size and leading bytes match what it claims to be."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size < _MIN_INSTALLER_BYTES:
+        return False
+
+    suffix = path.suffix.lower()
+    expected = _INSTALLER_MAGIC.get(suffix)
+    if expected:
+        try:
+            with path.open("rb") as fh:
+                head = fh.read(8)
+        except OSError:
+            return False
+        return any(head.startswith(magic) for magic in expected)
+
+    if suffix == ".dmg":
+        # Apple disk images are identified by a trailer, not a header.
+        try:
+            with path.open("rb") as fh:
+                fh.seek(size - 512)
+                return fh.read(4) == b"koly"
+        except OSError:
+            return False
+
+    return True
+
+
+def _find_local_installer(filename: str):
+    """Return a hosted installer for ``filename``, or None if none is usable."""
     search_paths = [
         Path(get_hermes_home()) / "downloads" / filename,
         PROJECT_ROOT / "dist" / filename,
         PROJECT_ROOT / "apps" / "desktop" / "dist" / filename,
         PROJECT_ROOT / "apps" / "desktop" / "release" / filename,
+        PROJECT_ROOT / "apps" / "mobile" / "dist" / filename,
+        PROJECT_ROOT / "apps" / "mobile" / filename,
         WEB_DIST / "downloads" / filename,
     ]
-
     for p in search_paths:
-        if p.is_file() and p.stat().st_size > 0:
-            return FileResponse(
-                path=str(p),
-                filename=filename,
-                media_type=media_type,
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
+        try:
+            if not p.is_file():
+                continue
+        except OSError:
+            continue
+        if _looks_like_a_real_installer(p):
+            return p
+        _log.warning(
+            "Ignoring %s: it is named like an installer but its contents are not one "
+            "(%s bytes). Falling back to the published release.",
+            p, p.stat().st_size if p.exists() else "?",
+        )
+    return None
 
-    cdn_url = f"https://github.com/Tchuekam/tchuekam-agent/releases/latest/download/{filename}"
-    return RedirectResponse(url=cdn_url, status_code=302)
+
+def _local_release_manifest() -> dict | None:
+    """Read a latest.json written by scripts/verify_release_artifacts.py."""
+    for base in (
+        Path(get_hermes_home()) / "downloads",
+        PROJECT_ROOT / "dist",
+        PROJECT_ROOT / "apps" / "desktop" / "release",
+        WEB_DIST / "downloads",
+    ):
+        candidate = base / "latest.json"
+        try:
+            if candidate.is_file():
+                return json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            _log.warning("Ignoring unreadable release manifest %s: %s", candidate, exc)
+    return None
+
+
+def _fetch_published_release() -> dict | None:
+    """Ask GitHub what the newest published release actually contains.
+
+    Best effort: the download redirects work without it, and a network failure
+    must never turn into a failed page load.
+    """
+    try:
+        req = urllib.request.Request(
+            _RELEASE_API_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "tchuekam-download-info"},
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:  # noqa: S310 - fixed https URL
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - informational endpoint, never fatal
+        _log.info("Could not read the published release from GitHub: %s", exc)
+        return None
+
+
+def _release_info() -> dict:
+    """Describe the release the website should advertise.
+
+    Only platforms with a real published asset are reported, so the site can
+    never offer a download that does not exist.
+    """
+    now = time.time()
+    cached = _release_info_cache.get("data")
+    if cached is not None and now < _release_info_cache.get("expires_at", 0.0):
+        return cached
+
+    manifest = _local_release_manifest()
+    if manifest:
+        info = {
+            "version": manifest.get("version") or None,
+            "source": "manifest",
+            "release_url": _RELEASE_PAGE_URL,
+            "platforms": {},
+        }
+        for art in manifest.get("artifacts", []):
+            platform = art.get("platform")
+            if not platform:
+                continue
+            info["platforms"][platform] = {
+                "filename": art.get("filename"),
+                "size": art.get("size"),
+                "sha256": art.get("sha256"),
+                "url": art.get("url") or f"{_RELEASE_DOWNLOAD_BASE}/{art.get('filename')}",
+                "download_path": f"/api/download/{platform}",
+            }
+        _release_info_cache.update({"expires_at": now + _RELEASE_INFO_TTL_SECONDS, "data": info})
+        return info
+
+    release = _fetch_published_release()
+    if release is None:
+        info = {
+            "version": None,
+            "source": "unavailable",
+            "release_url": _RELEASE_PAGE_URL,
+            "platforms": {},
+            "note": "The published release could not be read just now. Try the releases page.",
+        }
+        _release_info_cache.update(
+            {"expires_at": now + _RELEASE_INFO_FAILURE_TTL_SECONDS, "data": info}
+        )
+        return info
+
+    by_filename = {a.get("name"): a for a in release.get("assets", []) if a.get("name")}
+    platforms = {}
+    for platform, asset in _DOWNLOAD_ASSETS.items():
+        published = by_filename.get(asset["filename"])
+        if not published:
+            continue
+        if (published.get("size") or 0) < _MIN_INSTALLER_BYTES:
+            # A published asset this small is the placeholder problem again.
+            _log.warning(
+                "Release asset %s is only %s bytes; not advertising it as a download.",
+                asset["filename"], published.get("size"),
+            )
+            continue
+        digest = (published.get("digest") or "")
+        platforms[platform] = {
+            "filename": asset["filename"],
+            "size": published.get("size"),
+            "sha256": digest.split("sha256:")[-1] if "sha256:" in digest else None,
+            "url": published.get("browser_download_url"),
+            "download_path": f"/api/download/{platform}",
+        }
+
+    info = {
+        "version": (release.get("tag_name") or "").lstrip("v") or None,
+        "source": "github",
+        "release_url": release.get("html_url") or _RELEASE_PAGE_URL,
+        "published_at": release.get("published_at"),
+        "platforms": platforms,
+    }
+    _release_info_cache.update({"expires_at": now + _RELEASE_INFO_TTL_SECONDS, "data": info})
+    return info
+
+
+@app.get("/api/download-info")
+async def download_release_info(request: Request):
+    """What can actually be downloaded right now, for the website to render.
+
+    Returns only platforms with a verified published asset, plus the real
+    version and file sizes, so the download page never advertises something
+    that does not exist.
+    """
+    info = dict(_release_info())
+    info["detected_platform"] = _platform_from_user_agent(request.headers.get("user-agent", ""))
+    info["available"] = bool(info.get("platforms"))
+    return JSONResponse(info)
+
+
+@app.api_route("/api/download/{target}", methods=["GET", "HEAD"])
+@app.api_route("/downloads/{target}", methods=["GET", "HEAD"])
+async def download_installer_file(target: str, request: Request):
+    """Serve the installer from disk, or send the visitor to the release asset.
+
+    ``/api/download/auto`` picks the right installer from the request's
+    User-Agent so the website can have a single Download button.
+    """
+    key = (target or "").lower().strip()
+    if key in ("auto", "detect", ""):
+        key = _platform_from_user_agent(request.headers.get("user-agent", ""))
+
+    asset = _resolve_download_target(key)
+    filename = asset["filename"]
+
+    local = _find_local_installer(filename)
+    if local is not None:
+        return FileResponse(
+            path=str(local),
+            filename=filename,
+            media_type=asset["media_type"],
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    return RedirectResponse(url=f"{_RELEASE_DOWNLOAD_BASE}/{filename}", status_code=302)
 
 
 
@@ -8569,12 +9311,19 @@ def start_server(
             )
 
     print(f"  TchuekaM Web UI → http://{host}:{port}")
-    # proxy_headers defaults to False so _ws_client_is_allowed sees the real
-    # connection peer rather than X-Forwarded-For's rewritten value (which
-    # would defeat the loopback gate when behind a reverse proxy).  When the
-    # OAuth gate is active we are explicitly running behind a TLS terminator
-    # (Fly.io) and need X-Forwarded-Proto to decide cookie Secure flags, so
-    # we flip proxy_headers on for that mode.
+    # proxy_headers is False for a plain local run, so _ws_client_is_allowed sees
+    # the real connection peer rather than X-Forwarded-For's rewritten value
+    # (which would defeat the loopback gate behind a reverse proxy).  It is on
+    # wherever a TLS terminator is expected in front of us:
+    #   * the OAuth gate is active -- X-Forwarded-Proto decides cookie Secure
+    #     flags, and the audit log wants the real client IP;
+    #   * --insecure on a public bind, or a hosting platform that sets PORT /
+    #     RAILWAY_ENVIRONMENT -- so redirects keep https and logs carry the
+    #     real client IP.
+    # The loopback peer check is skipped for the gated and non-loopback cases
+    # (see _ws_client_is_allowed), so a spoofed X-Forwarded-For does not grant
+    # access there.  Note PORT also matches a loopback bind in a shell that
+    # exports it; only local processes can reach that bind either way.
     uvicorn.run(
         app,
         host=host,

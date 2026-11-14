@@ -60,6 +60,7 @@ export type SidebarNavId =
   | 'cron'
   | 'image-studio'
   | 'messaging'
+  | 'mobile'
   | 'new-session'
   | 'settings'
   | 'skills'
@@ -70,6 +71,7 @@ export interface SidebarNavItem {
   icon: React.ComponentType<{ className?: string }>
   route?: string
   action?: 'new-session'
+  badge?: string
 }
 
 export interface ClientSessionState {

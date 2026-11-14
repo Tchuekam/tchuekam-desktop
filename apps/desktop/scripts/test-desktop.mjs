@@ -139,11 +139,12 @@ function resolveDmgPath() {
 }
 
 function resolveNsisPath() {
-  // electron-builder NSIS artifactName template is 'Hermes-${version}-${os}-${arch}.${ext}'
+  // The NSIS installer is TchueKAM-Setup.exe (nsis.artifactName in package.json);
+  // older builds were named Tchuekam-Setup-win-x64.exe.
   if (!exists(RELEASE_ROOT)) return null
   const candidates = fs
     .readdirSync(RELEASE_ROOT)
-    .filter(name => /\.exe$/i.test(name) && /win/i.test(name))
+    .filter(name => /setup.*\.exe$/i.test(name))
     .sort((a, b) => {
       const aMtime = fs.statSync(path.join(RELEASE_ROOT, a)).mtimeMs
       const bMtime = fs.statSync(path.join(RELEASE_ROOT, b)).mtimeMs

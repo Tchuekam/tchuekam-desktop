@@ -3,14 +3,65 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ImageStudio, VideoStudio, ClippingStudio, VibeMotionStudio, LipSyncStudio, RecastStudio, CinemaStudio, AudioStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, AiInfluencerStudio, getUserBalance } from 'studio';
+import { getUserBalance } from 'studio';
+import { StudioErrorBoundary, StudioLoadingFallback } from './StudioErrorBoundary';
 
+const ImageStudio = dynamic(() => import('studio').then(mod => mod.ImageStudio), {
+  loading: () => <StudioLoadingFallback name="Image Studio" />
+});
+const VideoStudio = dynamic(() => import('studio').then(mod => mod.VideoStudio), {
+  loading: () => <StudioLoadingFallback name="Video Studio" />
+});
+const ClippingStudio = dynamic(() => import('studio').then(mod => mod.ClippingStudio), {
+  loading: () => <StudioLoadingFallback name="AI Clipping Studio" />
+});
+const VibeMotionStudio = dynamic(() => import('studio').then(mod => mod.VibeMotionStudio), {
+  loading: () => <StudioLoadingFallback name="Vibe Motion Studio" />
+});
+const LipSyncStudio = dynamic(() => import('studio').then(mod => mod.LipSyncStudio), {
+  loading: () => <StudioLoadingFallback name="Lip Sync Studio" />
+});
+const RecastStudio = dynamic(() => import('studio').then(mod => mod.RecastStudio), {
+  loading: () => <StudioLoadingFallback name="Body Swap Studio" />
+});
+const CinemaStudio = dynamic(() => import('studio').then(mod => mod.CinemaStudio), {
+  loading: () => <StudioLoadingFallback name="Cinema Studio" />
+});
+const AudioStudio = dynamic(() => import('studio').then(mod => mod.AudioStudio), {
+  loading: () => <StudioLoadingFallback name="Audio Studio" />
+});
+const MarketingStudio = dynamic(() => import('studio').then(mod => mod.MarketingStudio), {
+  loading: () => <StudioLoadingFallback name="Marketing Studio" />
+});
+const WorkflowStudio = dynamic(() => import('studio').then(mod => mod.WorkflowStudio), {
+  loading: () => <StudioLoadingFallback name="Workflow Studio" />
+});
+const AgentStudio = dynamic(() => import('studio').then(mod => mod.AgentStudio), {
+  loading: () => <StudioLoadingFallback name="Agent Studio" />
+});
+const AppsStudio = dynamic(() => import('studio').then(mod => mod.AppsStudio), {
+  loading: () => <StudioLoadingFallback name="Apps Studio" />
+});
+const AiInfluencerStudio = dynamic(() => import('studio').then(mod => mod.AiInfluencerStudio), {
+  loading: () => <StudioLoadingFallback name="AI Influencer Studio" />
+});
 const DesignAgentStudio = dynamic(() => import('studio').then(mod => mod.DesignAgentStudio), {
-  ssr: false,
-  loading: () => <div className="h-full w-full bg-black flex items-center justify-center text-white/20">Loading Design Studio...</div>
+  loading: () => <StudioLoadingFallback name="Design Studio" />
 });
 import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
+import {
+  getProviderKey,
+  saveProviderKey,
+  deleteProviderKey,
+  validateProvider,
+  getActiveStudioProvider,
+  setActiveStudioProvider,
+  getStudioApiKey,
+  saveStudioApiKey,
+  deleteStudioApiKey,
+  validateApiKey,
+} from '../../credentialService';
 
 const TABS = [
   {
@@ -237,7 +288,6 @@ const getNavigationCategory = (tabId) => (
   NAVIGATION_CATEGORIES.find((category) => category.tabIds.includes(tabId))
 );
 
-const STORAGE_KEY = 'muapi_key';
 const NOTIFICATIONS_STORAGE_KEY = 'open_gen_notifications_v1';
 const MAX_VISIBLE_NOTIFICATIONS = 3;
 
@@ -336,14 +386,16 @@ export default function StandaloneShell() {
     return 'image';
   };
   
+  const [activeProvider, setActiveProviderState] = useState(() => getActiveStudioProvider());
   const [apiKey, setApiKey] = useState(null);
+  const [authState, setAuthState] = useState('validating'); // 'unconfigured' | 'validating' | 'authenticated' | 'invalid' | 'insufficient_quota' | 'unavailable'
+  const [authErrorMessage, setAuthErrorMessage] = useState('');
   const [activeTab, setActiveTab] = useState(getInitialTab());
 
   const [balance, setBalance] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
-  const [showVadooBanner, setShowVadooBanner] = useState(false);
 
   // Sidebar Collapsed & Mobile Drawer State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -606,20 +658,8 @@ export default function StandaloneShell() {
     }
   }, [activeTab, urlWorkflowId, idFromParams]);
 
-  // Global builder CSS cleanup when switching away from Workflows or Design Agent tabs
-  useEffect(() => {
-    const fromBuilder = sessionStorage.getItem("fromWorkflowBuilder");
-    const fromDesignAgent = sessionStorage.getItem("fromDesignAgent");
-    
-    if ((fromBuilder && activeTab !== 'workflows') || (fromDesignAgent && activeTab !== 'design-agent')) {
-      sessionStorage.removeItem("fromWorkflowBuilder");
-      sessionStorage.removeItem("fromDesignAgent");
-      window.location.reload();
-    }
-  }, [activeTab]);
-
   const fetchBalance = useCallback(async (key) => {
-    if (!key || key === 'genimage_free_key') {
+    if (!key) {
       setBalance(null);
       return;
     }
@@ -635,27 +675,133 @@ export default function StandaloneShell() {
     }
   }, []);
 
+  // Global listener for API 401/403 auth failures across generation, uploads, and polling
+  useEffect(() => {
+    const handleAuthRequired = (event) => {
+      const detail = event?.detail || {};
+      const msg = detail.message || 'Authentication required or session expired. Please verify your API key.';
+      setAuthState('invalid');
+      setAuthErrorMessage(msg);
+      setShowSettings(true);
+    };
+
+    window.addEventListener('muapi:auth-required', handleAuthRequired);
+    return () => window.removeEventListener('muapi:auth-required', handleAuthRequired);
+  }, []);
+
+  // Initialize and validate credentials from secure storage on mount
   useEffect(() => {
     setHasMounted(true);
-    const stored = localStorage.getItem(STORAGE_KEY) || 'genimage_free_key';
-    setApiKey(stored);
-    localStorage.setItem(STORAGE_KEY, stored);
-    document.cookie = `muapi_key=${stored}; path=/; max-age=31536000; SameSite=Lax`;
+    let active = true;
+
+    async function initCredentials() {
+      setAuthState('validating');
+      try {
+        const currentProv = getActiveStudioProvider();
+        setActiveProviderState(currentProv);
+        let key = await getProviderKey(currentProv);
+        let activeProv = currentProv;
+
+        if (!key) {
+          // Check alternate provider
+          const altProv = currentProv === 'fal' ? 'muapi' : 'fal';
+          const altKey = await getProviderKey(altProv);
+          if (altKey) {
+            key = altKey;
+            activeProv = altProv;
+            setActiveStudioProvider(altProv);
+            setActiveProviderState(altProv);
+          }
+        }
+
+        if (!active) return;
+
+        if (!key) {
+          setApiKey(null);
+          setAuthState('unconfigured');
+          return;
+        }
+
+        setApiKey(key);
+        const validation = await validateProvider(activeProv, key);
+        if (!active) return;
+
+        if (validation.ok) {
+          setBalance(validation.balance);
+          if (validation.balance !== null && validation.balance <= 0) {
+            setAuthState('insufficient_quota');
+            setAuthErrorMessage('Account balance is 0. Please top up your account to generate media.');
+          } else {
+            setAuthState('authenticated');
+            setAuthErrorMessage('');
+          }
+        } else {
+          if (validation.status === 401 || validation.status === 403) {
+            setAuthState('invalid');
+            setAuthErrorMessage(validation.error || 'Invalid API key. Please check your credentials.');
+          } else if (validation.status === 429) {
+            setAuthState('insufficient_quota');
+            setAuthErrorMessage('Rate limit or quota exceeded.');
+          } else {
+            setAuthState('unavailable');
+            setAuthErrorMessage(validation.error || 'Provider service temporarily unreachable.');
+          }
+        }
+      } catch (err) {
+        if (!active) return;
+        setAuthState('unavailable');
+        setAuthErrorMessage(err.message || 'Authentication service failed to initialize.');
+      }
+    }
+
+    initCredentials();
+    return () => { active = false; };
   }, []);
 
-  const handleKeySave = useCallback((key) => {
-    localStorage.setItem(STORAGE_KEY, key);
-    setApiKey(key);
-    fetchBalance(key);
-    document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
-  }, [fetchBalance]);
+  const handleKeySave = useCallback(async (newKey, provider = 'fal') => {
+    setAuthState('validating');
+    const saveRes = await saveProviderKey(provider, newKey);
+    if (!saveRes.ok) {
+      setAuthState('invalid');
+      setAuthErrorMessage(saveRes.error || 'Failed to save key.');
+      return;
+    }
 
-  const handleKeyChange = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    setActiveStudioProvider(provider);
+    setActiveProviderState(provider);
+    setApiKey(newKey);
+    const validation = await validateProvider(provider, newKey);
+    if (validation.ok) {
+      setBalance(validation.balance);
+      if (validation.balance !== null && validation.balance <= 0) {
+        setAuthState('insufficient_quota');
+        setAuthErrorMessage('Account balance is 0. Please top up your account.');
+      } else {
+        setAuthState('authenticated');
+        setAuthErrorMessage('');
+      }
+      setShowSettings(false);
+    } else {
+      if (validation.status === 401 || validation.status === 403) {
+        setAuthState('invalid');
+        setAuthErrorMessage(validation.error || 'The entered key is invalid.');
+      } else if (validation.status === 429) {
+        setAuthState('insufficient_quota');
+        setAuthErrorMessage('Account quota exceeded.');
+      } else {
+        setAuthState('unavailable');
+        setAuthErrorMessage(validation.error || 'Provider service unreachable.');
+      }
+    }
+  }, []);
+
+  const handleKeyChange = useCallback(async () => {
+    await deleteProviderKey(activeProvider);
     setApiKey(null);
     setBalance(null);
-    document.cookie = "muapi_key=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-  }, []);
+    setAuthState('unconfigured');
+    setAuthErrorMessage('');
+  }, [activeProvider]);
 
   // Inject API key into all outgoing Axios requests (prop-based approach)
   // We use an interceptor to be selective and NOT send the key to external domains like S3
@@ -682,12 +828,12 @@ export default function StandaloneShell() {
     };
   }, [apiKey]);
 
-  // Poll for balance every 30 seconds if key is present and valid
+  // Poll for balance every 30 seconds if key is present and authenticated
   useEffect(() => {
-    if (!apiKey || apiKey === 'genimage_free_key') return;
+    if (!apiKey || authState !== 'authenticated') return;
     const interval = setInterval(() => fetchBalance(apiKey), 30000);
     return () => clearInterval(interval);
-  }, [apiKey, fetchBalance]);
+  }, [apiKey, authState, fetchBalance]);
 
   // Drag and Drop Handlers
   const handleDragOver = useCallback((e) => {
@@ -726,19 +872,30 @@ export default function StandaloneShell() {
     setDroppedFiles(null);
   }, []);
 
-  if (!hasMounted) return (
-    <div className="min-h-screen bg-[#050505] flex items-center justify-center">
-      <div className="animate-spin text-[#22d3ee] text-3xl">◌</div>
+  if (!hasMounted || authState === 'validating') return (
+    <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center gap-3">
+      <div className="w-8 h-8 border-2 border-white/10 border-t-[#22d3ee] rounded-full animate-spin" />
+      <span className="text-white/40 text-xs font-medium">Initializing Tchuekam Studio...</span>
     </div>
   );
 
-  if (!apiKey) {
-    return <ApiKeyModal onSave={handleKeySave} />;
+  // If no credentials are configured or invalid on initial load, show the configuration interface
+  if (!apiKey || authState === 'unconfigured') {
+    return (
+      <ApiKeyModal
+        initialProvider={activeProvider}
+        initialKey={apiKey || ''}
+        onSave={handleKeySave}
+        authState={authState}
+        errorMessage={authErrorMessage}
+        isValidating={authState === 'validating'}
+      />
+    );
   }
 
   return (
     <div 
-      className="h-screen bg-[#030303] flex flex-col overflow-hidden text-white relative"
+      className="h-full min-h-0 bg-[#030303] flex flex-col overflow-hidden text-white relative"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -761,36 +918,12 @@ export default function StandaloneShell() {
         </div>
       )}
 
-      {/* Vadoo promo banner */}
-      {showVadooBanner && (
-        <div className="flex-shrink-0 w-full bg-indigo-600 flex items-center justify-center px-4 py-2 gap-3 relative z-50">
-          <a
-            href="https://vadoo.tv"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[13px] font-bold text-white hover:opacity-80 transition-opacity text-center"
-          >
-            Unrestricted AI Images &amp; Videos → Auto-Publish as YouTube Shorts &amp; TikToks, Earn ↗
-          </a>
-          <button
-            onClick={() => {
-              setShowVadooBanner(false);
-              localStorage.setItem('vadoo_banner_dismissed', '1');
-            }}
-            className="absolute right-3 text-white/60 hover:text-white transition-colors text-lg leading-none"
-            aria-label="Dismiss"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* Header */}
       {isHeaderVisible && (
-        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-3 select-none">
+        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-2.5 sm:px-4 md:pl-[max(1rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1rem))] bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-2 sm:gap-3 select-none">
           {/* Left: Logo */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
-            <img src="/logo.png" alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
+            <img src={`${import.meta.env.BASE_URL}apple-touch-icon.png`} alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
             <span className="text-sm font-bold tracking-tight hidden xl:block text-white">
               TchuekaM Studio
             </span>
@@ -824,7 +957,47 @@ export default function StandaloneShell() {
           </nav>
 
           {/* Right: Actions */}
-          <div className="flex-shrink-0 flex items-center gap-2">
+          <div className="flex-shrink-0 flex items-center gap-2.5">
+            {/* Provider indicator badge */}
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs font-medium text-white/80 transition-colors cursor-pointer"
+              title="Click to configure AI Provider in Settings"
+            >
+              <span className="text-white/40 text-[11px]">Provider:</span>
+              <span className="font-semibold text-white">
+                {activeProvider === 'fal' ? 'FAL.ai' : 'MuAPI'}
+              </span>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                authState === 'authenticated' ? 'bg-emerald-400' : 'bg-amber-400'
+              }`} />
+            </button>
+
+            {balance !== null && (
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-white/90">
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  authState === 'authenticated' ? 'bg-emerald-400' :
+                  authState === 'insufficient_quota' ? 'bg-amber-400 animate-pulse' :
+                  'bg-zinc-500'
+                }`} />
+                <span>${typeof balance === 'number' ? balance.toFixed(2) : balance}</span>
+              </div>
+            )}
+            {authState !== 'authenticated' && authState !== 'validating' && (
+              <button
+                onClick={() => setShowSettings(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${
+                  authState === 'invalid'
+                    ? 'bg-red-500/10 border-red-500/30 text-red-400 animate-pulse'
+                    : authState === 'insufficient_quota'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                    : 'bg-zinc-800 border-zinc-700 text-zinc-300'
+                }`}
+              >
+                <span>{authState === 'invalid' ? 'Auth Error' : authState === 'insufficient_quota' ? 'Low Balance' : 'Offline'}</span>
+              </button>
+            )}
             <button
               onClick={() => setShowSettings(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-[13px] font-bold text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors"
@@ -843,70 +1016,98 @@ export default function StandaloneShell() {
       {/* Main Body Layout: Studio Content Area */}
       <div className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]">
         <div className={activeTab === 'image' ? "h-full w-full" : "hidden"}>
-          <ImageStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('image')} onGenerationEnd={makeGenerationEndCallback('image')} onGenerationComplete={makeSuccessCallback('image')} onGenerationError={makeErrorCallback('image')} />
+          <StudioErrorBoundary studioName="Image Studio" onResetTab={() => setActiveTab('image')}>
+            <ImageStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('image')} onGenerationEnd={makeGenerationEndCallback('image')} onGenerationComplete={makeSuccessCallback('image')} onGenerationError={makeErrorCallback('image')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'video' ? "h-full w-full" : "hidden"}>
-          <VideoStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('video')} onGenerationEnd={makeGenerationEndCallback('video')} onGenerationComplete={makeSuccessCallback('video')} onGenerationError={makeErrorCallback('video')} />
+          <StudioErrorBoundary studioName="Video Studio" onResetTab={() => setActiveTab('image')}>
+            <VideoStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('video')} onGenerationEnd={makeGenerationEndCallback('video')} onGenerationComplete={makeSuccessCallback('video')} onGenerationError={makeErrorCallback('video')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'clipping' ? "h-full w-full" : "hidden"}>
-          <ClippingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('clipping')} onGenerationEnd={makeGenerationEndCallback('clipping')} onGenerationComplete={makeSuccessCallback('clipping')} onGenerationError={makeErrorCallback('clipping')} />
+          <StudioErrorBoundary studioName="AI Clipping Studio" onResetTab={() => setActiveTab('image')}>
+            <ClippingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('clipping')} onGenerationEnd={makeGenerationEndCallback('clipping')} onGenerationComplete={makeSuccessCallback('clipping')} onGenerationError={makeErrorCallback('clipping')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'vibe-motion' ? "h-full w-full" : "hidden"}>
-          <VibeMotionStudio apiKey={apiKey} onGenerationStart={makeGenerationStartCallback('vibe-motion')} onGenerationEnd={makeGenerationEndCallback('vibe-motion')} onGenerationComplete={makeSuccessCallback('vibe-motion')} onGenerationError={makeErrorCallback('vibe-motion')} />
+          <StudioErrorBoundary studioName="Vibe Motion Studio" onResetTab={() => setActiveTab('image')}>
+            <VibeMotionStudio apiKey={apiKey} onGenerationStart={makeGenerationStartCallback('vibe-motion')} onGenerationEnd={makeGenerationEndCallback('vibe-motion')} onGenerationComplete={makeSuccessCallback('vibe-motion')} onGenerationError={makeErrorCallback('vibe-motion')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'lipsync' ? "h-full w-full" : "hidden"}>
-          <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('lipsync')} onGenerationEnd={makeGenerationEndCallback('lipsync')} onGenerationComplete={makeSuccessCallback('lipsync')} onGenerationError={makeErrorCallback('lipsync')} />
+          <StudioErrorBoundary studioName="Lip Sync Studio" onResetTab={() => setActiveTab('image')}>
+            <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('lipsync')} onGenerationEnd={makeGenerationEndCallback('lipsync')} onGenerationComplete={makeSuccessCallback('lipsync')} onGenerationError={makeErrorCallback('lipsync')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'body-swap' ? "h-full w-full" : "hidden"}>
-          <RecastStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('body-swap')} onGenerationEnd={makeGenerationEndCallback('body-swap')} onGenerationComplete={makeSuccessCallback('body-swap')} onGenerationError={makeErrorCallback('body-swap')} />
+          <StudioErrorBoundary studioName="Body Swap Studio" onResetTab={() => setActiveTab('image')}>
+            <RecastStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('body-swap')} onGenerationEnd={makeGenerationEndCallback('body-swap')} onGenerationComplete={makeSuccessCallback('body-swap')} onGenerationError={makeErrorCallback('body-swap')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'cinema' ? "h-full w-full" : "hidden"}>
-          <CinemaStudio apiKey={apiKey} onGenerationStart={makeGenerationStartCallback('cinema')} onGenerationEnd={makeGenerationEndCallback('cinema')} onGenerationComplete={makeSuccessCallback('cinema')} onGenerationError={makeErrorCallback('cinema')} />
+          <StudioErrorBoundary studioName="Cinema Studio" onResetTab={() => setActiveTab('image')}>
+            <CinemaStudio apiKey={apiKey} onGenerationStart={makeGenerationStartCallback('cinema')} onGenerationEnd={makeGenerationEndCallback('cinema')} onGenerationComplete={makeSuccessCallback('cinema')} onGenerationError={makeErrorCallback('cinema')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'audio' ? "h-full w-full" : "hidden"}>
-          <AudioStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('audio')} onGenerationEnd={makeGenerationEndCallback('audio')} onGenerationComplete={makeSuccessCallback('audio')} onGenerationError={makeErrorCallback('audio')} />
+          <StudioErrorBoundary studioName="Audio Studio" onResetTab={() => setActiveTab('image')}>
+            <AudioStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('audio')} onGenerationEnd={makeGenerationEndCallback('audio')} onGenerationComplete={makeSuccessCallback('audio')} onGenerationError={makeErrorCallback('audio')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'marketing' ? "h-full w-full" : "hidden"}>
-          <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('marketing')} onGenerationEnd={makeGenerationEndCallback('marketing')} onGenerationComplete={makeSuccessCallback('marketing')} onGenerationError={makeErrorCallback('marketing')} />
+          <StudioErrorBoundary studioName="Marketing Studio" onResetTab={() => setActiveTab('image')}>
+            <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('marketing')} onGenerationEnd={makeGenerationEndCallback('marketing')} onGenerationComplete={makeSuccessCallback('marketing')} onGenerationError={makeErrorCallback('marketing')} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'workflows' ? "h-full w-full" : "hidden"}>
-          <WorkflowStudio
-            apiKey={apiKey}
-            isHeaderVisible={isHeaderVisible}
-            onToggleHeader={setIsHeaderVisible}
-            onGenerationStart={makeGenerationStartCallback('workflows')}
-            onGenerationEnd={makeGenerationEndCallback('workflows')}
-            onGenerationComplete={makeSuccessCallback('workflows')}
-            onGenerationError={makeErrorCallback('workflows')}
-          />
-        </div>
-        <div className={activeTab === 'agents' ? "h-full w-full" : "hidden"}>
-          <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />
-        </div>
-        <div className={activeTab === 'design-agent' ? "h-full w-full" : "hidden"}>
-          {activeTab === 'design-agent' && (
-            <DesignAgentStudio
+          <StudioErrorBoundary studioName="Workflow Studio" onResetTab={() => setActiveTab('image')}>
+            <WorkflowStudio
               apiKey={apiKey}
               isHeaderVisible={isHeaderVisible}
               onToggleHeader={setIsHeaderVisible}
-              onGenerationStart={makeGenerationStartCallback('design-agent')}
-              onGenerationEnd={makeGenerationEndCallback('design-agent')}
-              onGenerationComplete={makeSuccessCallback('design-agent')}
-              onGenerationError={makeErrorCallback('design-agent')}
+              onGenerationStart={makeGenerationStartCallback('workflows')}
+              onGenerationEnd={makeGenerationEndCallback('workflows')}
+              onGenerationComplete={makeSuccessCallback('workflows')}
+              onGenerationError={makeErrorCallback('workflows')}
             />
+          </StudioErrorBoundary>
+        </div>
+        <div className={activeTab === 'agents' ? "h-full w-full" : "hidden"}>
+          <StudioErrorBoundary studioName="Agent Studio" onResetTab={() => setActiveTab('image')}>
+            <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />
+          </StudioErrorBoundary>
+        </div>
+        <div className={activeTab === 'design-agent' ? "h-full w-full" : "hidden"}>
+          {activeTab === 'design-agent' && (
+            <StudioErrorBoundary studioName="Design Studio" onResetTab={() => setActiveTab('image')}>
+              <DesignAgentStudio
+                apiKey={apiKey}
+                isHeaderVisible={isHeaderVisible}
+                onToggleHeader={setIsHeaderVisible}
+                onGenerationStart={makeGenerationStartCallback('design-agent')}
+                onGenerationEnd={makeGenerationEndCallback('design-agent')}
+                onGenerationComplete={makeSuccessCallback('design-agent')}
+                onGenerationError={makeErrorCallback('design-agent')}
+              />
+            </StudioErrorBoundary>
           )}
         </div>
         <div className={activeTab === 'apps' ? "h-full w-full" : "hidden"}>
-          <AppsStudio apiKey={apiKey} />
+          <StudioErrorBoundary studioName="Apps Studio" onResetTab={() => setActiveTab('image')}>
+            <AppsStudio apiKey={apiKey} />
+          </StudioErrorBoundary>
         </div>
         <div className={activeTab === 'ai-influencer' ? "h-full w-full" : "hidden"}>
-          <AiInfluencerStudio
-            apiKey={apiKey}
-            onGenerationStart={makeGenerationStartCallback('ai-influencer')}
-            onGenerationEnd={makeGenerationEndCallback('ai-influencer')}
-            onGenerationComplete={makeSuccessCallback('ai-influencer')}
-            onGenerationError={makeErrorCallback('ai-influencer')}
-          />
+          <StudioErrorBoundary studioName="AI Influencer Studio" onResetTab={() => setActiveTab('image')}>
+            <AiInfluencerStudio
+              apiKey={apiKey}
+              onGenerationStart={makeGenerationStartCallback('ai-influencer')}
+              onGenerationEnd={makeGenerationEndCallback('ai-influencer')}
+              onGenerationComplete={makeSuccessCallback('ai-influencer')}
+              onGenerationError={makeErrorCallback('ai-influencer')}
+            />
+          </StudioErrorBoundary>
         </div>
       </div>
 
@@ -915,7 +1116,7 @@ export default function StandaloneShell() {
         <div
           aria-live="polite"
           aria-label="Generation activity and notifications"
-          className="fixed top-16 right-5 z-[200] flex max-h-[calc(100vh-80px)] w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 overflow-x-hidden overflow-y-auto global-notif-stack pointer-events-none"
+          className="fixed top-16 right-3 sm:right-5 z-[200] flex max-h-[calc(100dvh-80px)] w-[min(340px,calc(100vw-1.5rem))] flex-col gap-2 overflow-x-hidden overflow-y-auto global-notif-stack pointer-events-none"
           data-testid="global-notification-stack"
         >
           {activeGenerations.map((generation) => (
@@ -1030,42 +1231,18 @@ export default function StandaloneShell() {
         }
       `}</style>
 
-      {/* Settings Modal */}
+      {/* Settings / Credential Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-up">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-8 w-full max-w-sm shadow-2xl">
-            <h2 className="text-white font-bold text-lg mb-2">Settings</h2>
-            <p className="text-white/40 text-[13px] mb-8">
-              Manage your AI studio preferences and authentication.
-            </p>
-            
-            <div className="space-y-4 mb-8">
-              <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
-                <label className="block text-xs font-bold text-white/30 mb-2">
-                   Active API Key
-                </label>
-                <div className="text-[13px] font-mono text-white/80">
-                  {apiKey.slice(0, 8)}••••••••••••••••
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleKeyChange}
-                className="flex-1 h-10 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-semibold transition-all"
-              >
-                Change Key
-              </button>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="flex-1 h-10 rounded-md bg-white/5 text-white/80 hover:bg-white/10 text-xs font-semibold transition-all border border-white/5"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <ApiKeyModal
+          overlay={true}
+          initialProvider={activeProvider}
+          initialKey={apiKey || ''}
+          authState={authState}
+          errorMessage={authErrorMessage}
+          isValidating={authState === 'validating'}
+          onSave={handleKeySave}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import { useStore } from '@nanostores/react'
 import {
   IconBolt,
   IconBriefcase,
+  IconDeviceMobile,
   IconFiles,
   IconMessageCircle,
   IconPencilPlus,
@@ -77,6 +78,7 @@ import {
   CRON_ROUTE,
   IMAGE_STUDIO_ROUTE,
   MESSAGING_ROUTE,
+  MOBILE_ROUTE,
   SKILLS_ROUTE
 } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
@@ -116,6 +118,12 @@ const ALL_SIDEBAR_NAV: SidebarNavItem[] = [
     label: 'Business Hub',
     icon: navIcon(IconBriefcase),
     route: BUSINESS_ROUTE
+  },
+  {
+    id: 'mobile',
+    label: 'Mobile App',
+    icon: navIcon(IconDeviceMobile),
+    route: MOBILE_ROUTE
   },
   {
     id: 'image-studio',
@@ -450,7 +458,7 @@ export function ChatSidebar({
   return (
     <Sidebar
       className={cn(
-        'relative h-full min-w-0 overflow-hidden border-r border-t-0 border-b-0 border-l-0 text-foreground transition-none',
+        'relative h-full w-full min-w-0 overflow-hidden border-r border-t-0 border-b-0 border-l-0 text-foreground transition-none',
         sidebarOpen
           ? 'border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background) opacity-100'
           : 'pointer-events-none border-transparent bg-transparent opacity-0'
@@ -458,7 +466,7 @@ export function ChatSidebar({
       collapsible="none"
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
-        <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
+        <SidebarGroup className="shrink-0 p-0 pb-2 pt-2 md:pt-[calc(var(--titlebar-height)+0.375rem)]">
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
               {SIDEBAR_NAV.map(item => {
@@ -487,6 +495,11 @@ export function ChatSidebar({
                           <span className="min-w-0 flex-1 truncate max-[46.25rem]:hidden">{item.label}</span>
                           {item.id === 'new-session' && (
                             <KbdGroup className="ml-auto max-[46.25rem]:hidden" keys={[...NEW_SESSION_KBD]} />
+                          )}
+                          {item.id === 'mobile' && (
+                            <span className="ml-auto rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-[0.625rem] font-bold text-cyan-400 max-[46.25rem]:hidden">
+                              NEW
+                            </span>
                           )}
                         </>
                       )}
@@ -899,14 +912,14 @@ function SidebarWorkspaceGroup({
           <span className="truncate">{group.label}</span>
           <SidebarCount>{group.sessions.length}</SidebarCount>
           <DisclosureCaret
-            className="text-(--ui-text-tertiary) opacity-0 transition group-hover/workspace:opacity-100"
+            className="text-(--ui-text-tertiary) opacity-0 transition group-hover/workspace:opacity-100 [@media(hover:none),(pointer:coarse)]:opacity-70"
             open={open}
           />
         </button>
         {onNewSession && (
           <button
             aria-label={`New session in ${group.label}`}
-            className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100"
+            className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100 [@media(hover:none),(pointer:coarse)]:size-6 [@media(hover:none),(pointer:coarse)]:opacity-80"
             onClick={() => onNewSession(group.path)}
             title={`New session in ${group.label}`}
             type="button"

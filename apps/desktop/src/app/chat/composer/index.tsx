@@ -1011,14 +1011,16 @@ export function ChatBar({
     }
   }
 
-  const submitVoiceTurn = async (text: string) => {
+  const submitVoiceTurn = async (text: string): Promise<boolean> => {
     if (busy) {
-      return
+      return false
     }
 
     triggerHaptic('submit')
     clearDraft()
     await onSubmit(text)
+
+    return true
   }
 
   const conversation = useVoiceConversation({

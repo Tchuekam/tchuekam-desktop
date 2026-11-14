@@ -77,7 +77,10 @@ def get_chrome_debug_candidates(system: str) -> list[str]:
     def add(path: str | None) -> None:
         if not path:
             return
-        normalized = os.path.normcase(os.path.normpath(path))
+        if path.startswith("/mnt/"):
+            normalized = path.lower()
+        else:
+            normalized = os.path.normcase(os.path.normpath(path))
         if normalized in seen or not os.path.isfile(path):
             return
         candidates.append(path)
@@ -90,7 +93,10 @@ def get_chrome_debug_candidates(system: str) -> list[str]:
         for _, group in install_groups:
             for base in filter(None, bases):
                 for parts in group:
-                    add(os.path.join(base, *parts))
+                    if base.startswith("/mnt/"):
+                        add("/".join([base.rstrip("/"), *[p.replace("\\", "/") for p in parts]]))
+                    else:
+                        add(os.path.join(base, *parts))
 
     if system == "Darwin":
         for app in _DARWIN_APPS:

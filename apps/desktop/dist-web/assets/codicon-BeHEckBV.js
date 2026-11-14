@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-C1P5MI3y.js";import{t}from"./utils-CF88gK9t.js";var n=e();function r({className:e,name:r,size:i,spinning:a,style:o,...s}){return(0,n.jsx)(`i`,{"aria-hidden":`true`,className:t(`codicon`,`codicon-${r}`,a&&`codicon-modifier-spin`,e),style:{fontSize:i,...o},...s})}export{r as t};

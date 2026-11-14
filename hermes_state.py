@@ -3908,10 +3908,13 @@ class SessionDB:
         Returns the number of FTS indexes that were optimized.
         """
         optimized = 0
+        # Probe before taking the lock: _fts_table_exists() acquires self._lock
+        # itself, and self._lock is a plain (non-reentrant) Lock, so calling it
+        # from inside the `with` below deadlocks the thread outright — which is
+        # how vacuum() used to hang forever.
+        present = [tbl for tbl in self._FTS_TABLES if self._fts_table_exists(tbl)]
         with self._lock:
-            for tbl in self._FTS_TABLES:
-                if not self._fts_table_exists(tbl):
-                    continue
+            for tbl in present:
                 try:
                     # The column name in the INSERT must match the table name
                     # for FTS5 special commands.

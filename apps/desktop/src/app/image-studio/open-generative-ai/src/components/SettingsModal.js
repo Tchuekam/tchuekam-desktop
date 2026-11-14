@@ -1,6 +1,8 @@
 import { LocalModelManager } from './LocalModelManager.js';
 import { isLocalAIAvailable } from '../lib/localInferenceClient.js';
 import { t } from '../lib/i18n.js';
+import { showToast } from '../lib/toast.js';
+import { getStudioApiKey, saveStudioApiKey } from '../../credentialService.ts';
 
 export function SettingsModal(onClose) {
     const overlay = document.createElement('div');
@@ -56,7 +58,7 @@ export function SettingsModal(onClose) {
                 <input id="settings-api-key" type="password"
                     style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:0.75rem;padding:0.6rem 0.9rem;color:#fff;font-size:0.875rem;outline:none;"
                     placeholder="${t('settings.keyPlaceholder')}"
-                    value="${localStorage.getItem('muapi_key') || ''}">
+                    value="">
             </div>
             <p style="font-size:0.7rem;color:rgba(255,255,255,0.3);margin:0;">
                 ${t('settings.keyNote')}
@@ -99,14 +101,21 @@ export function SettingsModal(onClose) {
         if (onClose) onClose();
     };
 
+    const input = apiPanel.querySelector('#settings-api-key');
+    void getStudioApiKey().then((k) => {
+        if (k && input) input.value = k;
+    }).catch(() => null);
+
     apiPanel.querySelector('#settings-cancel-btn').onclick = close;
-    apiPanel.querySelector('#settings-save-btn').onclick = () => {
+    apiPanel.querySelector('#settings-save-btn').onclick = async () => {
         const key = apiPanel.querySelector('#settings-api-key').value.trim();
         if (key) {
-            localStorage.setItem('muapi_key', key);
+            await saveStudioApiKey(key);
+            window.dispatchEvent(new CustomEvent('muapi:key-updated', { detail: { key } }));
+            showToast('API key updated successfully', 'success');
             close();
         } else {
-            alert(t('settings.invalidKey'));
+            showToast(t('settings.invalidKey'), 'error');
         }
     };
 

@@ -447,7 +447,7 @@ export default function ProfilesPage() {
                     <span>
                       {t.profiles.skills}: {p.skill_count}
                     </span>
-                    <span className="font-mono truncate max-w-[28rem]">
+                    <span className="font-mono truncate max-w-full sm:max-w-[28rem]">
                       {p.path}
                     </span>
                   </div>

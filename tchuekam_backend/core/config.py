@@ -4,9 +4,18 @@ Configuration centralisée du backend TchueKAM.
 
 import os
 import secrets
+from pathlib import Path
 from typing import Any, List, Optional, Union
+from dotenv import load_dotenv
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
+
+# Charge les variables d'environnement (.env du projet)
+_env_path = Path(__file__).resolve().parents[2] / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
+else:
+    load_dotenv()
 
 #: Environnements considérés comme non-production (secrets éphémères tolérés).
 _DEV_ENVIRONMENTS = {"development", "dev", "local", "test", "testing"}

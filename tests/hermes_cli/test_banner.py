@@ -89,7 +89,7 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
         _patch.object(_mcp, "get_mcp_status", return_value=[]),
         _patch.object(_banner, "get_latest_release_tag", return_value=tag_url),
     ):
-        console = Console(file=buf, force_terminal=True, color_system="truecolor", width=160)
+        console = Console(file=buf, force_terminal=True, color_system="truecolor", width=160, legacy_windows=False)
         _banner.build_welcome_banner(
             console=console, model="x", cwd="/tmp",
             session_id="abc123",
@@ -99,7 +99,10 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
 
     raw = buf.getvalue()
     # The existing version label must still be present in the title
-    assert "Hermes Agent v" in raw, "Version label missing from title"
+    # Assert the version, not the product name: the brand string is data that
+    # changes (it did, in the rebrand), while "the title carries the version
+    # label" is the contract this test owns.
+    assert f"v{_banner.VERSION}" in raw, "Version label missing from title"
     # OSC-8 hyperlink escape sequence present with the release URL
     assert "\x1b]8;" in raw, "OSC-8 hyperlink not emitted"
     assert "releases/tag/v2026.4.23" in raw, "Release URL missing from banner output"
@@ -122,7 +125,7 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
         _patch.object(_mcp, "get_mcp_status", return_value=[]),
         _patch.object(_banner, "get_latest_release_tag", return_value=None),
     ):
-        console = Console(file=buf, force_terminal=True, color_system="truecolor", width=160)
+        console = Console(file=buf, force_terminal=True, color_system="truecolor", width=160, legacy_windows=False)
         _banner.build_welcome_banner(
             console=console, model="x", cwd="/tmp",
             session_id="abc123",
@@ -131,5 +134,8 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
         )
 
     raw = buf.getvalue()
-    assert "Hermes Agent v" in raw, "Version label missing from title"
+    # Assert the version, not the product name: the brand string is data that
+    # changes (it did, in the rebrand), while "the title carries the version
+    # label" is the contract this test owns.
+    assert f"v{_banner.VERSION}" in raw, "Version label missing from title"
     assert "\x1b]8;" not in raw, "OSC-8 hyperlink should not be emitted without a tag"

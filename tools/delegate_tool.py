@@ -1334,14 +1334,6 @@ def _run_single_child(
     # Get the progress callback from the child agent
     child_progress_cb = getattr(child, "tool_progress_callback", None)
 
-    # Restore parent tool names using the value saved before child construction
-    # mutated the global. This is the correct parent toolset, not the child's.
-    import model_tools
-
-    _saved_tool_names = getattr(
-        child, "_delegate_saved_tool_names", list(model_tools._last_resolved_tool_names)
-    )
-
     child_pool = getattr(child, "_credential_pool", None)
     leased_cred_id = None
     if child_pool is not None:
@@ -1860,13 +1852,15 @@ def _run_single_child(
             except Exception as exc:
                 logger.debug("Failed to release credential lease: %s", exc)
 
-        # Restore the parent's tool names so the process-global is correct
-        # for any subsequent execute_code calls or other consumers.
+        # Restore the parent's tool names for this thread so any subsequent
+        # execute_code call (or other consumer) sees the parent's toolset
+        # rather than the child's. Matters most in the single-task path, where
+        # the child runs on the caller's own thread.
         import model_tools
 
         saved_tool_names = getattr(child, "_delegate_saved_tool_names", None)
         if isinstance(saved_tool_names, list):
-            model_tools._last_resolved_tool_names = list(saved_tool_names)
+            model_tools.set_last_resolved_tool_names(saved_tool_names)
 
         # Remove child from active tracking
 
@@ -2041,12 +2035,13 @@ def delegate_task(
     # Track goal labels for progress display (truncated for readability)
     task_labels = [t["goal"][:40] for t in task_list]
 
-    # Save parent tool names BEFORE any child construction mutates the global.
+    # Save parent tool names BEFORE any child construction overwrites them.
     # _build_child_agent() calls AIAgent() which calls get_tool_definitions(),
-    # which overwrites model_tools._last_resolved_tool_names with child's toolset.
+    # which records the child's toolset for *this* thread — and children are
+    # built here, on the caller's thread, so the parent's value is clobbered.
     import model_tools as _model_tools
 
-    _parent_tool_names = list(_model_tools._last_resolved_tool_names)
+    _parent_tool_names = _model_tools.get_last_resolved_tool_names()
 
     # Build all child agents on the main thread (thread-safe construction)
     # Wrapped in try/finally so the global is always restored even if a
@@ -2085,8 +2080,9 @@ def delegate_task(
             child._delegate_saved_tool_names = _parent_tool_names
             children.append((i, t, child))
     finally:
-        # Authoritative restore: reset global to parent's tool names after all children built
-        _model_tools._last_resolved_tool_names = _parent_tool_names
+        # Authoritative restore: put the parent's tool names back on this
+        # thread once every child has been built.
+        _model_tools.set_last_resolved_tool_names(_parent_tool_names)
 
     if n_tasks == 1:
         # Single task -- run directly (no thread pool overhead)

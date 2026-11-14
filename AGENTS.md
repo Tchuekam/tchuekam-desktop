@@ -986,8 +986,22 @@ interactive menus must use `tchuekam_cli/curses_ui.py` — see
 ### DO NOT use `\033[K` (ANSI erase-to-EOL) in spinner/display code
 Leaks as literal `?[K` text under `prompt_toolkit`'s `patch_stdout`. Use space-padding: `f"\r{line}{' ' * pad}"`.
 
-### `_last_resolved_tool_names` is a process-global in `model_tools.py`
-`_run_single_child()` in `delegate_tool.py` saves and restores this global around subagent execution. If you add new code that reads this global, be aware it may be temporarily stale during child agent runs.
+### `_last_resolved_tool_names` is a thread-local in `model_tools.py`
+It is a `threading.local()` whose value lives at `.names`, not a plain list —
+`delegate_task` runs subagents on worker threads with their own toolsets, so a
+process-global would leak one child's resolution into a sibling's
+`execute_code` / tool-search scope.
+
+Always go through `model_tools.get_last_resolved_tool_names()` and
+`model_tools.set_last_resolved_tool_names(names)`. Never rebind the attribute
+to a list: that destroys the thread-local, and every later write then raises
+`AttributeError: 'list' object has no attribute 'names'`, which takes
+`get_tool_definitions()` down for the rest of the process.
+
+Children are *built* on the caller's thread, so `_run_batch()` in
+`delegate_tool.py` still saves and restores the parent's names around child
+construction. If you add code that reads this value, be aware it may be
+temporarily stale while children are being built.
 
 ### DO NOT hardcode cross-tool references in schema descriptions
 Tool schema descriptions must not mention tools from other toolsets by name (e.g., `browser_navigate` saying "prefer web_search"). Those tools may be unavailable (missing API keys, disabled toolset), causing the model to hallucinate calls to non-existent tools. If a cross-reference is needed, add it dynamically in `get_tool_definitions()` in `model_tools.py` — see the `browser_navigate` / `execute_code` post-processing blocks for the pattern.

@@ -30,6 +30,8 @@ the SPA should bootstrap it after login instead.
 """
 from __future__ import annotations
 
+from hermes_cli.download_targets import public_download_paths
+
 PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # Liveness probe target. Returns version, gateway state, active
     # session count, and the dashboard auth-gate shape. No bodies, no
@@ -46,10 +48,40 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # Read-only theme + plugin manifests for the dashboard skin engine.
     "/api/dashboard/themes",
     "/api/dashboard/plugins",
-    # Application installer direct download endpoints.
-    "/api/download/windows",
-    "/api/download/mac-arm64",
-    "/api/download/mac-x64",
-    "/api/download/linux",
-    "/api/download/latest",
+    # Which platforms actually have a published installer, with real
+    # version and file sizes. Read-only release metadata; it is what stops
+    # the download page advertising a platform that has no release.
+    "/api/download-info",
+    # Public API health check alias alongside /api/health.
+    "/api/v1/health",
+    # Installer downloads. Derived from hermes_cli.download_targets so a target the
+    # endpoint understands can never be one the allowlist silently 401s.
+} | public_download_paths())
+
+
+_SAAS_PUBLIC_PATHS: frozenset[str] = frozenset({
+    "/api/v1/health",
 })
+
+_SAAS_PUBLIC_PREFIXES: tuple[str, ...] = (
+    "/api/v1/auth/",
+    "/api/v1/oauth/",
+)
+
+
+def allows_saas_api_passthrough(path: str, authorization_header: str) -> bool:
+    """Return True when `/api/v1/*` should pass through to tchuekam_backend.
+
+    Protected SaaS endpoints enforce their own JWT Bearer verification via
+    `Depends(get_current_user)` / `require_permission`, supporting both
+    local HS256 JWTs and Supabase ES256/HS256 JWTs across origins. Keep
+    `/api/v1/biocompute/` gated on dashboard auth unless the endpoint itself
+    adds Bearer verification.
+    """
+    if not path.startswith("/api/v1/"):
+        return False
+    if path in _SAAS_PUBLIC_PATHS or path.startswith(_SAAS_PUBLIC_PREFIXES):
+        return True
+    if path.startswith("/api/v1/biocompute/"):
+        return False
+    return authorization_header.strip().lower().startswith("bearer ")

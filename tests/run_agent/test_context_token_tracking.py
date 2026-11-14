@@ -23,6 +23,12 @@ def _patch_bootstrap(monkeypatch):
         "function": {"name": "t", "description": "t", "parameters": {"type": "object", "properties": {}}},
     }])
     monkeypatch.setattr(run_agent, "check_toolset_requirements", lambda: {})
+    import agent.context_compressor
+    import agent.model_metadata
+    monkeypatch.setattr(agent.context_compressor, "get_model_context_length", lambda *a, **k: 128_000)
+    monkeypatch.setattr(agent.model_metadata, "get_model_context_length", lambda *a, **k: 128_000)
+    monkeypatch.setattr(agent.model_metadata, "detect_local_server_type", lambda *a, **k: None)
+    monkeypatch.setattr(agent.model_metadata, "fetch_endpoint_model_metadata", lambda *a, **k: {})
 
 
 class _FakeAnthropicClient:

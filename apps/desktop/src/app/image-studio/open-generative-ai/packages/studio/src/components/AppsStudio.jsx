@@ -135,7 +135,7 @@ export default function AppsStudio({ apiKey }) {
   const [requestedApps, setRequestedApps] = useState([]);
 
   useEffect(() => {
-    if (apiKey && apiKey !== 'genimage_free_key') {
+    if (apiKey) {
       getAppInterests(apiKey)
         .then(setRequestedApps)
         .catch(err => {

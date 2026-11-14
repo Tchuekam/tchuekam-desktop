@@ -8,7 +8,10 @@ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { Codicon } from '@/components/ui/codicon'
+import { useIsCompactViewport } from '@/hooks/use-mobile'
 import { HAS_NATIVE_FS, IS_DESKTOP, IS_LOCKED_DEMO } from '@/lib/platform'
+import { CHAT_SIDEBAR_PANE_ID } from '@/store/layout'
+import { setPaneOpen } from '@/store/panes'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -61,6 +64,7 @@ import {
 import { ChatSidebar } from './chat/sidebar'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
+import { MobilePromoBanner } from './mobile/mobile-banner'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
@@ -94,6 +98,7 @@ const ImageStudioView = lazy(async () => ({ default: (await import('./image-stud
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
+const MobileView = lazy(async () => ({ default: (await import('./mobile')).MobileView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
@@ -101,6 +106,13 @@ const SkillsView = lazy(async () => ({ default: (await import('./skills')).Skill
 export function DesktopController() {
   const queryClient = useQueryClient()
   const location = useLocation()
+  const isCompact = useIsCompactViewport()
+
+  useEffect(() => {
+    if (isCompact) {
+      setPaneOpen(CHAT_SIDEBAR_PANE_ID, false)
+    }
+  }, [isCompact, location.pathname])
   const navigate = useNavigate()
 
   const busyRef = useRef(false)
@@ -681,7 +693,16 @@ export function DesktopController() {
         {sidebar}
       </Pane>
       <PaneMain>
+        <MobilePromoBanner />
         <Routes>
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <MobileView />
+              </Suspense>
+            }
+            path="mobile"
+          />
           <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} index />
           <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} path=":sessionId" />
           <Route

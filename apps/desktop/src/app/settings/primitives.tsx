@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 export function SettingsContent({ children }: { children: ReactNode }) {
   return (
     <section className="min-h-0 overflow-hidden">
-      <div className="h-full min-h-0 overflow-y-auto px-5 py-4 pb-20">
+      <div className="h-full min-h-0 overflow-y-auto px-3.5 py-3.5 pb-16 sm:px-5 sm:py-4 sm:pb-20">
         <div className="mx-auto w-full max-w-4xl">{children}</div>
       </div>
     </section>
@@ -52,7 +52,7 @@ export function NavLink({
   return (
     <Button
       className={cn(
-        'flex min-h-7 w-full justify-start gap-2 rounded-md px-2 text-left text-[length:var(--conversation-text-font-size)] transition',
+        'flex min-h-7 w-full justify-start gap-2 rounded-md px-2 text-left text-[length:var(--conversation-text-font-size)] transition max-[47.5rem]:w-auto max-[47.5rem]:shrink-0',
         active
           ? 'bg-(--ui-bg-tertiary) text-foreground'
           : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground'

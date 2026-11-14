@@ -1425,7 +1425,11 @@ function shellQuote(value) {
 // (`hermes desktop --build-only`), then atomically swap the running .app bundle
 // with the freshly built one and relaunch. Degrades to "backend updated,
 // restart to load the new GUI" if the swap can't be performed.
-async function applyUpdatesPosixInApp(opts = {}) {
+// `_opts` is accepted so the signature matches applyUpdates(), but this path
+// honours no options yet: the only declared one, DesktopUpdateApplyOptions
+// .dirtyStrategy (src/global.d.ts), is unimplemented on every platform and no
+// caller passes it.
+async function applyUpdatesPosixInApp(_opts = {}) {
   const updateRoot = resolveUpdateRoot()
   const hermes = resolveHermesCliBinary(updateRoot)
   if (!hermes) {
@@ -1632,20 +1636,37 @@ function writeBootstrapMarker(payload) {
   return merged
 }
 
+function isAsarPath(filePath) {
+  return /\.asar(?:[\\/]|$)/i.test(String(filePath || ''))
+}
+
+function realFileExists(filePath) {
+  if (!filePath || isAsarPath(filePath)) return false
+  return fileExists(filePath)
+}
+
+function realDirectoryExists(filePath) {
+  if (!filePath || isAsarPath(filePath)) return false
+  return directoryExists(filePath)
+}
+
 function resolveWebDist() {
   const override = process.env.HERMES_DESKTOP_WEB_DIST
-  if (override && directoryExists(path.resolve(override))) return path.resolve(override)
+  if (override && realDirectoryExists(path.resolve(override))) return path.resolve(override)
 
   const unpackedDist = path.join(unpackedPathFor(APP_ROOT), 'dist')
-  if (directoryExists(unpackedDist)) return unpackedDist
+  if (realDirectoryExists(unpackedDist)) return unpackedDist
+
+  const resourceWebDist = process.resourcesPath ? path.join(process.resourcesPath, 'web_dist') : null
+  if (resourceWebDist && realDirectoryExists(resourceWebDist)) return resourceWebDist
 
   const appDist = path.join(APP_ROOT, 'dist')
-  if (directoryExists(appDist)) return appDist
+  if (realDirectoryExists(appDist)) return appDist
 
   const repoWebDist = path.resolve(APP_ROOT, '..', '..', 'hermes_cli', 'web_dist')
-  if (directoryExists(repoWebDist)) return repoWebDist
+  if (realDirectoryExists(repoWebDist)) return repoWebDist
 
-  return appDist
+  return IS_PACKAGED ? unpackedDist : appDist
 }
 
 function resolveRendererIndex() {
@@ -3349,11 +3370,27 @@ async function startHermes() {
     await advanceBootProgress('backend.port', 'Finding an open local port', 16)
     const port = await pickPort()
     const token = crypto.randomBytes(32).toString('base64url')
-    const dashboardArgs = ['dashboard', '--no-open', '--skip-build', '--tui', '--host', '127.0.0.1', '--port', String(port)]
+    const webDist = resolveWebDist()
+    const webDistIndex = path.join(webDist, 'index.html')
+    const hasWebDist = realFileExists(webDistIndex)
+    if (IS_PACKAGED && !hasWebDist) {
+      const missingDistMsg = `Web UI dist not found at expected path: ${webDistIndex}`
+      rememberLog(`[boot] ${missingDistMsg}`)
+      throw new Error(missingDistMsg)
+    }
+    const dashboardArgs = [
+      'dashboard',
+      '--no-open',
+      ...(hasWebDist ? ['--skip-build'] : []),
+      '--tui',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port)
+    ]
     await advanceBootProgress('backend.runtime', 'Resolving TchuekaM runtime', 28)
     const backend = await ensureRuntime(resolveHermesBackend(dashboardArgs))
     const hermesCwd = resolveHermesCwd()
-    const webDist = resolveWebDist()
 
     await advanceBootProgress('backend.spawn', `Starting TchuekaM backend via ${backend.label}`, 84)
     rememberLog(`Starting TchuekaM backend via ${backend.label}`)
@@ -3374,7 +3411,7 @@ async function startHermes() {
         ...backend.env,
         HERMES_DASHBOARD_SESSION_TOKEN: token,
         HERMES_DASHBOARD_TUI: '1',
-        HERMES_WEB_DIST: webDist,
+        ...(hasWebDist ? { HERMES_WEB_DIST: webDist } : {}),
         PYTHONUNBUFFERED: '1',
         PYTHONUTF8: '1'
       },
@@ -3439,6 +3476,7 @@ async function startHermes() {
     await advanceBootProgress('backend.wait', 'Waiting for TchuekaM backend to become ready', 90)
     await Promise.race([waitForHermes(baseUrl, token), backendStartFailed])
     backendReady = true
+    rememberLog('[boot] backend ready')
     updateBootProgress({
       phase: 'backend.ready',
       message: 'TchuekaM backend is ready. Finalizing desktop startup',
@@ -3671,6 +3709,56 @@ function createImageStudioWindow() {
 ipcMain.handle('hermes:open-image-studio', async () => {
   const win = createImageStudioWindow()
   return { ok: true, windowId: win?.id }
+})
+
+const STUDIO_CREDENTIALS_PATH = path.join(app.getPath('userData'), 'studio-credentials.json')
+
+function readStudioCredentials() {
+  try {
+    if (!fs.existsSync(STUDIO_CREDENTIALS_PATH)) return {}
+    const raw = fs.readFileSync(STUDIO_CREDENTIALS_PATH, 'utf8')
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStudioCredentials(creds) {
+  try {
+    fs.mkdirSync(path.dirname(STUDIO_CREDENTIALS_PATH), { recursive: true })
+    fs.writeFileSync(STUDIO_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8')
+  } catch (error) {
+    rememberLog(`Failed to write studio credentials: ${error.message}`)
+  }
+}
+
+ipcMain.handle('hermes:secure-secret:get', (_event, key) => {
+  if (!key || typeof key !== 'string') return ''
+  const creds = readStudioCredentials()
+  const secretObj = creds[key]
+  if (!secretObj) return ''
+  return decryptDesktopSecret(secretObj)
+})
+
+ipcMain.handle('hermes:secure-secret:set', (_event, key, value) => {
+  if (!key || typeof key !== 'string') return { ok: false }
+  const creds = readStudioCredentials()
+  if (!value) {
+    delete creds[key]
+  } else {
+    creds[key] = encryptDesktopSecret(String(value).trim())
+  }
+  writeStudioCredentials(creds)
+  return { ok: true }
+})
+
+ipcMain.handle('hermes:secure-secret:delete', (_event, key) => {
+  if (!key || typeof key !== 'string') return { ok: false }
+  const creds = readStudioCredentials()
+  delete creds[key]
+  writeStudioCredentials(creds)
+  return { ok: true }
 })
 
 ipcMain.handle('hermes:connection', async () => startHermes())
