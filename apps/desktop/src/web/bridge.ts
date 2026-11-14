@@ -28,6 +28,7 @@ import type {
   HermesSelectPathsOptions
 } from '@/global'
 import { webConfig } from '@/lib/platform'
+import { getStoredSupabaseAccessToken } from '@/lib/supabase-auth'
 
 const DEFAULT_FETCH_TIMEOUT_MS = 30_000
 const SESSION_HEADER = 'X-Hermes-Session-Token'
@@ -105,12 +106,15 @@ async function apiFetch<T>(request: HermesApiRequest): Promise<T> {
 
   let response: Response
 
+  const supabaseToken = request.path.startsWith('/api/v1/') ? getStoredSupabaseAccessToken() : null
+
   try {
     response = await fetch(url, {
       method: request.method || 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(webConfig.token ? { [SESSION_HEADER]: webConfig.token } : {})
+        ...(webConfig.token ? { [SESSION_HEADER]: webConfig.token } : {}),
+        ...(supabaseToken ? { Authorization: `Bearer ${supabaseToken}` } : {})
       },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
       signal: controller.signal

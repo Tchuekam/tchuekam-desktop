@@ -8,6 +8,8 @@ const TRUSTED_HOSTS = new Set([
   'app.tchuekam.com',
   'auth.tchuekam.com',
   'portal.tchuekam.com',
+  'tchuekam-agent-production.up.railway.app',
+  'tchuekam-auth-production.up.railway.app',
 ])
 
 export function isAllowedRedirectTarget(rawTarget?: string | null): boolean {
@@ -80,7 +82,9 @@ export function getDesktopLaunchUrl(session: Session | null): string | null {
     const host = window.location.hostname
     const isRemoteHost = host !== '' && host !== 'localhost' && host !== '127.0.0.1'
     if (isRemoteHost && (!configured || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(configured))) {
-      desktopBase = 'https://tchuekam.com'
+      desktopBase = host.endsWith('.up.railway.app')
+        ? 'https://tchuekam-agent-production.up.railway.app'
+        : 'https://tchuekam.com'
     }
   }
   if (!desktopBase) return null

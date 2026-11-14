@@ -16,6 +16,12 @@ interface ImportMetaEnv {
   readonly VITE_HERMES_APP_VERSION?: string
   /** '0' to unlock host-management surfaces in the web build. Default '1'. */
   readonly VITE_HERMES_DEMO?: string
+  /** Supabase project URL for SaaS account sync. */
+  readonly VITE_SUPABASE_URL?: string
+  /** Supabase public anon key for SaaS account sync. */
+  readonly VITE_SUPABASE_ANON_KEY?: string
+  /** Public URL of the Tchuekam Auth Portal (e.g. https://tchuekam-auth-production.up.railway.app). */
+  readonly VITE_AUTH_PORTAL_URL?: string
 }
 
 interface ImportMeta {

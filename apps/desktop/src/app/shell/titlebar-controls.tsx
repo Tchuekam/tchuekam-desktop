@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import type { ComponentProps, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { SupabaseAccountMenu } from '@/components/supabase-account-menu'
 import { Codicon } from '@/components/ui/codicon'
 import {
   DropdownMenu,
@@ -13,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { triggerHaptic } from '@/lib/haptics'
 import { Volume2, VolumeX } from '@/lib/icons'
-import { IS_LOCKED_DEMO } from '@/lib/platform'
+import { IS_LOCKED_DEMO, IS_WEB } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
 import { $fileBrowserOpen, $sidebarOpen, toggleFileBrowserOpen, toggleSidebarOpen } from '@/store/layout'
@@ -173,6 +174,7 @@ export function TitlebarControls({
         {visibleSystemToolsBeforeSettings.map(tool => (
           <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
         ))}
+        {IS_WEB ? <SupabaseAccountMenu /> : null}
         {IS_LOCKED_DEMO ? null : <ProfilesMenuButton navigate={navigate} />}
         {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
         <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />
