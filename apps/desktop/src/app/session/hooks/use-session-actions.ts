@@ -4,6 +4,7 @@ import type { NavigateFunction } from 'react-router-dom'
 
 import { deleteSession, getSessionMessages, setSessionArchived } from '@/hermes'
 import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
+import { IS_DESKTOP } from '@/lib/platform'
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
 import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
@@ -374,7 +375,7 @@ export function useSessionActions({
       }
 
       if (item.id === 'image-studio') {
-        if (window.hermesDesktop?.openImageStudioWindow) {
+        if (IS_DESKTOP && window.hermesDesktop?.openImageStudioWindow) {
           void window.hermesDesktop.openImageStudioWindow()
 
           return

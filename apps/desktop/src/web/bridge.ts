@@ -310,8 +310,9 @@ const bridge: DesktopBridge = {
   },
 
   openImageStudioWindow: async () => {
-    // No second BrowserWindow to open; the studio renders in the main view.
-    return { ok: false }
+    // In web, navigate to the studio route in the current window
+    window.location.hash = '#/image-studio'
+    return { ok: true }
   },
 
   fetchLinkTitle: async () => '',
