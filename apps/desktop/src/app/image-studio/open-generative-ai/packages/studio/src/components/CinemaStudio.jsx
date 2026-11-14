@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { generateImage, uploadFile } from "../muapi.js";
+import { confirmToast } from "../utils/confirmToast.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import MobileGenerationActions, {
   CopyContentIcon,
@@ -903,9 +904,9 @@ export default function CinemaStudio({
                     title="Delete"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm("Are you sure you want to delete this generated item?")) {
+                      confirmToast("Are you sure you want to delete this generated item?", () => {
                         setInternalHistory(prev => prev.filter((_, i) => i !== idx));
-                      }
+                      });
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-all border border-white/10"
                   >
@@ -955,9 +956,9 @@ export default function CinemaStudio({
                       label: "Delete",
                       danger: true,
                       onSelect: () => {
-                        if (confirm("Are you sure you want to delete this generated item?")) {
+                        confirmToast("Are you sure you want to delete this generated item?", () => {
                           setInternalHistory((prev) => prev.filter((_, i) => i !== idx));
-                        }
+                        });
                       },
                     },
                   ]}

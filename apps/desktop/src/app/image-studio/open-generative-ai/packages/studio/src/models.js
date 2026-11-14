@@ -1,5 +1,223 @@
-// Auto-generated from models_dump.json
+// Auto-generated from models_dump.json with authoritative TchueKAM FAL.ai & MuAPI models
 export const t2iModels = [
+  {
+    "id": "fal-ai/flux-2/klein/9b",
+    "name": "FLUX 2 Klein 9B",
+    "endpoint": "fal-ai/flux-2/klein/9b",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "<1s",
+    "strengths": "Fast, crisp text, primary production tier",
+    "price": "$0.006/MP"
+  },
+  {
+    "id": "fal-ai/flux-2-pro",
+    "name": "FLUX 2 Pro",
+    "endpoint": "fal-ai/flux-2-pro",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~6s",
+    "strengths": "Studio photorealism, professional quality",
+    "price": "$0.03/MP"
+  },
+  {
+    "id": "fal-ai/nano-banana-pro",
+    "name": "Nano Banana Pro (Gemini 3)",
+    "endpoint": "fal-ai/nano-banana-pro",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~8s",
+    "strengths": "Gemini 3 Pro, reasoning depth, text rendering",
+    "price": "$0.15/image"
+  },
+  {
+    "id": "fal-ai/z-image/turbo",
+    "name": "Z-Image Turbo",
+    "endpoint": "fal-ai/z-image/turbo",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~2s",
+    "strengths": "Bilingual EN/CN, fast generation",
+    "price": "$0.005/MP"
+  },
+  {
+    "id": "fal-ai/gpt-image-2",
+    "name": "GPT Image 2",
+    "endpoint": "fal-ai/gpt-image-2",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~20s",
+    "strengths": "SOTA text rendering, photorealism",
+    "price": "$0.04/image"
+  },
+  {
+    "id": "fal-ai/ideogram/v3",
+    "name": "Ideogram V3",
+    "endpoint": "fal-ai/ideogram/v3",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~5s",
+    "strengths": "Graphic design & typography",
+    "price": "$0.06/image"
+  },
+  {
+    "id": "fal-ai/recraft/v4/pro/text-to-image",
+    "name": "Recraft V4 Pro",
+    "endpoint": "fal-ai/recraft/v4/pro/text-to-image",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~8s",
+    "strengths": "Brand systems, vector & 3D styling",
+    "price": "$0.25/image"
+  },
+  {
+    "id": "fal-ai/krea/v2/medium/text-to-image",
+    "name": "Krea 2 Medium",
+    "endpoint": "fal-ai/krea/v2/medium/text-to-image",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the image."
+      },
+      "aspect_ratio": {
+        "enum": ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "default": "16:9"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~15s",
+    "strengths": "Illustration & artistic styles",
+    "price": "$0.03/image"
+  },
+  {
+    "id": "fal-ai/clarity-upscaler",
+    "name": "Clarity Upscaler",
+    "endpoint": "fal-ai/clarity-upscaler",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Quality hints for upscaling."
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~10s",
+    "strengths": "2x High-resolution studio upscaling",
+    "price": "$0.01/image"
+  },
   {
     "id": "nano-banana",
     "name": "Nano Banana",
@@ -3256,6 +3474,91 @@ export const getAspectRatiosForModel = (modelId) => {
 // Text-to-Video Models
 // ==========================================
 export const t2vModels = [
+  {
+    "id": "fal-ai/ltx-2.3-22b/text-to-video",
+    "name": "LTX 2.3 (22B)",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Video motion description"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~30s",
+    "strengths": "Fast 22B video with native audio",
+    "price": "Affordable"
+  },
+  {
+    "id": "fal-ai/pixverse/v6/text-to-video",
+    "name": "Pixverse v6",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Video motion description"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~45s",
+    "strengths": "Cinematic quality, 1-15s durations",
+    "price": "Affordable"
+  },
+  {
+    "id": "fal-ai/veo3.1",
+    "name": "Veo 3.1",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Video motion description"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~60s",
+    "strengths": "Google DeepMind photorealistic video",
+    "price": "Premium"
+  },
+  {
+    "id": "bytedance/seedance-2.0/text-to-video",
+    "name": "Seedance 2.0",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Video motion description"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~50s",
+    "strengths": "Smooth cinematic motion",
+    "price": "Premium"
+  },
+  {
+    "id": "fal-ai/kling-video/v3/4k/text-to-video",
+    "name": "Kling v3 4K",
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Video motion description"
+      }
+    },
+    "provider": "fal",
+    "provider_name": "FAL.ai",
+    "speed": "~90s",
+    "strengths": "4K ultra HD video generation",
+    "price": "Premium"
+  },
   {
     "id": "seedance-lite-t2v",
     "name": "Seedance Lite",

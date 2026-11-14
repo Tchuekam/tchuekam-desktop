@@ -1,0 +1,8 @@
+name: muapi
+version: 1.0.0
+description: "MuAPI image generation backend. Supports text-to-image and creative studios."
+author: TchueKAM
+kind: backend
+requires_env:
+  - MUAPI_KEY
+

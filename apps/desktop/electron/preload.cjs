@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   setPreviewShortcutActive: active => ipcRenderer.send('hermes:previewShortcutActive', Boolean(active)),
   openExternal: url => ipcRenderer.invoke('hermes:openExternal', url),
   openImageStudioWindow: () => ipcRenderer.invoke('hermes:open-image-studio'),
+  getSecureSecret: key => ipcRenderer.invoke('hermes:secure-secret:get', key),
+  setSecureSecret: (key, value) => ipcRenderer.invoke('hermes:secure-secret:set', key, value),
+  deleteSecureSecret: key => ipcRenderer.invoke('hermes:secure-secret:delete', key),
   fetchLinkTitle: url => ipcRenderer.invoke('hermes:fetchLinkTitle', url),
   settings: {
     getDefaultProjectDir: () => ipcRenderer.invoke('hermes:setting:defaultProjectDir:get'),

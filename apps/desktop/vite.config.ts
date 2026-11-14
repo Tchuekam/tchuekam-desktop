@@ -11,11 +11,25 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss()],
   build: {
-    // Keep desktop packaging stable: Shiki ships many dynamic chunks by
-    // default, and electron-builder can OOM scanning thousands of files.
-    rolldownOptions: {
+    rollupOptions: {
       output: {
-        codeSplitting: false
+        manualChunks(id) {
+          if (id.includes('node_modules/shiki') || id.includes('node_modules/@shikijs')) {
+            return 'vendor-shiki'
+          }
+          if (id.includes('Vibe-Workflow') || id.includes('workflow-builder')) {
+            return 'studio-workflow-builder'
+          }
+          if (id.includes('Open-AI-Design-Agent') || id.includes('design-agent')) {
+            return 'studio-design-agent'
+          }
+          if (id.includes('Open-Poe-AI') || id.includes('packages/agents')) {
+            return 'studio-agents'
+          }
+          if (id.includes('packages/studio/src/models')) {
+            return 'studio-models'
+          }
+        }
       }
     }
   },

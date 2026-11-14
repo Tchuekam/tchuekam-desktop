@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
+import { confirmToast } from "../utils/confirmToast.js";
 import { runMotionGraphics, runMotionGraphicsEdit } from "../muapi.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
@@ -386,9 +387,9 @@ export default function VibeMotionStudio({
                     title="Delete"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm("Are you sure you want to delete this generated item?")) {
+                      confirmToast("Are you sure you want to delete this generated item?", () => {
                         setHistory(prev => prev.filter((_, i) => i !== idx));
-                      }
+                      });
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-all border border-white/10"
                   >
@@ -426,9 +427,9 @@ export default function VibeMotionStudio({
                       label: "Delete",
                       danger: true,
                       onSelect: () => {
-                        if (confirm("Are you sure you want to delete this generated item?")) {
+                        confirmToast("Are you sure you want to delete this generated item?", () => {
                           setHistory((prev) => prev.filter((_, i) => i !== idx));
-                        }
+                        });
                       },
                     },
                   ]}

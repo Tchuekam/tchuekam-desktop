@@ -1,3 +1,4 @@
+import { showToast } from '../lib/toast.js';
 import { muapi } from '../lib/muapi.js';
 import {
     t2iModels, getAspectRatiosForModel, getResolutionsForModel, getQualityFieldForModel,
@@ -1158,12 +1159,12 @@ export function ImageStudio() {
         const prompt = textarea.value.trim();
         if (imageMode) {
             if (uploadedImageUrls.length === 0) {
-                alert('Please upload a reference image first.');
+                showToast('Please upload a reference image first.', 'error');
                 return;
             }
         } else {
             if (!prompt) {
-                alert('Please enter a prompt to generate an image.');
+                showToast('Please enter a prompt to generate an image.', 'error');
                 return;
             }
         }
@@ -1171,7 +1172,7 @@ export function ImageStudio() {
         // ── Local inference path ──────────────────────────────────────────────
         if (useLocalModel) {
             const lm = getLocalModelById(selectedLocalModel);
-            if (!lm) { alert('No local model selected.'); return; }
+            if (!lm) { showToast('No local model selected.', 'error'); return; }
 
             hero.classList.add('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
             generateBtn.disabled = true;

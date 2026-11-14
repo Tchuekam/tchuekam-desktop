@@ -1,5 +1,21 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getLipSyncModelById } from './models.js';
 
+export class AuthError extends Error {
+    constructor(message, status = 401, detail = '') {
+        super(message);
+        this.name = 'AuthError';
+        this.status = status;
+        this.detail = detail;
+        this.isAuthError = true;
+    }
+}
+
+function notifyAuthRequired(status, detail) {
+    if (typeof window === 'undefined') return;
+    if (status !== 401 && status !== 403) return;
+    window.dispatchEvent(new CustomEvent('muapi:auth-required', { detail: { status, message: detail } }));
+}
+
 export class MuapiClient {
     constructor() {
         // Ideally user provides this in settings
@@ -8,7 +24,10 @@ export class MuapiClient {
 
     getKey() {
         const key = window.__MUAPI_KEY__ || localStorage.getItem('muapi_key');
-        if (!key) throw new Error('API Key missing. Please set it in Settings.');
+        if (!key) {
+            notifyAuthRequired(401, 'API Key missing. Please set it in Settings.');
+            throw new AuthError('API Key missing. Please set it in Settings.', 401);
+        }
         return key;
     }
 
@@ -140,7 +159,11 @@ export class MuapiClient {
                 if (!response.ok) {
                     const errText = await response.text();
                     console.warn(`[Muapi] Poll error (${response.status}):`, errText);
-                    // Continue polling on non-fatal errors
+                    notifyAuthRequired(response.status, errText);
+                    if (response.status === 401 || response.status === 403) {
+                        throw new AuthError(`Authentication failed (${response.status})`, response.status, errText);
+                    }
+                    // Continue polling on non-fatal 5xx server errors
                     if (response.status >= 500) continue;
                     throw new Error(`Poll Failed: ${response.status} - ${errText.slice(0, 100)}`);
                 }
@@ -160,7 +183,7 @@ export class MuapiClient {
 
                 // Otherwise (processing, pending, etc.) keep polling
             } catch (error) {
-                if (attempt === maxAttempts) throw error;
+                if (error.isAuthError || attempt === maxAttempts) throw error;
                 console.warn('[Muapi] Poll attempt failed, retrying...', error.message);
             }
         }
@@ -408,6 +431,10 @@ export class MuapiClient {
 
         if (!response.ok) {
             const errText = await response.text();
+            notifyAuthRequired(response.status, errText);
+            if (response.status === 401 || response.status === 403) {
+                throw new AuthError(`File upload authentication failed (${response.status})`, response.status, errText);
+            }
             throw new Error(`File upload failed: ${response.status} - ${errText.slice(0, 100)}`);
         }
 

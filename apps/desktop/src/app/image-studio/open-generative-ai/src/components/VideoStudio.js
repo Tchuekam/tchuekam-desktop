@@ -6,6 +6,7 @@ import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
 import { localAI, isLocalAIAvailable } from '../lib/localInferenceClient.js';
 import { isWan2gpModelId, getLocalModelById, localT2VModels, localI2VModels } from '../lib/localModels.js';
+import { showToast } from '../lib/toast.js';
 
 // Promotes a wan2gp catalog entry (lib/localModels.js shape) into the
 // `inputs`-shaped descriptor the Video Studio dropdowns/controls expect.
@@ -334,7 +335,7 @@ export function VideoStudio() {
         } catch (err) {
             console.error('[VideoStudio] Video upload failed:', err);
             showVideoIcon();
-            alert(`Video upload failed: ${err.message}`);
+            showToast(`Video upload failed: ${err.message}`, 'error');
         }
         videoFileInput.value = '';
     };
@@ -1087,30 +1088,30 @@ export function VideoStudio() {
 
         if (v2vMode) {
             if (!uploadedVideoUrl) {
-                alert('Please upload a video first.');
+                showToast('Please upload a video first.', 'error');
                 return;
             }
             if (model?.imageField && !uploadedImageUrl) {
-                alert('Please upload a reference image for motion control.');
+                showToast('Please upload a reference image for motion control.', 'error');
                 return;
             }
             if (model?.promptRequired && !prompt) {
-                alert('Please describe the motion you want.');
+                showToast('Please describe the motion you want.', 'error');
                 return;
             }
         } else if (isExtendMode) {
             if (!lastGenerationId) {
-                alert('No Seedance 2.0 generation found to extend. Generate a video first.');
+                showToast('No Seedance 2.0 generation found to extend. Generate a video first.', 'error');
                 return;
             }
         } else if (imageMode) {
             if (!uploadedImageUrl) {
-                alert('Please upload a start frame image first.');
+                showToast('Please upload a start frame image first.', 'error');
                 return;
             }
         } else {
             if (!prompt) {
-                alert('Please enter a prompt to generate a video.');
+                showToast('Please enter a prompt to generate a video.', 'error');
                 return;
             }
         }

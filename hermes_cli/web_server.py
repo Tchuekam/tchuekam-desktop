@@ -2130,6 +2130,7 @@ _CREDENTIAL_PROBES: dict[str, tuple[str, str]] = {
     "OPENAI_API_KEY": ("https://api.openai.com/v1/models", "bearer"),
     "XAI_API_KEY": ("https://api.x.ai/v1/models", "bearer"),
     "GEMINI_API_KEY": ("https://generativelanguage.googleapis.com/v1beta/models", "query"),
+    "MUAPI_KEY": ("https://api.muapi.ai/api/v1/account/balance", "x-api-key"),
 }
 
 
@@ -2161,6 +2162,25 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
         except Exception:
             return {"ok": False, "reachable": False, "message": f"Could not reach {url}."}
 
+    if key == "FAL_KEY":
+        # fal.ai has no free "whoami" endpoint. An empty request to a queue
+        # endpoint is rejected *before* any job is created or billed: a bad key
+        # gets 401/403, a good key gets 400/422 (missing prompt).
+        try:
+            with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
+                resp = client.post(
+                    "https://queue.fal.run/fal-ai/flux/schnell",
+                    headers={"Authorization": f"Key {value}", "Content-Type": "application/json"},
+                    json={},
+                )
+        except Exception:
+            return {"ok": False, "reachable": False, "message": "Could not reach fal.ai to verify the key."}
+        if resp.status_code in (401, 403):
+            return {"ok": False, "reachable": True, "message": "That API key was rejected. Double-check it and try again."}
+        if resp.status_code in (400, 422, 429):
+            return {"ok": True, "reachable": True, "message": ""}
+        return {"ok": False, "reachable": False, "message": f"Could not verify the key (HTTP {resp.status_code})."}
+
     probe = _CREDENTIAL_PROBES.get(key)
     if not probe:
         # No probe for this provider — can't validate, don't block.
@@ -2171,6 +2191,8 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
     params = {}
     if auth == "bearer":
         headers["Authorization"] = f"Bearer {value}"
+    elif auth == "x-api-key":
+        headers["x-api-key"] = value
     else:
         params["key"] = value
 
@@ -7228,18 +7250,24 @@ def _normalise_prefix(raw: Optional[str]) -> str:
 
 class ImageGenerateRequest(BaseModel):
     prompt: str
-    style: str
-    aspectRatio: str
-    quality: str
-    model: str
+    style: str = "photorealistic"
+    aspectRatio: str = "16:9"
+    quality: str = "medium"
+    model: Optional[str] = None
+    provider: Optional[str] = None
     numImages: int = 1
+    workspaceId: Optional[str] = None
+    conversationId: Optional[str] = None
+    clientRequestId: Optional[str] = None
 
 class ImageEditRequest(BaseModel):
     image: str
     mask: Optional[str] = None
-    operation: str
+    operation: str = "upscale"
     prompt: Optional[str] = None
     options: Optional[Dict[str, Any]] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 class ImageAnalyzeRequest(BaseModel):
     image: str
@@ -7251,10 +7279,25 @@ class ImageOCRRequest(BaseModel):
 
 class LibraryItemSave(BaseModel):
     id: str
-    name: str
+    name: Optional[str] = None
     url: str
+    prompt: Optional[str] = None
+    provider: Optional[str] = "fal"
+    model: Optional[str] = None
+    studioType: Optional[str] = "image"
+    parameters: Optional[Dict[str, Any]] = None
+    dimensions: Optional[Dict[str, int]] = None
+    duration: Optional[float] = None
+    mimeType: Optional[str] = None
+    localPath: Optional[str] = None
+    userId: Optional[str] = "default"
+    workspaceId: Optional[str] = "default"
+    conversationId: Optional[str] = None
+    jobId: Optional[str] = None
+    status: Optional[str] = "completed"
     tags: List[str] = []
     favorite: bool = False
+    createdAt: Optional[int] = None
 
 class SavedPromptSave(BaseModel):
     id: str
@@ -7269,18 +7312,8 @@ def _get_image_studio_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-def _load_library() -> List[Dict[str, Any]]:
-    p = _get_image_studio_dir() / "library.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return []
 
-def _save_library(data: List[Dict[str, Any]]):
-    p = _get_image_studio_dir() / "library.json"
-    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
 
 def _load_prompts() -> List[Dict[str, Any]]:
     p = _get_image_studio_dir() / "prompts.json"
@@ -7296,103 +7329,288 @@ def _save_prompts(data: List[Dict[str, Any]]):
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+@app.get("/api/images/models")
+async def api_images_models():
+    try:
+        from agent.image_studio_service import get_synchronized_model_catalog
+        return {"success": True, "catalog": get_synchronized_model_catalog()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/images/providers")
+async def api_images_providers():
+    try:
+        from agent.image_studio_service import get_providers_info
+        return {"success": True, "providers": get_providers_info()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/api/images/generate")
 async def api_images_generate(req: ImageGenerateRequest):
+    """Run one generation as a persisted job (REQUESTED -> ... -> COMPLETED/FAILED).
+
+    ``clientRequestId`` makes the call idempotent: re-sending it returns the
+    existing job instead of generating (and billing) again.
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    import agent.image_studio_service as studio
+
     try:
-        from agent.image_gen_registry import get_active_provider
-        provider = get_active_provider()
-        if provider and provider.is_available():
-            res = provider.generate(prompt=req.prompt, aspect_ratio=req.aspectRatio)
-            if res.get("success"):
-                image_url = res.get("image")
-                if image_url:
-                    if os.path.exists(image_url):
-                        with open(image_url, "rb") as f:
-                            b64 = base64.b64encode(f.read()).decode("utf-8")
-                        return {"success": True, "images": [f"data:image/png;base64,{b64}"]}
-                    return {"success": True, "images": [image_url]}
+        job, created = studio.create_job(
+            "image",
+            {"prompt": req.prompt, "model": req.model, "provider": req.provider,
+             "aspectRatio": req.aspectRatio, "quality": req.quality, "style": req.style},
+            workspace_id=req.workspaceId,
+            client_request_id=req.clientRequestId,
+        )
+        if not created:
+            asset = None
+            if job.get("assetIds"):
+                asset = studio.get_asset(job["assetIds"][0], req.workspaceId)
+            return _image_job_response(job, asset, duplicate=True)
+
+        from agent.image_gen_registry import get_active_provider, get_provider
+        from hermes_cli.plugins import _ensure_plugins_discovered
+
+        _ensure_plugins_discovered()
+        name = (req.provider or "").strip().lower()
+        provider = get_provider(name) if name else (get_active_provider() or get_provider("fal"))
+        # An explicit provider is never silently swapped for another one.
+
+        result = await run_in_threadpool(
+            studio.execute_generation,
+            job["id"],
+            provider,
+            req.prompt,
+            model=req.model,
+            parameters={"aspectRatio": req.aspectRatio, "quality": req.quality, "style": req.style},
+            workspace_id=req.workspaceId,
+            conversation_id=req.conversationId,
+        )
+        return _image_job_response(result["job"], result["asset"])
     except Exception as e:
-        _log.warning("Image provider call failed, falling back: %s", e)
+        _log.error("Image generation failed: %s", e, exc_info=True)
+        etype, msg = studio.normalize_provider_error(e)
+        return {"success": False, "error": msg, "error_type": etype}
 
-    import random
-    colors = {
-        "photorealistic": ["#1A1A2E", "#16213E", "#0F3460"],
-        "anime": ["#FFB7B2", "#FFDAC1", "#E2F0CB"],
-        "cinematic": ["#111111", "#1B2A47", "#0A1931"],
-        "watercolor": ["#E8F0FE", "#F6E7D8", "#F5C7A9"],
-        "sketch": ["#F8F9FA", "#DEE2E6", "#6C757D"],
-        "pixel art": ["#3D0066", "#5E00B8", "#190033"],
-        "3d render": ["#6A0572", "#AB0885", "#350136"],
-        "oil painting": ["#3F2B96", "#A8C0FF", "#3A6073"],
-        "logo": ["#FFFFFF", "#000000", "#12131C"],
-        "icon": ["#3E54AC", "#BFACE2", "#ECF2FF"],
-        "flat illustration": ["#54B435", "#82CD47", "#F0FF42"],
-        "concept art": ["#2C3E50", "#3498DB", "#2980B9"]
+
+def _image_job_response(job: Dict[str, Any], asset: Optional[Dict[str, Any]], duplicate: bool = False) -> Dict[str, Any]:
+    """Shape a job (+asset) into the JSON the desktop/web clients consume."""
+    ok = job.get("state") == "COMPLETED" and asset is not None
+    out: Dict[str, Any] = {
+        "success": ok,
+        "jobId": job.get("id"),
+        "state": job.get("state"),
+        "duplicate": duplicate,
     }
-    selected_colors = colors.get(req.style.lower(), ["#8B46FF", "#3D7BFF", "#FF5D73"])
-    
-    images = []
-    for i in range(req.numImages):
-        rand_id = random.randint(100, 999)
-        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%">
-            <defs>
-                <linearGradient id="g{i}_{rand_id}" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="{selected_colors[0]}" />
-                    <stop offset="50%" stop-color="{selected_colors[1] if len(selected_colors) > 1 else '#8B46FF'}" />
-                    <stop offset="100%" stop-color="{selected_colors[2] if len(selected_colors) > 2 else '#FF5D73'}" />
-                </linearGradient>
-                <filter id="shadow">
-                    <feDropShadow dx="2" dy="2" stdDeviation="5" flood-opacity="0.5"/>
-                </filter>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#g{i}_{rand_id})" />
-            <circle cx="{200 + i*50}" cy="250" r="120" fill="white" fill-opacity="0.1" filter="url(#shadow)" />
-            <rect x="400" y="150" width="200" height="200" rx="20" fill="white" fill-opacity="0.08" transform="rotate({15 + i*10}, 500, 250)" />
-            <polygon points="300,400 450,200 600,400" fill="white" fill-opacity="0.05" />
-            <rect x="50" y="480" width="700" height="80" rx="10" fill="black" fill-opacity="0.4" />
-            <text x="70" y="515" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill-opacity="0.9">Prompt: {req.prompt[:75] + '...' if len(req.prompt) > 75 else req.prompt}</text>
-            <text x="70" y="540" fill="white" font-family="system-ui, sans-serif" font-size="12" fill-opacity="0.6">{req.style.title()} Style | {req.aspectRatio} | {req.quality.title()} Quality</text>
-        </svg>"""
-        b64_svg = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-        images.append(f"data:image/svg+xml;base64,{b64_svg}")
+    if ok:
+        url = asset.get("url") or ""
+        out["images"] = [url] if url else []
+        out["asset"] = asset
+        out["provider"] = asset.get("provider")
+        out["model"] = asset.get("model")
+    else:
+        out["error"] = job.get("error") or "Generation did not complete."
+        out["error_type"] = job.get("errorType") or "generation_failed"
+    return out
 
-    return {"success": True, "images": images}
+
+@app.get("/api/images/jobs/{job_id}")
+async def api_images_job_get(job_id: str, workspaceId: Optional[str] = None):
+    import agent.image_studio_service as studio
+
+    job = studio.get_job(job_id, workspaceId)
+    if not job:
+        return JSONResponse({"success": False, "error": "Job not found."}, status_code=404)
+    asset = studio.get_asset(job["assetIds"][0], workspaceId) if job.get("assetIds") else None
+    return _image_job_response(job, asset)
+
+
+@app.post("/api/images/jobs/{job_id}/cancel")
+async def api_images_job_cancel(job_id: str, workspaceId: Optional[str] = None):
+    import agent.image_studio_service as studio
+
+    job = studio.cancel_job(job_id, workspaceId)
+    if not job:
+        return JSONResponse({"success": False, "error": "Job not found."}, status_code=404)
+    return {"success": True, "jobId": job_id, "state": job.get("state")}
+
+
+@app.post("/api/images/assets/{asset_id}/materialize")
+async def api_images_asset_materialize(asset_id: str, workspaceId: Optional[str] = None):
+    """Make the asset available as a local file (chat ``image.attach`` needs a path)."""
+    from starlette.concurrency import run_in_threadpool
+
+    import agent.image_studio_service as studio
+
+    try:
+        path = await run_in_threadpool(studio.materialize_asset, asset_id, workspaceId)
+    except Exception as e:
+        _log.warning("Asset materialize failed for %s: %s", asset_id, e)
+        return JSONResponse({"success": False, "error": "The asset could not be retrieved."}, status_code=502)
+    if path is None:
+        return JSONResponse({"success": False, "error": "Asset not found."}, status_code=404)
+    return {"success": True, "path": str(path)}
+
+
+@app.get("/api/images/assets/{asset_id}/data")
+async def api_images_asset_data(asset_id: str, workspaceId: Optional[str] = None):
+    """Return a locally stored asset as a data URL (for assets with no remote URL)."""
+    from starlette.concurrency import run_in_threadpool
+
+    import agent.image_studio_service as studio
+
+    try:
+        data = await run_in_threadpool(studio.read_asset_data_url, asset_id, workspaceId)
+    except Exception as e:
+        _log.warning("Asset data read failed for %s: %s", asset_id, e)
+        return JSONResponse({"success": False, "error": "The asset could not be read."}, status_code=502)
+    if data is None:
+        return JSONResponse({"success": False, "error": "Asset not found."}, status_code=404)
+    return {"success": True, **data}
 
 
 @app.post("/api/images/edit")
 async def api_images_edit(req: ImageEditRequest):
-    op_label = req.operation.replace("-", " ").title()
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%">
-        <rect width="100%" height="100%" fill="#12131C" />
-        <circle cx="400" cy="300" r="200" fill="#8B46FF" fill-opacity="0.2" />
-        <text x="400" y="280" fill="white" font-family="system-ui, sans-serif" font-size="24" font-weight="bold" text-anchor="middle">AI Image Editor</text>
-        <text x="400" y="320" fill="#a3a3a3" font-family="system-ui, sans-serif" font-size="16" text-anchor="middle">Applied: {op_label}</text>
-        {f'<text x="400" y="360" fill="#3D7BFF" font-family="system-ui, sans-serif" font-size="14" text-anchor="middle">Prompt: {req.prompt}</text>' if req.prompt else ''}
-    </svg>"""
-    b64_svg = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-    return {"success": True, "image": f"data:image/svg+xml;base64,{b64_svg}"}
+    try:
+        from agent.image_studio_service import register_asset
+
+        if req.operation == "upscale":
+            import tools.image_generation_tool as _it
+            upscaled = _it._upscale_image(req.image, req.prompt or "high quality, detailed")
+            if upscaled and "url" in upscaled:
+                asset = register_asset(
+                    url=upscaled["url"],
+                    prompt=req.prompt or "Upscaled Image",
+                    provider="fal",
+                    model=_it.UPSCALER_MODEL,
+                    studio_type="image",
+                    parameters={"operation": "upscale"},
+                    status="completed",
+                )
+                return {"success": True, "image": upscaled["url"], "asset": asset}
+            return {
+                "success": False,
+                "error": "Upscaling failed. Ensure FAL_KEY is configured.",
+                "error_type": "upscale_failed",
+            }
+
+        return {
+            "success": False,
+            "error": f"Editing operation '{req.operation}' is not supported by the active provider.",
+            "error_type": "unsupported_operation",
+        }
+    except Exception as e:
+        _log.error("Image edit failed: %s", e, exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        }
+
+
+_VISION_MODE_PROMPTS = {
+    "describe": "Describe this image accurately and concisely. Only state what is visible.",
+    "diagram": "This is a diagram. Describe its structure: the components, how they connect, and the flow. Only state what is visible.",
+    "ui": "This is a user interface screenshot. List the visible UI components and their layout. Only state what is visible.",
+    "objects": "List the distinct objects visible, with approximate counts. Do not guess at things you cannot see.",
+    "scene": "Analyze the scene: setting, lighting, composition. Only state what is visible.",
+}
+
+
+async def _run_vision(image: str, prompt: str) -> Dict[str, Any]:
+    """Run the real vision backend on an http(s)/data-URL image.
+
+    Local filesystem paths from the client are rejected (arbitrary file read).
+    Returns ``{"success": False, "error_type": "vision_unavailable", ...}`` when
+    no vision model is configured — never canned text.
+    """
+    import re
+    import uuid
+
+    from tools.vision_tools import check_vision_requirements, vision_analyze_tool
+
+    if not check_vision_requirements():
+        return {"success": False, "error_type": "vision_unavailable",
+                "error": "No vision-capable model is configured. Set up a vision provider in Settings."}
+
+    image = (image or "").strip()
+    tmp_path: Optional[Path] = None
+    try:
+        if image.startswith("data:"):
+            m = re.match(r"data:(image/[\w.+-]+);base64,(.*)$", image, re.DOTALL)
+            if not m:
+                return {"success": False, "error_type": "invalid_image", "error": "Unsupported image data."}
+            raw_bytes = base64.b64decode(m.group(2))
+            if len(raw_bytes) > 20 * 1024 * 1024:
+                return {"success": False, "error_type": "invalid_image", "error": "Image is larger than 20 MB."}
+            ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(m.group(1), "png")
+            from agent.image_studio_service import get_image_studio_dir
+            tmp_path = get_image_studio_dir() / f"vision_{uuid.uuid4().hex}.{ext}"
+            tmp_path.write_bytes(raw_bytes)
+            target = str(tmp_path)
+        elif image.startswith(("http://", "https://")):
+            from tools.url_safety import is_safe_url
+            if not is_safe_url(image):
+                return {"success": False, "error_type": "invalid_image", "error": "That image URL is not allowed."}
+            target = image
+        else:
+            return {"success": False, "error_type": "invalid_image",
+                    "error": "Provide the image as an https URL or an uploaded image."}
+
+        result = json.loads(await vision_analyze_tool(target, prompt))
+        if not result.get("success"):
+            return {"success": False, "error_type": "vision_failed",
+                    "error": result.get("analysis") or "Vision analysis failed."}
+        return {"success": True, "text": result.get("analysis") or ""}
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+
+def _dominant_colors(image_data_url: str, count: int = 5) -> List[str]:
+    """Real palette extraction with Pillow (no model needed)."""
+    import io
+    import re
+
+    from PIL import Image
+
+    m = re.match(r"data:image/[\w.+-]+;base64,(.*)$", image_data_url.strip(), re.DOTALL)
+    if not m:
+        return []
+    img = Image.open(io.BytesIO(base64.b64decode(m.group(1)))).convert("RGB")
+    img.thumbnail((96, 96))
+    quant = img.quantize(colors=count, method=Image.Quantize.MEDIANCUT)
+    palette = quant.getpalette() or []
+    counts = sorted(quant.getcolors() or [], reverse=True)
+    return ["#%02X%02X%02X" % tuple(palette[i * 3:i * 3 + 3]) for _, i in counts[:count]]
 
 
 @app.post("/api/images/analyze")
 async def api_images_analyze(req: ImageAnalyzeRequest):
-    colors = ["#1A1A2E", "#16213E", "#0F3460", "#E94560", "#FFFFFF"]
-    if req.mode == "color":
-        result = "Dominant color palette extracted from the uploaded image. The colors are harmoniously distributed, representing a modern dark tech style with vibrant red accents."
-    elif req.mode == "describe":
-        result = "The image is a high-resolution, professionally composed visual containing geometric elements, abstract gradients, and soft lighting overlays. The central composition is centered with circular and rectangular shape definitions, creating a balanced and premium desktop UI environment."
-    elif req.mode == "qa":
-        q = req.question or "What is in this image?"
-        result = f"Regarding your question '{q}': The image contains abstract layered shapes with purple, blue, and dark pink gradients. It has a modern visual design typical of premium technology illustrations and product banners."
-    elif req.mode == "diagram":
-        result = "Diagram Analysis:\n- Flow Architecture: Central nodes connect circular elements with high opacity to side rectangles.\n- Key Components: 1. Core Hub (Center), 2. Side Panel components, 3. Connection channels.\n- Visual representation of a modular system routing data in a low-latency pipeline."
-    elif req.mode == "ui":
-        result = "UI Components Identified:\n- Sidebar Nav container (left-aligned with custom icons)\n- Primary Action Button (gradient background at center-bottom)\n- Main Panel viewport showing active workspace canvas\n- Control panels on the right side."
-    elif req.mode == "objects":
-        result = "Objects Detected:\n- Circular gradient bubble (qty: 1, confidence: 98%)\n- Rounded container panel (qty: 1, confidence: 95%)\n- UI control buttons (qty: 4, confidence: 91%)"
-    else:
-        result = "Scene Analysis: A high-end workspace scene featuring soft, ambient light sources casting beautiful gradients. The setup is extremely clean, minimalist, and optimized for creative work."
+    mode = (req.mode or "describe").lower()
+    if mode == "color":
+        try:
+            colors = _dominant_colors(req.image)
+        except Exception as e:
+            _log.warning("Palette extraction failed: %s", e)
+            colors = []
+        if not colors:
+            return {"success": False, "error_type": "invalid_image",
+                    "error": "Could not read colors from that image (upload it as an image file)."}
+        return {"success": True, "colors": colors, "result": "Dominant colors: " + ", ".join(colors)}
 
-    return {"success": True, "result": result, "colors": colors}
+    if mode == "qa":
+        prompt = (req.question or "").strip() or "What is in this image?"
+    else:
+        prompt = _VISION_MODE_PROMPTS.get(mode, _VISION_MODE_PROMPTS["describe"])
+    out = await _run_vision(req.image, prompt)
+    if not out["success"]:
+        return out
+    return {"success": True, "result": out["text"], "colors": []}
 
 
 def _extract_pdf_bytes_text(pdf_bytes: bytes) -> str:
@@ -7446,27 +7664,22 @@ async def api_images_ocr(req: ImageOCRRequest):
     raw_img = (req.image or "").strip()
     if raw_img.startswith("data:application/pdf;base64,"):
         try:
-            pdf_b64 = raw_img.split(",", 1)[1]
-            extracted = _extract_pdf_bytes_text(base64.b64decode(pdf_b64))
-            if extracted:
-                return {"success": True, "text": extracted}
+            extracted = _extract_pdf_bytes_text(base64.b64decode(raw_img.split(",", 1)[1]))
         except Exception:
-            pass
-    extracted_text = (
-        "TchuekaM Image Studio OCR Result\n"
-        "=================================\n"
-        "Date: 2026-07-17\n"
-        "Invoice No: INV-98124\n\n"
-        "Description          | Qty | Price (FCFA)\n"
-        "---------------------|-----|-------------\n"
-        "AI Image Generation  |  10 |   5,000\n"
-        "AI Image Inpainting  |   5 |   2,500\n"
-        "OCR Text Extraction  |  20 |   1,000\n\n"
-        "Total Amount: 8,500 FCFA\n"
-        "Payment Method: Mobile Money (MoMo)\n"
-        "Thank you for your business!"
+            extracted = ""
+        if extracted:
+            return {"success": True, "text": extracted}
+        return {"success": False, "error_type": "no_text_layer",
+                "error": "This PDF has no embedded text layer; export a page as an image to OCR it."}
+
+    out = await _run_vision(
+        raw_img,
+        "Transcribe all visible text exactly as written, preserving line breaks. "
+        "Mark anything unclear as [illegible]. Never guess. Output only the transcription.",
     )
-    return {"success": True, "text": extracted_text}
+    if not out["success"]:
+        return out
+    return {"success": True, "text": out["text"]}
 
 
 class BusinessOcrRequest(BaseModel):
@@ -7555,31 +7768,71 @@ async def api_business_ai(req: BusinessAiRequest):
 
 
 @app.get("/api/images/library")
-async def api_images_library_get():
-    items = _load_library()
-    return {"success": True, "items": items}
+async def api_images_library_get(
+    studioType: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    search: Optional[str] = None,
+    workspaceId: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    from agent.image_studio_service import list_assets
+
+    try:
+        items = list_assets(
+            studio_type=studioType, provider=provider, model=model, search=search,
+            workspace_id=workspaceId, limit=min(max(limit, 1), 500), offset=max(offset, 0),
+        )
+    except Exception as e:
+        _log.error("Failed to list studio library assets: %s", e)
+        return JSONResponse({"success": False, "error": "Could not read the asset history."}, status_code=500)
+    # Never ship a local filesystem path to the client; expose only whether bytes exist.
+    safe = []
+    for it in items:
+        it = dict(it)
+        it["hasLocalFile"] = bool(it.pop("localPath", None))
+        safe.append(it)
+    return {"success": True, "items": safe}
 
 
 @app.post("/api/images/library")
 async def api_images_library_save(item: LibraryItemSave):
-    items = _load_library()
-    existing_idx = next((i for i, x in enumerate(items) if x["id"] == item.id), None)
-    new_item = item.dict()
-    if existing_idx is not None:
-        new_item["createdAt"] = items[existing_idx].get("createdAt", int(time.time() * 1000))
-        items[existing_idx] = new_item
-    else:
-        new_item["createdAt"] = int(time.time() * 1000)
-        items.append(new_item)
-    _save_library(items)
-    return {"success": True, "item": new_item}
+    from agent.image_studio_service import register_asset
+
+    try:
+        saved = register_asset(
+            asset_id=item.id, url=item.url, prompt=item.prompt or item.name or "",
+            provider=item.provider or "fal", model=item.model or "default",
+            studio_type=item.studioType or "image", parameters=item.parameters,
+            dimensions=item.dimensions, duration=item.duration, mime_type=item.mimeType,
+            user_id=item.userId or "default", workspace_id=item.workspaceId or "default",
+            conversation_id=item.conversationId, job_id=item.jobId,
+            status=item.status or "completed", tags=item.tags, favorite=item.favorite,
+        )  # client-supplied localPath is intentionally ignored
+    except PermissionError:
+        return JSONResponse({"success": False, "error": "Asset id is not available."}, status_code=409)
+    except ValueError as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=422)
+    except Exception as e:
+        _log.error("Failed to save asset: %s", e)
+        return JSONResponse({"success": False, "error": "Could not save the asset."}, status_code=500)
+    saved = dict(saved)
+    saved["hasLocalFile"] = bool(saved.pop("localPath", None))
+    return {"success": True, "item": saved}
 
 
 @app.delete("/api/images/library/{item_id}")
-async def api_images_library_delete(item_id: str):
-    items = _load_library()
-    filtered = [x for x in items if x["id"] != item_id]
-    _save_library(filtered)
+async def api_images_library_delete(item_id: str, workspaceId: Optional[str] = None):
+    from agent.image_studio_service import delete_asset
+
+    try:
+        deleted = delete_asset(item_id, workspace_id=workspaceId)
+    except Exception as e:
+        _log.error("Failed to delete asset: %s", e)
+        return JSONResponse({"success": False, "error": "Could not delete the asset."}, status_code=500)
+    if not deleted:
+        return JSONResponse({"success": False, "error": "Asset not found."}, status_code=404)
     return {"success": True}
 
 

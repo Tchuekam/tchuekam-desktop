@@ -1,4 +1,5 @@
 
+import { showToast } from '../lib/toast.js';
 import { muapi } from '../lib/muapi.js';
 import { CameraControls } from './CameraControls.js';
 import { buildNanoBananaPrompt, CAMERA_MAP, LENS_MAP, FOCAL_PERSPECTIVE, APERTURE_EFFECT } from '../lib/promptUtils.js';
@@ -584,7 +585,7 @@ export function CinemaStudio() {
 
         } catch (e) {
             console.error(e);
-            alert(t('cinema.generationFailed') + e.message);
+            showToast(t('cinema.generationFailed') + e.message, 'error');
         } finally {
             generateBtn.disabled = false;
             generateBtn.innerHTML = t('cinema.generateBtn');
