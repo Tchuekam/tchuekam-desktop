@@ -52,6 +52,36 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # version and file sizes. Read-only release metadata; it is what stops
     # the download page advertising a platform that has no release.
     "/api/download-info",
-# Installer downloads. Derived from hermes_cli.download_targets so a target the
-# endpoint understands can never be one the allowlist silently 401s.
+    # Public API health check alias alongside /api/health.
+    "/api/v1/health",
+    # Installer downloads. Derived from hermes_cli.download_targets so a target the
+    # endpoint understands can never be one the allowlist silently 401s.
 } | public_download_paths())
+
+
+_SAAS_PUBLIC_PATHS: frozenset[str] = frozenset({
+    "/api/v1/health",
+})
+
+_SAAS_PUBLIC_PREFIXES: tuple[str, ...] = (
+    "/api/v1/auth/",
+    "/api/v1/oauth/",
+)
+
+
+def allows_saas_api_passthrough(path: str, authorization_header: str) -> bool:
+    """Return True when `/api/v1/*` should pass through to tchuekam_backend.
+
+    Protected SaaS endpoints enforce their own JWT Bearer verification via
+    `Depends(get_current_user)` / `require_permission`, supporting both
+    local HS256 JWTs and Supabase ES256/HS256 JWTs across origins. Keep
+    `/api/v1/biocompute/` gated on dashboard auth unless the endpoint itself
+    adds Bearer verification.
+    """
+    if not path.startswith("/api/v1/"):
+        return False
+    if path in _SAAS_PUBLIC_PATHS or path.startswith(_SAAS_PUBLIC_PREFIXES):
+        return True
+    if path.startswith("/api/v1/biocompute/"):
+        return False
+    return authorization_header.strip().lower().startswith("bearer ")

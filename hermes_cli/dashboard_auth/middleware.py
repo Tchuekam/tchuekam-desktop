@@ -26,7 +26,10 @@ from hermes_cli.dashboard_auth import list_providers
 from hermes_cli.dashboard_auth.audit import AuditEvent, audit_log
 from hermes_cli.dashboard_auth.base import ProviderError, RefreshExpiredError
 from hermes_cli.dashboard_auth.cookies import read_session_cookies
-from hermes_cli.dashboard_auth.public_paths import PUBLIC_API_PATHS
+from hermes_cli.dashboard_auth.public_paths import (
+    PUBLIC_API_PATHS,
+    allows_saas_api_passthrough,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -183,7 +186,9 @@ async def gated_auth_middleware(
         return await call_next(request)
 
     path = request.url.path
-    if _path_is_public(path):
+    if _path_is_public(path) or allows_saas_api_passthrough(
+        path, request.headers.get("authorization", "")
+    ):
         return await call_next(request)
 
     at, _rt = read_session_cookies(request)

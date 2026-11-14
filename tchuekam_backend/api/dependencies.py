@@ -31,7 +31,15 @@ def get_current_user_with_token(
         )
     token = credentials.credentials
     try:
-        payload = decode_jwt_token(token)
+        try:
+            payload = decode_jwt_token(token)
+        except Exception as local_jwt_exc:
+            from tchuekam_backend.core.supabase_auth import resolve_supabase_bearer
+
+            sb_result = resolve_supabase_bearer(token, db)
+            if sb_result is not None:
+                return sb_result
+            raise local_jwt_exc
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

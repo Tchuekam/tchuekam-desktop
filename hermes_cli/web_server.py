@@ -211,6 +211,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 from hermes_cli.dashboard_auth.public_paths import (
     PUBLIC_API_PATHS as _PUBLIC_API_PATHS,
+    allows_saas_api_passthrough as _allows_saas_api_passthrough,
 )
 from hermes_cli.download_targets import DOWNLOAD_ALIASES, DOWNLOAD_ASSETS
 
@@ -367,6 +368,8 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     path = request.url.path
     if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
+        if _allows_saas_api_passthrough(path, request.headers.get("authorization", "")):
+            return await call_next(request)
         if not _has_valid_session_token(request):
             return JSONResponse(
                 status_code=401,
