@@ -117,7 +117,7 @@ function ChatHeader({
             type="button"
             variant="ghost"
           >
-            <h2 className="max-w-[52vw] truncate text-[0.75rem] font-medium leading-none">{title}</h2>
+            <h2 className="max-w-full truncate text-[0.75rem] font-medium leading-none sm:max-w-[52vw]">{title}</h2>
             <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-down" size="0.8125rem" />
           </Button>
         </SessionActionsMenu>
