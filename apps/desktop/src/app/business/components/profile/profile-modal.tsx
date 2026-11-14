@@ -105,7 +105,7 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
     <div
       aria-label="Business & Personal Profiles"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-md transition-opacity duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2.5 backdrop-blur-md transition-opacity duration-200 sm:p-4"
       onClick={e => {
         if (e.target === e.currentTarget) {
           onClose()
@@ -113,9 +113,9 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
       }}
       role="dialog"
     >
-      <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/95 text-foreground shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/95 text-foreground shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-6 py-4">
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-center gap-3">
             <div className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary">
               <Codicon name="settings-gear" size="1.1rem" />
@@ -138,8 +138,8 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
         </div>
 
         {/* Apple-style Segmented Control */}
-        <div className="border-b border-border/60 bg-muted/10 px-6 py-2.5">
-          <div className="inline-flex w-full rounded-xl bg-muted/60 p-1 border border-border/40">
+        <div className="border-b border-border/60 bg-muted/10 px-4 py-2 sm:px-6 sm:py-2.5">
+          <div className="inline-flex w-full flex-col gap-1 rounded-xl border border-border/40 bg-muted/60 p-1 sm:flex-row">
             <button
               className={cn(
                 'flex flex-1 items-center justify-center gap-2 rounded-lg py-1.5 text-xs font-semibold transition-all duration-150',
@@ -170,7 +170,7 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
         </div>
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSave}>
-          <div className="flex-1 space-y-5 overflow-y-auto p-6">
+          <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
             {tab === 'business' ? (
               <>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -544,7 +544,7 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
           </div>
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-end gap-2.5 border-t border-border/60 bg-muted/20 px-6 py-3.5">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-border/60 bg-muted/20 px-4 py-3 sm:px-6 sm:py-3.5">
             <button
               className="rounded-xl border border-border/70 bg-card px-4 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
               onClick={onClose}

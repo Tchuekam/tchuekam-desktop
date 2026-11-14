@@ -895,7 +895,7 @@ export default function StandaloneShell() {
 
   return (
     <div 
-      className="h-screen bg-[#030303] flex flex-col overflow-hidden text-white relative"
+      className="h-full min-h-0 bg-[#030303] flex flex-col overflow-hidden text-white relative"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -920,7 +920,7 @@ export default function StandaloneShell() {
 
       {/* Header */}
       {isHeaderVisible && (
-        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-3 select-none">
+        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-2.5 sm:px-4 md:pl-[max(1rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1rem))] bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-2 sm:gap-3 select-none">
           {/* Left: Logo */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <img src={`${import.meta.env.BASE_URL}apple-touch-icon.png`} alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
@@ -1116,7 +1116,7 @@ export default function StandaloneShell() {
         <div
           aria-live="polite"
           aria-label="Generation activity and notifications"
-          className="fixed top-16 right-5 z-[200] flex max-h-[calc(100vh-80px)] w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 overflow-x-hidden overflow-y-auto global-notif-stack pointer-events-none"
+          className="fixed top-16 right-3 sm:right-5 z-[200] flex max-h-[calc(100dvh-80px)] w-[min(340px,calc(100vw-1.5rem))] flex-col gap-2 overflow-x-hidden overflow-y-auto global-notif-stack pointer-events-none"
           data-testid="global-notification-stack"
         >
           {activeGenerations.map((generation) => (

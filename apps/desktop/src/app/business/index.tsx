@@ -302,7 +302,7 @@ export function BusinessView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-background text-foreground pt-(--titlebar-height)">
-      <div className="mx-auto w-full max-w-5xl px-8 pb-24 pt-6">
+      <div className="mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:px-6 md:px-8 md:pb-24 md:pt-[calc(var(--titlebar-height)+0.75rem)]">
         <input
           accept=".pdf,.jpg,.jpeg,.png"
           aria-label="Upload file for Scan to text"
@@ -468,7 +468,7 @@ export function BusinessView() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
           {BUILDERS.map(b => (
             <div
               className="group flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-2xs transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg"
@@ -622,7 +622,7 @@ export function BusinessView() {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           className="truncate text-sm font-semibold hover:text-primary hover:underline transition"
                           onClick={() => openBusinessDocument(doc.id)}
@@ -712,7 +712,7 @@ export function BusinessView() {
               </p>
             </div>
             {/* Apple Segmented Filter */}
-            <div className="inline-flex flex-wrap rounded-xl bg-muted/60 p-1 border border-border/40 backdrop-blur-sm">
+            <div className="inline-flex max-w-full flex-wrap rounded-xl border border-border/40 bg-muted/60 p-1 backdrop-blur-sm">
               {(
                 [
                   ['all', 'All Templates'],
@@ -778,7 +778,7 @@ export function BusinessView() {
 
         {/* Scan to text CTA */}
         <div
-          className="group relative mt-10 flex w-full flex-wrap items-center justify-between gap-6 overflow-hidden rounded-3xl px-8 py-7 text-left text-white shadow-xl"
+          className="group relative mt-8 flex w-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl px-5 py-5 text-left text-white shadow-xl sm:mt-10 sm:gap-6 sm:px-8 sm:py-7"
           style={{ background: 'linear-gradient(135deg,#0b1020,#12224e 55%,#0a2f6b)' }}
         >
           <span
