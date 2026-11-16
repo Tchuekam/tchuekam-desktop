@@ -1678,7 +1678,7 @@ def get_model_info():
         cfg = load_config()
         model_cfg = cfg.get("model", "")
 
-        # Extract model name and provider from the config
+        # Extract model name and provider from the config, falling back to env vars
         if isinstance(model_cfg, dict):
             model_name = model_cfg.get("default", model_cfg.get("name", ""))
             provider = model_cfg.get("provider", "")
@@ -1689,6 +1689,14 @@ def get_model_info():
             provider = ""
             base_url = ""
             config_ctx = None
+
+        if not model_name:
+            model_name = (
+                os.environ.get("HERMES_MODEL", "")
+                or os.environ.get("HERMES_INFERENCE_MODEL", "")
+            ).strip()
+        if not provider:
+            provider = os.environ.get("HERMES_INFERENCE_PROVIDER", "").strip()
 
         if not model_name:
             return dict(_EMPTY_MODEL_INFO, provider=provider)
