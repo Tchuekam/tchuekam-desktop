@@ -1,12 +1,13 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getRecastModelById, getLipSyncModelById, getAudioModelById } from './models.js';
 
-// In an http(s) browser we route through the host app's proxy (Next.js routes
-// under /api/* re-issue the call server-side) so api.muapi.ai CORS is bypassed.
+// In an http(s) browser we route through TchueKAM's FastAPI proxy
+// (/api/muapi-proxy/* -> https://api.muapi.ai/*) so api.muapi.ai CORS is bypassed
+// without colliding with /api/v1/* SaaS routes.
 // SSR (no window) and Electron's file:// renderer call the upstream directly.
 const BASE_URL = (typeof window !== 'undefined' && window.location?.protocol?.startsWith('http'))
-    ? '/api'
+    ? '/api/muapi-proxy'
     : 'https://api.muapi.ai';
-const PROXY_WF_BASE = '/api/workflow';
+const PROXY_WF_BASE = '/api/muapi-proxy/workflow';
 
 export class AuthError extends Error {
     constructor(message, status = 401, detail = '') {

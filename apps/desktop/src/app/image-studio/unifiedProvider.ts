@@ -52,6 +52,8 @@ export interface GenerationParams {
   options?: Record<string, unknown>
   workspaceId?: string
   conversationId?: string
+  /** Optional per-request BYOK credential for web demo mode. */
+  apiKey?: string
   /** Stable per user action; resubmitting it can never generate twice. */
   clientRequestId?: string
   onRequestId?: (requestId: string) => void
@@ -139,6 +141,10 @@ async function requireKey(provider: StudioProviderId): Promise<string> {
 
 /** Run a FAL generation through the backend job and return its real asset. */
 async function runBackendImageJob(params: GenerationParams, modelId: string): Promise<GenerationResult> {
+  const inlineKey = (params.apiKey && params.apiKey !== 'server-configured') ? params.apiKey : null
+  const storedKey = inlineKey ?? (await getProviderKey('fal'))
+  const byokFalKey = (storedKey && storedKey !== 'server-configured') ? storedKey : undefined
+
   const resp: ImageGenStudioResponse = await generateStudioImages({
     prompt: params.prompt,
     style: params.style || 'photorealistic',
@@ -149,6 +155,7 @@ async function runBackendImageJob(params: GenerationParams, modelId: string): Pr
     provider: 'fal',
     workspaceId: params.workspaceId,
     conversationId: params.conversationId,
+    ...(byokFalKey ? { apiKey: byokFalKey } : {}),
     clientRequestId: params.clientRequestId || newRequestId()
   })
 

@@ -643,6 +643,8 @@ export function generateStudioImages(payload: {
   provider?: string
   workspaceId?: string
   conversationId?: string
+  /** Optional per-request BYOK credential for web demo mode (never persisted on backend). */
+  apiKey?: string
   /** Idempotency key: re-sending it never triggers a second generation. */
   clientRequestId?: string
 }): Promise<ImageGenStudioResponse> {

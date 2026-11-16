@@ -20,6 +20,8 @@ Pricing shown in UI strings is as-of the initial commit; we accept drift and
 update when it's noticed.
 """
 
+import contextlib
+import contextvars
 import json
 import logging
 import os
@@ -27,6 +29,25 @@ import datetime
 import threading
 import uuid
 from typing import Any, Dict, Optional
+
+_REQUEST_FAL_KEY: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_REQUEST_FAL_KEY",
+    default="",
+)
+
+
+@contextlib.contextmanager
+def scoped_fal_key(api_key: Optional[str]):
+    """Temporarily scope a per-request BYOK FAL_KEY without mutating process env."""
+    cleaned = (api_key or "").strip()
+    if not cleaned:
+        yield
+        return
+    token = _REQUEST_FAL_KEY.set(cleaned)
+    try:
+        yield
+    finally:
+        _REQUEST_FAL_KEY.reset(token)
 
 # fal_client is imported lazily — see _load_fal_client(). Pulling it
 # eagerly added ~64 ms to every CLI cold start because
@@ -431,10 +452,19 @@ def _get_managed_fal_client(managed_gateway):
 
 
 def _submit_fal_request(model: str, arguments: Dict[str, Any]):
-    """Submit a FAL request using direct credentials or the managed queue gateway."""
+    """Submit a FAL request using per-request BYOK key, direct credentials, or managed gateway."""
     # Trigger the lazy import on first call. Idempotent.
     _load_fal_client()
     request_headers = {"x-idempotency-key": str(uuid.uuid4())}
+    byok_key = _REQUEST_FAL_KEY.get().strip()
+    if byok_key:
+        sync_client_cls = getattr(fal_client, "SyncClient", None)
+        if sync_client_cls is not None:
+            return sync_client_cls(key=byok_key).submit(
+                model,
+                arguments=arguments,
+                headers=request_headers,
+            )
     managed_gateway = _resolve_managed_fal_gateway()
     if managed_gateway is None:
         return fal_client.submit(model, arguments=arguments, headers=request_headers)
@@ -650,7 +680,7 @@ def image_generate_tool(
         if not prompt or not isinstance(prompt, str) or len(prompt.strip()) == 0:
             raise ValueError("Prompt is required and must be a non-empty string")
 
-        if not (fal_key_is_configured() or _resolve_managed_fal_gateway()):
+        if not check_fal_api_key():
             raise ValueError(_build_no_backend_setup_message())
 
         aspect_lc = (aspect_ratio or DEFAULT_ASPECT_RATIO).lower().strip()
@@ -774,8 +804,12 @@ def image_generate_tool(
 
 
 def check_fal_api_key() -> bool:
-    """True if the FAL.ai API key (direct or managed gateway) is available."""
-    return bool(fal_key_is_configured() or _resolve_managed_fal_gateway())
+    """True if the FAL.ai API key (per-request BYOK, direct env, or managed gateway) is available."""
+    return bool(
+        _REQUEST_FAL_KEY.get().strip()
+        or fal_key_is_configured()
+        or _resolve_managed_fal_gateway()
+    )
 
 
 def _build_no_backend_setup_message() -> str:

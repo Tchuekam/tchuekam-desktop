@@ -3,12 +3,14 @@ FROM node:22-bookworm-slim AS webapp_builder
 WORKDIR /build
 
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 COPY package.json package-lock.json ./
 COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY apps/shared/package.json ./apps/shared/package.json
 COPY apps/mobile/package.json ./apps/mobile/package.json
 COPY apps/bootstrap-installer/package.json ./apps/bootstrap-installer/package.json
+COPY ui-tui/package.json ./ui-tui/package.json
 COPY web/package.json ./web/package.json
 
 RUN npm install --prefer-offline --no-audit --no-fund --workspace apps/desktop --include-workspace-root
@@ -34,14 +36,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install minimal system dependencies (Node 22 copied from webapp_builder avoids 400+ Debian npm packages)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     git \
-    nodejs \
-    npm \
     procps \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=webapp_builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=webapp_builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 # Copy requirements and install
 COPY requirements-backend.txt ./

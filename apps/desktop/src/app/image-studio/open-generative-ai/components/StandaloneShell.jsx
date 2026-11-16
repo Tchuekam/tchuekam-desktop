@@ -697,26 +697,69 @@ export default function StandaloneShell() {
     async function initCredentials() {
       setAuthState('validating');
       try {
+        // Check server-configured image providers first so Railway/backend
+        // FAL_KEY works out of the box without leaking raw keys to browsers
+        // or failing when FAL_KEY lives in process env rather than ~/.hermes/.env.
+        let serverFalConfigured = false;
+        let serverMuapiConfigured = false;
+        try {
+          const provRes = await window.hermesDesktop?.api?.({ path: '/api/images/providers' });
+          const providers = Array.isArray(provRes?.providers) ? provRes.providers : [];
+          serverFalConfigured = Boolean(providers.find((p) => p?.id === 'fal')?.configured);
+          serverMuapiConfigured = Boolean(providers.find((p) => p?.id === 'muapi')?.configured);
+        } catch {
+          // Fall through to local/env key lookup
+        }
+
         const currentProv = getActiveStudioProvider();
         setActiveProviderState(currentProv);
+
+        if (currentProv === 'fal' && serverFalConfigured) {
+          if (!active) return;
+          setApiKey('server-configured');
+          setAuthState('authenticated');
+          setAuthErrorMessage('');
+          return;
+        }
+
         let key = await getProviderKey(currentProv);
         let activeProv = currentProv;
 
         if (!key) {
           // Check alternate provider
           const altProv = currentProv === 'fal' ? 'muapi' : 'fal';
+          if (altProv === 'fal' && serverFalConfigured) {
+            if (!active) return;
+            setActiveStudioProvider('fal');
+            setActiveProviderState('fal');
+            setApiKey('server-configured');
+            setAuthState('authenticated');
+            setAuthErrorMessage('');
+            return;
+          }
           const altKey = await getProviderKey(altProv);
           if (altKey) {
             key = altKey;
             activeProv = altProv;
             setActiveStudioProvider(altProv);
             setActiveProviderState(altProv);
+          } else if (serverFalConfigured) {
+            if (!active) return;
+            setActiveStudioProvider('fal');
+            setActiveProviderState('fal');
+            setApiKey('server-configured');
+            setAuthState('authenticated');
+            setAuthErrorMessage('');
+            return;
           }
         }
 
         if (!active) return;
 
         if (!key) {
+          if (serverMuapiConfigured) {
+            setAuthErrorMessage('Server MUAPI_KEY detected; enter your MuAPI key or configure FAL_KEY.');
+          }
           setApiKey(null);
           setAuthState('unconfigured');
           return;
@@ -830,10 +873,10 @@ export default function StandaloneShell() {
 
   // Poll for balance every 30 seconds if key is present and authenticated
   useEffect(() => {
-    if (!apiKey || authState !== 'authenticated') return;
+    if (!apiKey || authState !== 'authenticated' || activeProvider !== 'muapi' || apiKey === 'server-configured') return;
     const interval = setInterval(() => fetchBalance(apiKey), 30000);
     return () => clearInterval(interval);
-  }, [apiKey, authState, fetchBalance]);
+  }, [apiKey, authState, activeProvider, fetchBalance]);
 
   // Drag and Drop Handlers
   const handleDragOver = useCallback((e) => {

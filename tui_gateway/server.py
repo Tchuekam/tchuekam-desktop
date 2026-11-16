@@ -930,9 +930,36 @@ def _resolve_model() -> str:
         return env
     m = _load_cfg().get("model", "")
     if isinstance(m, dict):
-        return str(m.get("default", "") or "").strip()
-    if isinstance(m, str) and m:
+        cfg_model = str(m.get("default", "") or "").strip()
+        if cfg_model:
+            return cfg_model
+    elif isinstance(m, str) and m.strip():
         return m.strip()
+    # Pick the default catalog model matching the active/configured provider so
+    # fresh deploys with only GEMINI_API_KEY / GROQ_API_KEY / DEEPSEEK_API_KEY
+    # do not default to an OpenRouter slug ("anthropic/claude-sonnet-4").
+    try:
+        from hermes_cli.auth import resolve_provider
+        from hermes_cli.models import get_default_model_for_provider
+
+        cfg_provider = (
+            str(m.get("provider") or "").strip().lower()
+            if isinstance(m, dict)
+            else ""
+        )
+        explicit_provider = (
+            os.environ.get("HERMES_TUI_PROVIDER", "").strip()
+            or os.environ.get("HERMES_INFERENCE_PROVIDER", "").strip()
+            or cfg_provider
+            or "auto"
+        )
+        resolved = resolve_provider(explicit_provider)
+        if resolved and resolved != "openrouter":
+            provider_default = get_default_model_for_provider(resolved)
+            if provider_default:
+                return provider_default
+    except Exception:
+        pass
     return "anthropic/claude-sonnet-4"
 
 

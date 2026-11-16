@@ -1,4 +1,5 @@
 import { setEnvVar, deleteEnvVar, revealEnvVar } from '@/hermes'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 // @ts-expect-error JS/JSX module without TypeScript declaration file
 import { getUserBalance } from './open-generative-ai/packages/studio/src/muapi.js'
 
@@ -154,11 +155,13 @@ export async function saveProviderKey(
     // SafeStorage optional in web environments
   }
 
-  // Persist to Tchuekam .env
-  try {
-    await setEnvVar(envKey, trimmed)
-  } catch {
-    // Ignore if backend is unavailable
+  // Persist to Tchuekam .env (disabled in public demo web mode so visitors cannot overwrite shared server config)
+  if (!IS_LOCKED_DEMO) {
+    try {
+      await setEnvVar(envKey, trimmed)
+    } catch {
+      // Ignore if backend is unavailable
+    }
   }
 
   return { ok: true }
@@ -182,10 +185,12 @@ export async function deleteProviderKey(provider: StudioProviderId): Promise<{ o
     // Ignore
   }
 
-  try {
-    await deleteEnvVar(envKey)
-  } catch {
-    // Ignore
+  if (!IS_LOCKED_DEMO) {
+    try {
+      await deleteEnvVar(envKey)
+    } catch {
+      // Ignore
+    }
   }
 
   return { ok: true }

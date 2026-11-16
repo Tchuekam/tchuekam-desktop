@@ -1,0 +1,1 @@
+import{t as e}from"./atom-4RL7Ly8V.js";import{s as t,u as n}from"./haptics-Dx_0VItb.js";var r=`hermes.desktop.terminalTakeover`,i=e(`files`),a=e(n(r,!1));a.subscribe(e=>t(r,e));var o=e=>i.set(e),s=e=>a.set(e);export{s as i,a as n,o as r,i as t};

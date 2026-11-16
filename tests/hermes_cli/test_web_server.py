@@ -3651,3 +3651,61 @@ class TestValidateProviderCredential:
         data = self._post("OPENAI_API_KEY", "   ").json()
         assert data["ok"] is False
 
+
+class TestMuapiProxy:
+    """Creative Studio MuAPI reverse proxy (/api/muapi-proxy/*)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_test_client(self, _isolate_hermes_home):
+        try:
+            from starlette.testclient import TestClient
+        except ImportError:
+            pytest.skip("fastapi/starlette not installed")
+
+        from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+
+        self.client = TestClient(app)
+        self.client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
+
+    def test_rejects_disallowed_and_traversal_paths(self):
+        resp_prefix = self.client.get("/api/muapi-proxy/admin/secret")
+        assert resp_prefix.status_code == 400
+
+        resp_scheme = self.client.get("/api/muapi-proxy/api/v1/https://evil.test")
+        assert resp_scheme.status_code == 400
+
+    def test_forwards_allowlisted_path_to_upstream(self, monkeypatch):
+        captured = {}
+
+        class _FakeAsyncResp:
+            status_code = 200
+            content = b'{"balance": 12.5}'
+            headers = {"content-type": "application/json"}
+
+        class _FakeAsyncClient:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def request(self, method, url, headers=None, content=None):
+                captured["method"] = method
+                captured["url"] = url
+                captured["headers"] = headers or {}
+                return _FakeAsyncResp()
+
+        monkeypatch.setattr("httpx.AsyncClient", _FakeAsyncClient)
+        resp = self.client.get(
+            "/api/muapi-proxy/api/v1/account/balance?foo=bar",
+            headers={"x-api-key": "mu-key-123"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"balance": 12.5}
+        assert captured["method"] == "GET"
+        assert captured["url"] == "https://api.muapi.ai/api/v1/account/balance?foo=bar"
+        assert captured["headers"].get("x-api-key") == "mu-key-123"
+

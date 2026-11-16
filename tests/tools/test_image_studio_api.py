@@ -316,3 +316,51 @@ def test_concurrent_registrations_do_not_lose_assets(env):
     [t.join() for t in ts]
     assert len(studio.list_assets(limit=100)) == 20
 
+
+def test_scoped_fal_key_enables_byok_without_mutating_env(monkeypatch):
+    from tools.image_generation_tool import check_fal_api_key, scoped_fal_key
+
+    monkeypatch.delenv("FAL_KEY", raising=False)
+    monkeypatch.setattr("tools.image_generation_tool.fal_key_is_configured", lambda: False)
+    monkeypatch.setattr("tools.image_generation_tool._resolve_managed_fal_gateway", lambda: None)
+
+    assert check_fal_api_key() is False
+    with scoped_fal_key("fal-byok-visitor-key"):
+        assert check_fal_api_key() is True
+    assert check_fal_api_key() is False
+
+
+def test_generate_endpoint_scopes_byok_fal_key_and_strips_it_from_job(client, monkeypatch):
+    import os
+    from tools.image_generation_tool import check_fal_api_key
+
+    monkeypatch.delenv("FAL_KEY", raising=False)
+    monkeypatch.setattr("tools.image_generation_tool.fal_key_is_configured", lambda: False)
+    monkeypatch.setattr("tools.image_generation_tool._resolve_managed_fal_gateway", lambda: None)
+
+    class _ByokAwareFalProvider:
+        name = "fal"
+        display_name = "FAL.ai"
+
+        def is_available(self):
+            return check_fal_api_key()
+
+        def list_models(self):
+            return []
+
+        def default_model(self):
+            return "fal-ai/flux-2/klein/9b"
+
+        def generate(self, prompt, aspect_ratio="16:9", **kwargs):
+            return {"success": True, "image": "https://cdn.example/byok.png", "model": kwargs.get("model")}
+
+    client.use(_ByokAwareFalProvider())
+    res = client.post(
+        "/api/images/generate",
+        json={"prompt": "test byok", "provider": "fal", "apiKey": "fal-secret-123"},
+    ).json()
+    assert res["success"] is True
+    assert os.getenv("FAL_KEY") is None
+    job = studio.get_job(res["jobId"])
+    assert "apiKey" not in (job.get("parameters") or {})
+

@@ -1,6 +1,10 @@
 export const getAgentDetails = async (agentId, options = {}) => {
+  const defaultBaseUrl =
+    typeof window !== "undefined" && window.location?.protocol?.startsWith("http")
+      ? "/api/muapi-proxy/agents"
+      : "http://127.0.0.1:8000/agents";
   const {
-    baseUrl = "http://127.0.0.1:8000/agents", // Default relative URL for internal API, or provide full URL
+    baseUrl = defaultBaseUrl, // Default relative URL in web deployments, loopback in local Electron/dev
     fetchOptions = {}
   } = options;
 

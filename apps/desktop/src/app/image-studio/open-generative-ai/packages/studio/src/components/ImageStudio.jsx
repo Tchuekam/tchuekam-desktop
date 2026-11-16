@@ -44,7 +44,7 @@ import {
 } from "./prompt/PromptComposer.jsx";
 import { addComposerAttachment, queueComposerSeed } from "@/store/composer";
 import { getStudioLibrary, deleteFromStudioLibrary } from "@/hermes";
-import { generateUnifiedImage, generateUnifiedI2I } from "../../../../unifiedProvider";
+import { generateUnifiedImage, generateUnifiedI2I } from "@/app/image-studio/unifiedProvider";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 

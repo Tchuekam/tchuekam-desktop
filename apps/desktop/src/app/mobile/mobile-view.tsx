@@ -100,7 +100,7 @@ export function MobileView() {
 
   const handleCopyLink = () => {
     triggerHaptic('tap')
-    void navigator.clipboard.writeText(window.location.origin + '/mobile')
+    void navigator.clipboard.writeText(window.location.origin + '/#/mobile')
     setCopiedLink(true)
     setTimeout(() => setCopiedLink(false), 2000)
   }
@@ -252,7 +252,7 @@ export function MobileView() {
                   asChild
                   className="gap-1 text-xs text-cyan-400 hover:text-cyan-300"
                 >
-                  <a href="/mobile" target="_blank" rel="noopener noreferrer">
+                  <a href="/#/mobile" target="_blank" rel="noopener noreferrer">
                     <span>Open Standalone</span>
                     <IconExternalLink className="size-3.5" />
                   </a>

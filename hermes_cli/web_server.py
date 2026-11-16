@@ -7262,6 +7262,7 @@ class ImageGenerateRequest(BaseModel):
     workspaceId: Optional[str] = None
     conversationId: Optional[str] = None
     clientRequestId: Optional[str] = None
+    apiKey: Optional[str] = None
 
 class ImageEditRequest(BaseModel):
     image: str
@@ -7351,7 +7352,7 @@ async def api_images_providers():
 
 
 @app.post("/api/images/generate")
-async def api_images_generate(req: ImageGenerateRequest):
+async def api_images_generate(req: ImageGenerateRequest, request: Request):
     """Run one generation as a persisted job (REQUESTED -> ... -> COMPLETED/FAILED).
 
     ``clientRequestId`` makes the call idempotent: re-sending it returns the
@@ -7360,6 +7361,11 @@ async def api_images_generate(req: ImageGenerateRequest):
     from starlette.concurrency import run_in_threadpool
 
     import agent.image_studio_service as studio
+    from tools.image_generation_tool import scoped_fal_key
+
+    byok_key = (req.apiKey or request.headers.get("x-fal-key") or "").strip()
+    if byok_key == "server-configured":
+        byok_key = ""
 
     try:
         job, created = studio.create_job(
@@ -7383,16 +7389,19 @@ async def api_images_generate(req: ImageGenerateRequest):
         provider = get_provider(name) if name else (get_active_provider() or get_provider("fal"))
         # An explicit provider is never silently swapped for another one.
 
-        result = await run_in_threadpool(
-            studio.execute_generation,
-            job["id"],
-            provider,
-            req.prompt,
-            model=req.model,
-            parameters={"aspectRatio": req.aspectRatio, "quality": req.quality, "style": req.style},
-            workspace_id=req.workspaceId,
-            conversation_id=req.conversationId,
-        )
+        def _run_generation():
+            with scoped_fal_key(byok_key):
+                return studio.execute_generation(
+                    job["id"],
+                    provider,
+                    req.prompt,
+                    model=req.model,
+                    parameters={"aspectRatio": req.aspectRatio, "quality": req.quality, "style": req.style},
+                    workspace_id=req.workspaceId,
+                    conversation_id=req.conversationId,
+                )
+
+        result = await run_in_threadpool(_run_generation)
         return _image_job_response(result["job"], result["asset"])
     except Exception as e:
         _log.error("Image generation failed: %s", e, exc_info=True)
@@ -9178,6 +9187,60 @@ async def download_installer_file(target: str, request: Request):
 
     return RedirectResponse(url=f"{_RELEASE_DOWNLOAD_BASE}/{filename}", status_code=302)
 
+
+
+_MUAPI_PROXY_ALLOWED_PREFIXES = ("api/v1/", "workflow/", "agents/", "app/")
+
+
+@app.api_route(
+    "/api/muapi-proxy/{target_path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+)
+async def api_muapi_proxy(target_path: str, request: Request):
+    """Reverse-proxy Creative Studio MuAPI calls to https://api.muapi.ai to avoid browser CORS."""
+    from fastapi import Response
+    import httpx
+
+    cleaned = (target_path or "").lstrip("/")
+    if not cleaned or ".." in cleaned.split("/") or "://" in cleaned:
+        return JSONResponse({"error": "Invalid MuAPI proxy path"}, status_code=400)
+    if not any(cleaned.startswith(prefix) for prefix in _MUAPI_PROXY_ALLOWED_PREFIXES):
+        return JSONResponse({"error": "Disallowed MuAPI proxy path"}, status_code=400)
+
+    upstream_url = f"https://api.muapi.ai/{cleaned}"
+    if request.url.query:
+        upstream_url = f"{upstream_url}?{request.url.query}"
+
+    headers = {}
+    for hdr in ("x-api-key", "content-type", "accept"):
+        val = request.headers.get(hdr)
+        if val:
+            headers[hdr] = val
+
+    body = await request.body() if request.method not in ("GET", "HEAD") else None
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            upstream_resp = await client.request(
+                request.method,
+                upstream_url,
+                headers=headers,
+                content=body,
+            )
+    except httpx.HTTPError as exc:
+        return JSONResponse(
+            {"error": f"MuAPI upstream request failed: {exc}"},
+            status_code=502,
+        )
+
+    resp_headers = {}
+    content_type = upstream_resp.headers.get("content-type")
+    if content_type:
+        resp_headers["content-type"] = content_type
+    return Response(
+        content=upstream_resp.content,
+        status_code=upstream_resp.status_code,
+        headers=resp_headers,
+    )
 
 
 # Mount plugin API routes before the SPA catch-all.

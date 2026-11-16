@@ -5459,3 +5459,21 @@ def test_notification_poller_requeues_when_busy(monkeypatch):
         assert requeued["session_id"] == "proc_busy_test"
     finally:
         server._sessions.pop("sid_busy", None)
+
+
+def test_resolve_model_uses_detected_provider_default_when_unset(monkeypatch):
+    monkeypatch.delenv("HERMES_MODEL", raising=False)
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    monkeypatch.delenv("HERMES_TUI_PROVIDER", raising=False)
+    monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
+    monkeypatch.setattr(server, "_load_cfg", lambda: {})
+    monkeypatch.setattr("hermes_cli.auth.resolve_provider", lambda _p="auto": "gemini")
+    monkeypatch.setattr(
+        "hermes_cli.models.get_default_model_for_provider",
+        lambda p: "gemini-2.5-flash" if p == "gemini" else "",
+    )
+
+    assert server._resolve_model() == "gemini-2.5-flash"
+
+    monkeypatch.setattr("hermes_cli.auth.resolve_provider", lambda _p="auto": "openrouter")
+    assert server._resolve_model() == "anthropic/claude-sonnet-4"
