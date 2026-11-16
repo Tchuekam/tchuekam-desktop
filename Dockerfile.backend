@@ -1,42 +1,10 @@
-FROM node:22-bookworm-slim AS webapp_builder
-
-WORKDIR /build
-
-ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
-ENV NODE_OPTIONS="--max-old-space-size=2048"
-
-COPY package.json package-lock.json ./
-COPY apps/desktop/package.json ./apps/desktop/package.json
-COPY apps/shared/package.json ./apps/shared/package.json
-COPY apps/mobile/package.json ./apps/mobile/package.json
-COPY apps/bootstrap-installer/package.json ./apps/bootstrap-installer/package.json
-COPY ui-tui/package.json ./ui-tui/package.json
-COPY web/package.json ./web/package.json
-
-RUN npm install --prefer-offline --no-audit --no-fund --workspace apps/desktop --include-workspace-root
-
-COPY apps/desktop ./apps/desktop
-COPY apps/shared ./apps/shared
-
-ARG VITE_AUTH_PORTAL_URL=https://tchuekam-auth-production.up.railway.app
-ARG VITE_SUPABASE_URL=https://fzoiiusuqvjhwivstbyb.supabase.co
-ARG VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6b2lpdXN1cXZqaHdpdnN0YnliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNDgxNjUsImV4cCI6MjA5OTgyNDE2NX0.CH6Z7CxPaRxND2fivpcGu42RFmo8uxyBeeoeTuGEPCI
-ARG VITE_HERMES_DEMO=1
-ARG VITE_HERMES_APP_VERSION=0.15.3
-
-ENV VITE_AUTH_PORTAL_URL=$VITE_AUTH_PORTAL_URL
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
-ENV VITE_HERMES_DEMO=$VITE_HERMES_DEMO
-ENV VITE_HERMES_APP_VERSION=$VITE_HERMES_APP_VERSION
-
-RUN rm -rf apps/desktop/dist-web && npm run build:web --workspace apps/desktop
+FROM node:22-bookworm-slim AS node_runtime
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install minimal system dependencies (Node 22 copied from webapp_builder avoids 400+ Debian npm packages)
+# Install minimal system dependencies (Node 22 copied from node_runtime avoids 400+ Debian npm packages)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -44,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=webapp_builder /usr/local/bin/node /usr/local/bin/node
-COPY --from=webapp_builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node_runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node_runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
@@ -53,12 +21,8 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 COPY requirements-backend.txt ./
 RUN pip install --no-cache-dir -r requirements-backend.txt
 
-# Copy application code and agent/gateway modules
+# Copy application code, agent/gateway modules, and prebuilt apps/desktop/dist-web
 COPY . .
-
-# Overlay freshly built apps/desktop/dist-web (includes Supabase web auth handoff)
-RUN rm -rf /app/apps/desktop/dist-web
-COPY --from=webapp_builder /build/apps/desktop/dist-web /app/apps/desktop/dist-web
 
 # Install the package so hermes CLI and entrypoints are available
 RUN pip install --no-cache-dir -e .
@@ -70,6 +34,8 @@ ENV PORT=8000
 ENV HERMES_DASHBOARD_INSECURE=1
 ENV HERMES_DASHBOARD_TUI=1
 ENV HERMES_HOME=/app/data
+ENV HERMES_WEB_DIST=/app/apps/desktop/dist-web
+ENV HERMES_SKIP_NODE_BOOTSTRAP=1
 
 RUN mkdir -p /app/data
 
