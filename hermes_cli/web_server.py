@@ -412,6 +412,16 @@ def _is_public_showcase_mode(app_instance: FastAPI) -> bool:
     return explicit or insecure_public
 
 
+def _is_allowed_dashboard_origin(origin: str) -> bool:
+    """Return True if an HTTP Origin matches the configured dashboard CORS allowlist."""
+    norm = (origin or "").strip().rstrip("/")
+    if not norm:
+        return False
+    if norm in _extra_origins:
+        return True
+    return bool(re.match(_DASHBOARD_ORIGIN_REGEX, norm))
+
+
 def _has_admin_override(headers) -> bool:
     """Allow an operator-configured admin secret key to bypass demo restrictions."""
     admin_key = (os.environ.get("HERMES_DASHBOARD_ADMIN_KEY") or "").strip()
@@ -2249,7 +2259,12 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
     reachable=False means the network probe couldn't run (caller may save with
     a warning rather than hard-blocking offline users).
     """
-    _require_token(request)
+    origin = request.headers.get("origin", "")
+    if not (
+        _is_public_showcase_mode(request.app)
+        and (_has_valid_session_token(request) or _is_allowed_dashboard_origin(origin))
+    ):
+        _require_token(request)
     import httpx
 
     key = (body.key or "").strip()
@@ -6958,7 +6973,21 @@ def _ws_auth_ok(ws: "WebSocket") -> bool:
             return False
 
     token = ws.query_params.get("token", "")
-    return hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode())
+    if token and hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode()):
+        return True
+
+    # Split-origin static web hosts (e.g. *.vercel.app) cannot carry a
+    # backend-injected session token on showcase chat (/api/ws, /api/events).
+    # Keep /api/pty and /api/pub strictly gated behind the token / lockdown.
+    if (
+        _is_public_showcase_mode(ws.app)
+        and ws.url.path in {"/api/ws", "/api/events"}
+    ):
+        origin = ws.headers.get("origin", "")
+        if not origin or _is_allowed_dashboard_origin(origin):
+            return True
+
+    return False
 
 # Per-channel subscriber registry used by /api/pub (PTY-side gateway → dashboard)
 # and /api/events (dashboard → browser sidebar).  Keyed by an opaque channel id

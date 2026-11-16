@@ -105,7 +105,7 @@ class TestAuxiliaryCascadeWithGroqAndGemini:
 
 
 class TestPublicShowcaseSecurityHardening:
-    def _public_client(self, monkeypatch, admin_key: str = ""):
+    def _configure_public(self, monkeypatch, admin_key: str = ""):
         from hermes_cli import web_server as ws
 
         monkeypatch.setattr(ws.app.state, "allow_public", True, raising=False)
@@ -114,58 +114,60 @@ class TestPublicShowcaseSecurityHardening:
             monkeypatch.setenv("HERMES_DASHBOARD_ADMIN_KEY", admin_key)
         else:
             monkeypatch.delenv("HERMES_DASHBOARD_ADMIN_KEY", raising=False)
-        return TestClient(ws.app), ws
+        return ws
 
     def test_sensitive_routes_blocked_and_security_headers_present(self, monkeypatch):
-        client, ws = self._public_client(monkeypatch)
+        ws = self._configure_public(monkeypatch)
         headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
 
-        for method, path, payload in [
-            ("POST", "/api/env/reveal", {"key": "GEMINI_API_KEY"}),
-            ("PUT", "/api/env", {"key": "FOO", "value": "BAR"}),
-            ("DELETE", "/api/env", {"key": "FOO"}),
-            ("PUT", "/api/config", {"config": {}}),
-            ("GET", "/api/config/raw", None),
-            ("PUT", "/api/config/raw", {"yaml_text": "a: 1"}),
-            ("POST", "/api/model/set", {"scope": "main", "provider": "groq", "model": "x"}),
-            ("GET", "/api/logs", None),
-            ("POST", "/api/ops/dump", {}),
-            ("GET", "/api/cron/jobs", None),
-            ("GET", "/api/mcp/servers", None),
-            ("GET", "/api/profiles", None),
-            ("GET", "/api/webhooks", None),
-            ("POST", "/api/gateway/restart", {}),
-        ]:
-            resp = client.request(method, path, json=payload, headers=headers)
-            assert resp.status_code == 403, f"Expected 403 for {method} {path}, got {resp.status_code}"
-            assert resp.headers.get("x-content-type-options") == "nosniff"
-            assert resp.headers.get("x-frame-options") == "SAMEORIGIN"
+        with TestClient(ws.app) as client:
+            for method, path, payload in [
+                ("POST", "/api/env/reveal", {"key": "GEMINI_API_KEY"}),
+                ("PUT", "/api/env", {"key": "FOO", "value": "BAR"}),
+                ("DELETE", "/api/env", {"key": "FOO"}),
+                ("PUT", "/api/config", {"config": {}}),
+                ("GET", "/api/config/raw", None),
+                ("PUT", "/api/config/raw", {"yaml_text": "a: 1"}),
+                ("POST", "/api/model/set", {"scope": "main", "provider": "groq", "model": "x"}),
+                ("GET", "/api/logs", None),
+                ("POST", "/api/ops/dump", {}),
+                ("GET", "/api/cron/jobs", None),
+                ("GET", "/api/mcp/servers", None),
+                ("GET", "/api/profiles", None),
+                ("GET", "/api/webhooks", None),
+                ("POST", "/api/gateway/restart", {}),
+            ]:
+                resp = client.request(method, path, json=payload, headers=headers)
+                assert resp.status_code == 403, f"Expected 403 for {method} {path}, got {resp.status_code}"
+                assert resp.headers.get("x-content-type-options") == "nosniff"
+                assert resp.headers.get("x-frame-options") == "SAMEORIGIN"
 
-        health = client.get("/health")
-        assert health.status_code == 200
-        assert health.headers.get("x-content-type-options") == "nosniff"
+            health = client.get("/health")
+            assert health.status_code == 200
+            assert health.headers.get("x-content-type-options") == "nosniff"
 
     def test_admin_key_allows_override_and_pty_closed_in_public_mode(self, monkeypatch):
         from starlette.websockets import WebSocketDisconnect
 
-        client, ws = self._public_client(monkeypatch, admin_key="super-secret-admin-key")
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(f"/api/pty?token={ws._SESSION_TOKEN}"):
-                pass
-        assert exc_info.value.code == 4403
+        ws = self._configure_public(monkeypatch, admin_key="super-secret-admin-key")
+        with TestClient(ws.app) as client:
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with client.websocket_connect(f"/api/pty?token={ws._SESSION_TOKEN}"):
+                    pass
+            assert exc_info.value.code == 4403
 
-        admin_raw = client.get(
-            "/api/config/raw",
-            headers={
-                ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN,
-                "X-Hermes-Admin-Key": "super-secret-admin-key",
-            },
-        )
-        assert admin_raw.status_code == 200
-        assert "yaml" in admin_raw.json()
+            admin_raw = client.get(
+                "/api/config/raw",
+                headers={
+                    ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN,
+                    "X-Hermes-Admin-Key": "super-secret-admin-key",
+                },
+            )
+            assert admin_raw.status_code == 200
+            assert "yaml" in admin_raw.json()
 
     def test_business_ai_falls_back_when_primary_errors(self, monkeypatch):
-        client, _ = self._public_client(monkeypatch)
+        ws = self._configure_public(monkeypatch)
         monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
         monkeypatch.setattr("hermes_cli.config.load_env", lambda: {})
 
@@ -178,10 +180,11 @@ class TestPublicShowcaseSecurityHardening:
             return MagicMock(choices=[MagicMock(message=MagicMock(content="Polished executive text"))])
 
         with patch("agent.auxiliary_client.call_llm", side_effect=_fake_call_llm):
-            resp = client.post(
-                "/api/business/ai",
-                json={"operation": "polish", "input": "Draft clause", "language": "en"},
-            )
+            with TestClient(ws.app) as client:
+                resp = client.post(
+                    "/api/business/ai",
+                    json={"operation": "polish", "input": "Draft clause", "language": "en"},
+                )
 
         assert resp.status_code == 200
         assert resp.json() == {"ok": True, "output": "Polished executive text"}
@@ -255,3 +258,48 @@ class TestCredentialPoolAndFastLoopFailover:
             agent._try_recover_primary_transport.assert_not_called()
         finally:
             clear_runtime_main()
+
+
+class TestVercelSplitOriginSupport:
+    def test_public_showcase_allows_vercel_origin_ws_and_validate_without_token(self, monkeypatch):
+        from starlette.websockets import WebSocketDisconnect
+        from hermes_cli import web_server as ws
+
+        monkeypatch.setattr(ws.app.state, "allow_public", True, raising=False)
+        monkeypatch.setattr(ws.app.state, "auth_required", False, raising=False)
+        monkeypatch.setattr(ws, "_DASHBOARD_EMBEDDED_CHAT_ENABLED", True)
+        with TestClient(ws.app) as client:
+            # Provider credential probe (empty key validation) from *.vercel.app allowed without token
+            resp = client.post(
+                "/api/providers/validate",
+                json={"key": "FAL_KEY", "value": ""},
+                headers={"Origin": "https://tchuekam-agent.vercel.app"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["ok"] is False
+
+            # Untrusted external origin still fails _ws_auth_ok on /api/ws without token
+            with pytest.raises(WebSocketDisconnect) as bad_ws:
+                with client.websocket_connect(
+                    "/api/ws",
+                    headers={"Origin": "https://evil.example.com"},
+                ):
+                    pass
+            assert bad_ws.value.code == 4401
+
+            # Trusted Vercel origin passes _ws_auth_ok on /api/ws without token
+            fake_ws = MagicMock()
+            fake_ws.app = ws.app
+            fake_ws.url.path = "/api/ws"
+            fake_ws.query_params = {}
+            fake_ws.headers = {"origin": "https://tchuekam-agent.vercel.app"}
+            assert ws._ws_auth_ok(fake_ws) is True
+
+            # /api/pty stays locked even for Vercel origin
+            with pytest.raises(WebSocketDisconnect) as pty_ws:
+                with client.websocket_connect(
+                    f"/api/pty?token={ws._SESSION_TOKEN}",
+                    headers={"Origin": "https://tchuekam-agent.vercel.app"},
+                ):
+                    pass
+            assert pty_ws.value.code == 4403

@@ -49,8 +49,30 @@ function injected(): InjectedDashboardGlobals {
  * backend serves the bundle itself, which is also the only arrangement where
  * the auth gate's SameSite=Lax cookies reach it.
  */
+const DEFAULT_VERCEL_API_URL = 'https://tchuekam-agent-production.up.railway.app'
+
+function resolveDefaultApiUrl(): string {
+  const configured = String(env.VITE_HERMES_API_URL ?? '').replace(/\/+$/, '')
+
+  if (configured) {
+    return configured
+  }
+
+  if (
+    IS_WEB &&
+    !injected().__HERMES_SESSION_TOKEN__ &&
+    !injected().__HERMES_AUTH_REQUIRED__ &&
+    typeof window !== 'undefined' &&
+    window.location.hostname.endsWith('.vercel.app')
+  ) {
+    return DEFAULT_VERCEL_API_URL
+  }
+
+  return ''
+}
+
 export const webConfig = {
-  apiUrl: String(env.VITE_HERMES_API_URL ?? '').replace(/\/+$/, ''),
+  apiUrl: resolveDefaultApiUrl(),
   /**
    * Dashboard session token, used on `/api/*` and as `?token=` on the gateway
    * WebSocket. Injected by the server when it serves this page; the build-time

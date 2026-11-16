@@ -4,10 +4,20 @@ import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV
 // (/api/muapi-proxy/* -> https://api.muapi.ai/*) so api.muapi.ai CORS is bypassed
 // without colliding with /api/v1/* SaaS routes.
 // SSR (no window) and Electron's file:// renderer call the upstream directly.
+const _WEB_BACKEND_ORIGIN = (() => {
+    const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HERMES_API_URL)
+        ? String(import.meta.env.VITE_HERMES_API_URL).replace(/\/+$/, '')
+        : '';
+    if (envUrl) return envUrl;
+    if (typeof window !== 'undefined' && window.location?.hostname?.endsWith('.vercel.app') && !window.__HERMES_SESSION_TOKEN__) {
+        return 'https://tchuekam-agent-production.up.railway.app';
+    }
+    return '';
+})();
 const BASE_URL = (typeof window !== 'undefined' && window.location?.protocol?.startsWith('http'))
-    ? '/api/muapi-proxy'
+    ? `${_WEB_BACKEND_ORIGIN}/api/muapi-proxy`
     : 'https://api.muapi.ai';
-const PROXY_WF_BASE = '/api/muapi-proxy/workflow';
+const PROXY_WF_BASE = `${_WEB_BACKEND_ORIGIN}/api/muapi-proxy/workflow`;
 
 export class AuthError extends Error {
     constructor(message, status = 401, detail = '') {

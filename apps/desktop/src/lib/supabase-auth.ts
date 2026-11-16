@@ -35,7 +35,10 @@ export function getSupabaseConfig() {
     const host = window.location.hostname
 
     if (host && host !== 'localhost' && host !== '127.0.0.1') {
-      defaultPortalUrl = host.endsWith('.up.railway.app') ? RAILWAY_AUTH_PORTAL_URL : 'https://auth.tchuekam.com'
+      defaultPortalUrl =
+        host.endsWith('.up.railway.app') || host.endsWith('.vercel.app')
+          ? RAILWAY_AUTH_PORTAL_URL
+          : 'https://auth.tchuekam.com'
     }
   }
 
