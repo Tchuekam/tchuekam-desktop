@@ -358,15 +358,97 @@ async def _dashboard_auth_gate(request: Request, call_next):
     return await gated_auth_middleware(request, call_next)
 
 
+_PUBLIC_DEMO_BLOCKED_EXACT: frozenset[str] = frozenset({
+    "/api/env/reveal",
+    "/api/config/raw",
+    "/api/logs",
+    "/api/hermes/update",
+})
+
+_PUBLIC_DEMO_BLOCKED_PREFIXES: tuple[str, ...] = (
+    "/api/ops/",
+    "/api/cron/",
+    "/api/mcp/",
+    "/api/profiles",
+    "/api/webhooks",
+    "/api/credentials/pool",
+    "/api/pairing",
+    "/api/gateway/",
+    "/api/messaging/",
+    "/api/providers/oauth",
+    "/api/dashboard/agent-plugins",
+)
+
+_PUBLIC_DEMO_MUTATING_PATHS: frozenset[str] = frozenset({
+    "/api/env",
+    "/api/config",
+    "/api/model/set",
+    "/api/curator/paused",
+    "/api/curator/run",
+    "/api/memory/provider",
+    "/api/memory/reset",
+    "/api/skills/toggle",
+    "/api/dashboard/theme",
+    "/api/dashboard/plugin-providers",
+})
+
+_PUBLIC_DEMO_MUTATING_PREFIXES: tuple[str, ...] = (
+    "/api/skills/hub/",
+    "/api/tools/",
+)
+
+_PUBLIC_DEMO_TRUTHY: frozenset[str] = frozenset({"1", "true", "yes"})
+
+
+def _is_public_showcase_mode(app_instance: FastAPI) -> bool:
+    """True when exposed publicly without OAuth login (public demo showcase)."""
+    explicit = (
+        os.environ.get("HERMES_PUBLIC_DEMO", "").strip().lower() in _PUBLIC_DEMO_TRUTHY
+        or os.environ.get("TCHUEKAM_PUBLIC_DEMO", "").strip().lower() in _PUBLIC_DEMO_TRUTHY
+    )
+    insecure_public = bool(getattr(app_instance.state, "allow_public", False)) and not bool(
+        getattr(app_instance.state, "auth_required", False)
+    )
+    return explicit or insecure_public
+
+
+def _has_admin_override(headers) -> bool:
+    """Allow an operator-configured admin secret key to bypass demo restrictions."""
+    admin_key = (os.environ.get("HERMES_DASHBOARD_ADMIN_KEY") or "").strip()
+    if not admin_key:
+        return False
+    provided = (headers.get("x-hermes-admin-key") or "").strip()
+    return bool(provided) and hmac.compare_digest(provided.encode(), admin_key.encode())
+
+
+def _is_blocked_in_public_showcase(path: str, method: str) -> bool:
+    """Return True if this route exposes secrets, shell, logs, or server config writes."""
+    norm_method = (method or "GET").upper()
+    if path in _PUBLIC_DEMO_BLOCKED_EXACT or path.startswith(_PUBLIC_DEMO_BLOCKED_PREFIXES):
+        return True
+    if norm_method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if path in _PUBLIC_DEMO_MUTATING_PATHS or path.startswith(_PUBLIC_DEMO_MUTATING_PREFIXES):
+            return True
+        if path.startswith("/api/dashboard/plugins/") and path.endswith("/visibility"):
+            return True
+    return False
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Require the session token on all /api/ routes except the public list."""
+    path = request.url.path
+    if _is_public_showcase_mode(request.app) and _is_blocked_in_public_showcase(path, request.method):
+        if not _has_admin_override(request.headers):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Operation disabled in public showcase mode"},
+            )
     # When the OAuth gate is active, cookie-based auth (gated_auth_middleware
     # above) is authoritative.  The legacy _SESSION_TOKEN path is loopback-only
     # and is skipped here so the gate's session attachment isn't overridden.
     if getattr(request.app.state, "auth_required", False) or getattr(request.app.state, "allow_public", False):
         return await call_next(request)
-    path = request.url.path
     if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
         if _allows_saas_api_passthrough(path, request.headers.get("authorization", "")):
             return await call_next(request)
@@ -376,6 +458,19 @@ async def auth_middleware(request: Request, call_next):
                 content={"detail": "Unauthorized"},
             )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Attach baseline browser hardening headers on every HTTP response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+    if request.headers.get("x-forwarded-proto", "").lower() == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -2162,63 +2257,66 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
     if not value:
         return {"ok": False, "reachable": True, "message": "Enter a value first."}
 
-    # Local / custom endpoint: validate connectivity, not auth — any HTTP
-    # response (even 401) proves the endpoint is up.
-    if key == "OPENAI_BASE_URL":
-        url = value.rstrip("/") + "/models"
-        try:
-            with httpx.Client(timeout=httpx.Timeout(8.0)) as client:
-                client.get(url)
-            return {"ok": True, "reachable": True, "message": ""}
-        except Exception:
-            return {"ok": False, "reachable": False, "message": f"Could not reach {url}."}
+    def _run_probe() -> Dict[str, Any]:
+        # Local / custom endpoint: validate connectivity, not auth — any HTTP
+        # response (even 401) proves the endpoint is up.
+        if key == "OPENAI_BASE_URL":
+            url = value.rstrip("/") + "/models"
+            try:
+                with httpx.Client(timeout=httpx.Timeout(8.0)) as client:
+                    client.get(url)
+                return {"ok": True, "reachable": True, "message": ""}
+            except Exception:
+                return {"ok": False, "reachable": False, "message": f"Could not reach {url}."}
 
-    if key == "FAL_KEY":
-        # fal.ai has no free "whoami" endpoint. An empty request to a queue
-        # endpoint is rejected *before* any job is created or billed: a bad key
-        # gets 401/403, a good key gets 400/422 (missing prompt).
+        if key == "FAL_KEY":
+            # fal.ai has no free "whoami" endpoint. An empty request to a queue
+            # endpoint is rejected *before* any job is created or billed: a bad key
+            # gets 401/403, a good key gets 400/422 (missing prompt).
+            try:
+                with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
+                    resp = client.post(
+                        "https://queue.fal.run/fal-ai/flux/schnell",
+                        headers={"Authorization": f"Key {value}", "Content-Type": "application/json"},
+                        json={},
+                    )
+            except Exception:
+                return {"ok": False, "reachable": False, "message": "Could not reach fal.ai to verify the key."}
+            if resp.status_code in (401, 403):
+                return {"ok": False, "reachable": True, "message": "That API key was rejected. Double-check it and try again."}
+            if resp.status_code in (400, 422, 429):
+                return {"ok": True, "reachable": True, "message": ""}
+            return {"ok": False, "reachable": False, "message": f"Could not verify the key (HTTP {resp.status_code})."}
+
+        probe = _CREDENTIAL_PROBES.get(key)
+        if not probe:
+            # No probe for this provider — can't validate, don't block.
+            return {"ok": True, "reachable": False, "message": ""}
+
+        url, auth = probe
+        headers = {"Accept": "application/json"}
+        params = {}
+        if auth == "bearer":
+            headers["Authorization"] = f"Bearer {value}"
+        elif auth == "x-api-key":
+            headers["x-api-key"] = value
+        else:
+            params["key"] = value
+
         try:
             with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
-                resp = client.post(
-                    "https://queue.fal.run/fal-ai/flux/schnell",
-                    headers={"Authorization": f"Key {value}", "Content-Type": "application/json"},
-                    json={},
-                )
+                resp = client.get(url, headers=headers, params=params)
         except Exception:
-            return {"ok": False, "reachable": False, "message": "Could not reach fal.ai to verify the key."}
+            return {"ok": False, "reachable": False, "message": "Could not reach the provider to verify the key."}
+
         if resp.status_code in (401, 403):
             return {"ok": False, "reachable": True, "message": "That API key was rejected. Double-check it and try again."}
-        if resp.status_code in (400, 422, 429):
+        if resp.status_code == 429 or resp.is_success:
+            # 429 = key is valid but rate-limited; success = valid.
             return {"ok": True, "reachable": True, "message": ""}
-        return {"ok": False, "reachable": False, "message": f"Could not verify the key (HTTP {resp.status_code})."}
+        return {"ok": False, "reachable": True, "message": f"Provider returned HTTP {resp.status_code} for this key."}
 
-    probe = _CREDENTIAL_PROBES.get(key)
-    if not probe:
-        # No probe for this provider — can't validate, don't block.
-        return {"ok": True, "reachable": False, "message": ""}
-
-    url, auth = probe
-    headers = {"Accept": "application/json"}
-    params = {}
-    if auth == "bearer":
-        headers["Authorization"] = f"Bearer {value}"
-    elif auth == "x-api-key":
-        headers["x-api-key"] = value
-    else:
-        params["key"] = value
-
-    try:
-        with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
-            resp = client.get(url, headers=headers, params=params)
-    except Exception:
-        return {"ok": False, "reachable": False, "message": "Could not reach the provider to verify the key."}
-
-    if resp.status_code in (401, 403):
-        return {"ok": False, "reachable": True, "message": "That API key was rejected. Double-check it and try again."}
-    if resp.status_code == 429 or resp.is_success:
-        # 429 = key is valid but rate-limited; success = valid.
-        return {"ok": True, "reachable": True, "message": ""}
-    return {"ok": False, "reachable": True, "message": f"Provider returned HTTP {resp.status_code} for this key."}
+    return await asyncio.to_thread(_run_probe)
 
 
 @app.delete("/api/env")
@@ -7027,6 +7125,10 @@ async def pty_ws(ws: WebSocket) -> None:
         await ws.close(code=4403)
         return
 
+    if _is_public_showcase_mode(ws.app) and not _has_admin_override(ws.headers):
+        await ws.close(code=4403)
+        return
+
     # --- auth + loopback check (before accept so we can close cleanly) ---
     if not _ws_auth_ok(ws):
         await ws.close(code=4401)
@@ -7763,26 +7865,49 @@ async def api_business_ai(req: BusinessAiRequest):
         f"Respond only with the updated section text in {'French' if (req.targetLanguage or req.language) == 'fr' else 'English'}."
     )
     prompt = f"Operation: {req.operation}\nContext: {req.context or ''}\nInput:\n{req.input}\n\n{grounding}"
-    try:
-        from agent.auxiliary_client import call_llm
 
-        resp = call_llm(
-            messages=[
-                {"role": "system", "content": grounding},
-                {"role": "user", "content": prompt},
-            ],
-            task="fast",
-            max_tokens=600,
-        )
-        content = (
-            resp.choices[0].message.content.strip()
-            if resp and getattr(resp, "choices", None)
-            else ""
-        )
+    def _run_business_llm() -> str:
+        from agent.auxiliary_client import call_llm
+        from hermes_cli.fallback_config import resolve_effective_fallback_chain
+
+        msgs = [
+            {"role": "system", "content": grounding},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            resp = call_llm(messages=msgs, task="fast", max_tokens=600, timeout=20.0)
+            text = resp.choices[0].message.content.strip() if resp and getattr(resp, "choices", None) else ""
+            if text:
+                return text
+        except Exception as exc:
+            _log.warning("POST /api/business/ai primary call failed (%s), trying fallback chain", exc)
+
+        for entry in resolve_effective_fallback_chain():
+            fb_provider = entry.get("provider")
+            fb_model = entry.get("model")
+            if not fb_provider or not fb_model:
+                continue
+            try:
+                resp = call_llm(
+                    messages=msgs,
+                    provider=fb_provider,
+                    model=fb_model,
+                    max_tokens=600,
+                    timeout=15.0,
+                )
+                text = resp.choices[0].message.content.strip() if resp and getattr(resp, "choices", None) else ""
+                if text:
+                    return text
+            except Exception as fb_exc:
+                _log.warning("POST /api/business/ai fallback %s failed: %s", fb_provider, fb_exc)
+        return ""
+
+    try:
+        content = await asyncio.to_thread(_run_business_llm)
         if content:
             return {"ok": True, "output": content}
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("POST /api/business/ai failed: %s", exc)
 
     return {"ok": False, "output": ""}
 

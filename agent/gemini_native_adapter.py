@@ -20,6 +20,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 import uuid
 from types import SimpleNamespace
@@ -830,8 +831,9 @@ class GeminiNativeClient:
         self._default_headers = dict(default_headers or {})
         self.chat = _GeminiChatNamespace(self)
         self.is_closed = False
+        _read_timeout = float(os.getenv("HERMES_GEMINI_READ_TIMEOUT", "60.0"))
         self._http = http_client or httpx.Client(
-            timeout=timeout or httpx.Timeout(connect=15.0, read=600.0, write=30.0, pool=30.0)
+            timeout=timeout or httpx.Timeout(connect=8.0, read=_read_timeout, write=20.0, pool=15.0)
         )
 
     def close(self) -> None:

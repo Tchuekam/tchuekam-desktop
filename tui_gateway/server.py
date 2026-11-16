@@ -2378,6 +2378,12 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         requested=requested_provider,
         target_model=model or None,
     )
+    from hermes_cli.fallback_config import resolve_effective_fallback_chain
+    _fb_chain = resolve_effective_fallback_chain(
+        cfg,
+        primary_provider=runtime.get("provider"),
+        primary_model=model,
+    )
     return AIAgent(
         model=model,
         max_iterations=_cfg_max_turns(cfg, 90),
@@ -2385,6 +2391,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         base_url=runtime.get("base_url"),
         api_key=runtime.get("api_key"),
         api_mode=runtime.get("api_mode"),
+        fallback_model=_fb_chain or None,
         acp_command=runtime.get("command"),
         acp_args=runtime.get("args"),
         credential_pool=runtime.get("credential_pool"),

@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+import { MOBILE_MEDIA_QUERY } from '@/hooks/use-mobile'
 import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
@@ -56,6 +57,7 @@ import {
   pinSession,
   reorderPinnedSession,
   setSidebarAgentsGrouped,
+  setSidebarOpen,
   setSidebarPinsOpen,
   setSidebarRecentsOpen,
   SIDEBAR_SESSIONS_PAGE_SIZE,
@@ -281,6 +283,31 @@ export function ChatSidebar({
   const [serverMatches, setServerMatches] = useState<SessionSearchResult[]>([])
   const trimmedQuery = searchQuery.trim()
 
+  const closeDrawerOnMobile = () => {
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia(MOBILE_MEDIA_QUERY).matches
+    ) {
+      setSidebarOpen(false)
+    }
+  }
+
+  const handleNavigate = (item: SidebarNavItem) => {
+    closeDrawerOnMobile()
+    onNavigate(item)
+  }
+
+  const handleResumeSession = (sessionId: string) => {
+    closeDrawerOnMobile()
+    onResumeSession(sessionId)
+  }
+
+  const handleNewSessionInWorkspace = (path: null | string) => {
+    closeDrawerOnMobile()
+    onNewSessionInWorkspace(path)
+  }
+
   const activeSidebarSessionId = currentView === 'chat' ? selectedSessionId : null
 
   const dndSensors = useSensors(
@@ -485,19 +512,19 @@ export function ChatSidebar({
                         active && 'bg-(--ui-control-active-background) text-foreground shadow-none',
                         !isInteractive && 'cursor-default hover:bg-transparent hover:text-inherit'
                       )}
-                      onClick={() => onNavigate(item)}
+                      onClick={() => handleNavigate(item)}
                       tooltip={item.label}
                       type="button"
                     >
                       <item.icon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" />
                       {sidebarOpen && (
                         <>
-                          <span className="min-w-0 flex-1 truncate max-[46.25rem]:hidden">{item.label}</span>
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
                           {item.id === 'new-session' && (
                             <KbdGroup className="ml-auto max-[46.25rem]:hidden" keys={[...NEW_SESSION_KBD]} />
                           )}
                           {item.id === 'mobile' && (
-                            <span className="ml-auto rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-[0.625rem] font-bold text-cyan-400 max-[46.25rem]:hidden">
+                            <span className="ml-auto rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-[0.625rem] font-bold text-cyan-400">
                               NEW
                             </span>
                           )}
@@ -550,7 +577,7 @@ export function ChatSidebar({
             labelMeta={String(searchResults.length)}
             onArchiveSession={onArchiveSession}
             onDeleteSession={onDeleteSession}
-            onResumeSession={onResumeSession}
+            onResumeSession={handleResumeSession}
             onToggle={() => undefined}
             onTogglePin={pinSession}
             open
@@ -571,7 +598,7 @@ export function ChatSidebar({
             onArchiveSession={onArchiveSession}
             onDeleteSession={onDeleteSession}
             onReorder={handlePinnedDragEnd}
-            onResumeSession={onResumeSession}
+            onResumeSession={handleResumeSession}
             onToggle={() => setSidebarPinsOpen(!pinsOpen)}
             onTogglePin={unpinSession}
             open={pinsOpen}
@@ -628,9 +655,9 @@ export function ChatSidebar({
             labelMeta={countLabel(agentSessions.length, knownSessionTotal)}
             onArchiveSession={onArchiveSession}
             onDeleteSession={onDeleteSession}
-            onNewSessionInWorkspace={onNewSessionInWorkspace}
+            onNewSessionInWorkspace={handleNewSessionInWorkspace}
             onReorder={handleAgentDragEnd}
-            onResumeSession={onResumeSession}
+            onResumeSession={handleResumeSession}
             onToggle={() => setSidebarRecentsOpen(!agentsOpen)}
             onTogglePin={pinSession}
             open={agentsOpen}

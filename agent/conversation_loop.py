@@ -3280,6 +3280,41 @@ def run_conversation(
                         "error": str(api_error),
                     }
 
+                # Fast multi-provider failover on server outages, overload,
+                # timeouts, or missing model when fallback providers are ready:
+                # avoid multi-attempt exponential sleep against a failing primary.
+                _fast_failover_reasons = {
+                    FailoverReason.overloaded,
+                    FailoverReason.server_error,
+                    FailoverReason.timeout,
+                    FailoverReason.model_not_found,
+                }
+                if classified.reason in _fast_failover_reasons:
+                    if not agent._fallback_chain and not getattr(agent, "_auto_fallback_checked", False):
+                        try:
+                            from hermes_cli.fallback_config import resolve_effective_fallback_chain
+                            _auto_fb = resolve_effective_fallback_chain(
+                                primary_provider=getattr(agent, "provider", "") or "",
+                                primary_model=getattr(agent, "model", "") or "",
+                            )
+                            agent._auto_fallback_checked = True
+                            if _auto_fb:
+                                agent._fallback_chain = _auto_fb
+                                agent._fallback_index = 0
+                        except Exception:
+                            agent._auto_fallback_checked = True
+                    if agent._has_pending_fallback() and (
+                        retry_count >= 1 or classified.reason == FailoverReason.model_not_found
+                    ):
+                        agent._buffer_status(
+                            f"⚡ Primary {classified.reason.value} on {_provider} — switching fast to fallback..."
+                        )
+                        if agent._try_activate_fallback(reason=classified.reason):
+                            retry_count = 0
+                            compression_attempts = 0
+                            primary_recovery_attempted = False
+                            continue
+
                 if retry_count >= max_retries:
                     # Before falling back, try rebuilding the primary
                     # client once for transient transport errors (stale
@@ -3399,6 +3434,8 @@ def run_conversation(
                             except (TypeError, ValueError):
                                 pass
                 wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=2.0, max_delay=60.0)
+                if agent._has_pending_fallback():
+                    wait_time = min(wait_time, 0.35)
                 if is_rate_limited:
                     agent._buffer_status(f"⏱️ Rate limited. Waiting {wait_time:.1f}s (attempt {retry_count + 1}/{max_retries})...")
                 else:

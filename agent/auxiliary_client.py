@@ -259,7 +259,14 @@ def _get_aux_model_for_provider(provider_id: str) -> str:
 # plus providers we intentionally keep pinned here (e.g. Anthropic predates
 # profiles). New providers should set default_aux_model on their profile instead.
 _API_KEY_PROVIDER_AUX_MODELS_FALLBACK: Dict[str, str] = {
-    "gemini": "gemini-3-flash-preview",
+    "gemini": "gemini-2.5-flash",
+    "groq": "llama-3.3-70b-versatile",
+    "deepseek": "deepseek-chat",
+    "openai-api": "gpt-4o-mini",
+    "xai": "grok-3-mini",
+    "nvidia": "openai/gpt-oss-120b",
+    "alibaba": "qwen-turbo",
+    "huggingface": "Qwen/Qwen2.5-72B-Instruct",
     "zai": "glm-4.5-flash",
     "kimi-coding": "kimi-k2-turbo-preview",
     "stepfun": "step-3.5-flash",
@@ -1391,11 +1398,58 @@ def _read_codex_access_token() -> Optional[str]:
         return None
 
 
-def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
-    """Try each API-key provider in PROVIDER_REGISTRY order.
+_FAST_AUX_PROVIDER_PRIORITY: Tuple[str, ...] = (
+    "groq",
+    "gemini",
+    "anthropic",
+    "deepseek",
+    "openai-api",
+    "xai",
+)
 
-    Returns (client, model) for the first provider with usable runtime
-    credentials, or (None, None) if none are configured.
+
+def _build_api_key_aux_client(
+    provider_id: str,
+    api_key: str,
+    raw_base_url: str,
+    model: str,
+) -> OpenAI:
+    """Build an OpenAI-compatible or native client for a resolved API-key provider."""
+    base_url = _to_openai_base_url(raw_base_url)
+    if provider_id == "gemini":
+        from agent.gemini_native_adapter import GeminiNativeClient, is_native_gemini_base_url
+
+        if is_native_gemini_base_url(base_url):
+            return GeminiNativeClient(api_key=api_key, base_url=base_url)
+    extra: Dict[str, Any] = {}
+    if base_url_host_matches(base_url, "api.kimi.com"):
+        extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
+    elif base_url_host_matches(base_url, "api.githubcopilot.com"):
+        from hermes_cli.models import copilot_default_headers
+
+        extra["default_headers"] = copilot_default_headers()
+    elif base_url_host_matches(base_url, "integrate.api.nvidia.com"):
+        extra["default_headers"] = build_nvidia_nim_headers(base_url)
+    else:
+        try:
+            from providers import get_provider_profile as _gpf_aux
+            _ph_aux = _gpf_aux(provider_id)
+            if _ph_aux and _ph_aux.default_headers:
+                extra["default_headers"] = dict(_ph_aux.default_headers)
+        except Exception:
+            pass
+    _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
+    return _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
+
+
+def _resolve_api_key_provider(
+    skip_providers: Optional[set] = None,
+) -> Tuple[Optional[OpenAI], Optional[str]]:
+    """Try each API-key provider, returning the first usable (client, model).
+
+    When ``skip_providers`` is passed (fallback cascade), skips those provider
+    IDs and prioritizes ultra-fast tier providers (Groq, Gemini, Anthropic,
+    DeepSeek, OpenAI, xAI) ahead of the remaining registry entries.
     """
     try:
         from hermes_cli.auth import PROVIDER_REGISTRY, resolve_api_key_provider_credentials
@@ -1403,61 +1457,50 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
         logger.debug("Could not import PROVIDER_REGISTRY for API-key fallback")
         return None, None
 
-    for provider_id, pconfig in PROVIDER_REGISTRY.items():
+    skipped = {s.strip().lower() for s in (skip_providers or set()) if s}
+    items = list(PROVIDER_REGISTRY.items())
+    if skip_providers is not None:
+        priority_map = {pid: idx for idx, pid in enumerate(_FAST_AUX_PROVIDER_PRIORITY)}
+        items.sort(key=lambda pair: priority_map.get(pair[0], len(_FAST_AUX_PROVIDER_PRIORITY)))
+
+    for provider_id, pconfig in items:
         if pconfig.auth_type != "api_key":
+            continue
+        if provider_id.lower() in skipped:
             continue
         if _is_provider_unhealthy(provider_id):
             logger.debug("Auxiliary api-key chain: %s is unhealthy, skipping", provider_id)
             continue
         if provider_id == "anthropic":
-            # Only try anthropic when the user has explicitly configured it.
-            # Without this gate, Claude Code credentials get silently used
-            # as auxiliary fallback when the user's primary provider fails.
+            # Only try anthropic when explicitly configured, OR during an active
+            # fallback cascade when an explicit API key is present in env.
             try:
                 from hermes_cli.auth import is_provider_explicitly_configured
-                if not is_provider_explicitly_configured("anthropic"):
-                    continue
+                explicit_ok = is_provider_explicitly_configured("anthropic")
             except ImportError:
-                pass
-            return _try_anthropic()
+                explicit_ok = False
+            if not explicit_ok and not (
+                skip_providers is not None
+                and (os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEYS"))
+            ):
+                continue
+            client, model = _try_anthropic()
+            if client is not None:
+                return client, model
+            continue
+
+        model = _get_aux_model_for_provider(provider_id) or None
+        if model is None:
+            continue
 
         pool_present, entry = _select_pool_entry(provider_id)
         if pool_present:
             api_key = _pool_runtime_api_key(entry)
             if not api_key:
                 continue
-
             raw_base_url = _pool_runtime_base_url(entry, pconfig.inference_base_url) or pconfig.inference_base_url
-            base_url = _to_openai_base_url(raw_base_url)
-            model = _get_aux_model_for_provider(provider_id) or None
-            if model is None:
-                continue  # skip provider if we don't know a valid aux model
             logger.debug("Auxiliary text client: %s (%s) via pool", pconfig.name, model)
-            if provider_id == "gemini":
-                from agent.gemini_native_adapter import GeminiNativeClient, is_native_gemini_base_url
-
-                if is_native_gemini_base_url(base_url):
-                    return GeminiNativeClient(api_key=api_key, base_url=base_url), model
-            extra = {}
-            if base_url_host_matches(base_url, "api.kimi.com"):
-                extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
-            elif base_url_host_matches(base_url, "api.githubcopilot.com"):
-                from hermes_cli.models import copilot_default_headers
-
-                extra["default_headers"] = copilot_default_headers()
-            elif base_url_host_matches(base_url, "integrate.api.nvidia.com"):
-                extra["default_headers"] = build_nvidia_nim_headers(base_url)
-            else:
-                try:
-                    from providers import get_provider_profile as _gpf_aux
-                    _ph_aux = _gpf_aux(provider_id)
-                    if _ph_aux and _ph_aux.default_headers:
-                        extra["default_headers"] = dict(_ph_aux.default_headers)
-                except Exception:
-                    pass
-            _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
-            _client = _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
-            return _client, model
+            return _build_api_key_aux_client(provider_id, api_key, raw_base_url, model), model
 
         creds = resolve_api_key_provider_credentials(provider_id)
         api_key = str(creds.get("api_key", "")).strip()
@@ -1465,36 +1508,8 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
             continue
 
         raw_base_url = str(creds.get("base_url", "")).strip().rstrip("/") or pconfig.inference_base_url
-        base_url = _to_openai_base_url(raw_base_url)
-        model = _get_aux_model_for_provider(provider_id) or None
-        if model is None:
-            continue  # skip provider if we don't know a valid aux model
         logger.debug("Auxiliary text client: %s (%s)", pconfig.name, model)
-        if provider_id == "gemini":
-            from agent.gemini_native_adapter import GeminiNativeClient, is_native_gemini_base_url
-
-            if is_native_gemini_base_url(base_url):
-                return GeminiNativeClient(api_key=api_key, base_url=base_url), model
-        extra = {}
-        if base_url_host_matches(base_url, "api.kimi.com"):
-            extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
-        elif base_url_host_matches(base_url, "api.githubcopilot.com"):
-            from hermes_cli.models import copilot_default_headers
-
-            extra["default_headers"] = copilot_default_headers()
-        elif base_url_host_matches(base_url, "integrate.api.nvidia.com"):
-            extra["default_headers"] = build_nvidia_nim_headers(base_url)
-        else:
-            try:
-                from providers import get_provider_profile as _gpf_aux2
-                _ph_aux2 = _gpf_aux2(provider_id)
-                if _ph_aux2 and _ph_aux2.default_headers:
-                    extra["default_headers"] = dict(_ph_aux2.default_headers)
-            except Exception:
-                pass
-        _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
-        _client = _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
-        return _client, model
+        return _build_api_key_aux_client(provider_id, api_key, raw_base_url, model), model
 
     return None, None
 
@@ -2431,6 +2446,23 @@ def _is_connection_error(exc: Exception) -> bool:
     return False
 
 
+def _is_transient_server_error(exc: Exception) -> bool:
+    """Detect upstream gateway/overload errors (502/503/504/529) that warrant fallback."""
+    status = getattr(exc, "status_code", None)
+    if status in {502, 503, 504, 529}:
+        return True
+    err_type = type(exc).__name__.lower()
+    if "serviceunavailable" in err_type:
+        return True
+    err_lower = str(exc).lower()
+    return any(kw in err_lower for kw in (
+        "error code: 502", "error code: 503",
+        "error code: 504", "error code: 529",
+        "service unavailable", "bad gateway", "gateway timeout",
+        "overloaded",
+    ))
+
+
 def _is_auth_error(exc: Exception) -> bool:
     """Detect auth failures that should trigger provider-specific refresh."""
     status = getattr(exc, "status_code", None)
@@ -2886,11 +2918,12 @@ def _try_payment_fallback(
     failed_provider: str,
     task: str = None,
     reason: str = "payment error",
+    skip_providers: Optional[set] = None,
 ) -> Tuple[Optional[Any], Optional[str], str]:
-    """Try alternative providers after a payment/credit or connection error.
+    """Try alternative providers after a payment/credit, server, or connection error.
 
     Iterates the standard auto-detection chain, skipping the provider that
-    failed.
+    failed and any providers in ``skip_providers``.
 
     Returns:
         (client, model, provider_label) or (None, None, "") if no fallback.
@@ -2901,8 +2934,11 @@ def _try_payment_fallback(
     # (e.g. main_provider="openrouter" → skip "openrouter" in chain)
     main_provider = _read_main_provider()
     skip_labels = {skip}
-    if main_provider and main_provider.lower() in skip:
+    if main_provider and (not skip or skip == "auto" or main_provider.lower() in skip):
         skip_labels.add(main_provider.lower())
+    for extra in (skip_providers or set()):
+        if extra:
+            skip_labels.add(str(extra).strip().lower())
     # Map common resolved_provider values back to chain labels.
     _alias_to_label = {"openrouter": "openrouter", "nous": "nous",
                        "openai-codex": "openai-codex", "codex": "openai-codex",
@@ -2917,13 +2953,23 @@ def _try_payment_fallback(
             _log_skip_unhealthy(label, task)
             tried.append(f"{label} (unhealthy)")
             continue
-        client, model = try_fn()
+        if try_fn is _resolve_api_key_provider:
+            client, model = _resolve_api_key_provider(skip_providers=skip_chain_labels)
+        else:
+            client, model = try_fn()
         if client is not None:
+            resolved_label = label
+            if label == "api-key":
+                inferred = _infer_provider_from_client_url(
+                    str(getattr(client, "base_url", "") or "")
+                )
+                if inferred:
+                    resolved_label = inferred
             logger.info(
                 "Auxiliary %s: %s on %s — falling back to %s (%s)",
-                task or "call", reason, failed_provider, label, model or "default",
+                task or "call", reason, failed_provider, resolved_label, model or "default",
             )
-            return client, model, label
+            return client, model, resolved_label
         tried.append(label)
 
     logger.warning(
@@ -2931,6 +2977,23 @@ def _try_payment_fallback(
         task or "call", reason, failed_provider, ", ".join(tried),
     )
     return None, None, ""
+
+
+def _infer_provider_from_client_url(base_url: str) -> str:
+    """Infer provider ID from a client base_url for fallback cascade tracking."""
+    low = (base_url or "").lower()
+    for host, pid in (
+        ("api.groq.com", "groq"),
+        ("generativelanguage.googleapis.com", "gemini"),
+        ("api.anthropic.com", "anthropic"),
+        ("api.deepseek.com", "deepseek"),
+        ("api.openai.com", "openai-api"),
+        ("api.x.ai", "xai"),
+        ("openrouter.ai", "openrouter"),
+    ):
+        if host in low:
+            return pid
+    return ""
 
 
 def _try_main_agent_model_fallback(
@@ -5294,44 +5357,78 @@ def call_llm(
             _is_payment_error(first_err)
             or _is_connection_error(first_err)
             or _is_rate_limit_error(first_err)
+            or _is_transient_server_error(first_err)
+            or _is_model_not_found_error(first_err)
         )
-        # Respect explicit provider choice for transient errors (auth, request
-        # validation, etc.) but allow fallback when the provider clearly cannot
-        # serve the request due to capacity: payment/quota exhaustion and
-        # connection failures are capacity problems, not request constraints.
-        # See #26803: daily token quota (429 + "too many tokens per day") must
-        # fall back just like a 402 credit error.
         is_auto = resolved_provider in {"auto", "", None}
-        # Capacity errors bypass the explicit-provider gate: the provider
-        # literally cannot serve this request regardless of user intent.
-        is_capacity_error = _is_payment_error(first_err) or _is_connection_error(first_err)
+        is_capacity_error = (
+            _is_payment_error(first_err)
+            or _is_connection_error(first_err)
+            or _is_transient_server_error(first_err)
+        )
         if should_fallback and (is_auto or is_capacity_error):
             if _is_payment_error(first_err):
                 reason = "payment error"
-                # Resolve the actual provider label (resolved_provider may be
-                # "auto"; the client's base_url tells us which backend got the
-                # 402). Mark THAT label unhealthy so subsequent aux calls
-                # skip it instead of paying another doomed RTT.
                 _mark_provider_unhealthy(
                     _recoverable_pool_provider(resolved_provider, client, main_runtime=main_runtime) or resolved_provider
                 )
             elif _is_rate_limit_error(first_err):
                 reason = "rate limit"
+            elif _is_transient_server_error(first_err):
+                reason = "server error"
+            elif _is_model_not_found_error(first_err):
+                reason = "model not found"
             else:
                 reason = "connection error"
             logger.info("Auxiliary %s: %s on %s (%s), trying fallback",
                         task or "call", reason, resolved_provider, first_err)
 
-            # Fallback order (#26882, #26803):
-            #   1. User-configured fallback_chain (per-task) if set
-            #   2. Main agent model (last-resort safety net)
-            # For auto users (no explicit aux provider), use the full
-            # auto-detection chain instead — its Step 1 IS the main agent
-            # model, so users on `auto` already get main-model fallback.
-            fb_client, fb_model, fb_label = (None, None, "")
             if is_auto:
-                fb_client, fb_model, fb_label = _try_payment_fallback(
-                    resolved_provider, task, reason=reason)
+                tried_labels: set = set()
+                inferred_primary = _infer_provider_from_client_url(
+                    str(getattr(client, "base_url", "") or "")
+                )
+                if inferred_primary:
+                    tried_labels.add(inferred_primary)
+                last_fb_err: Optional[Exception] = None
+                for _attempt in range(6):
+                    fb_client, fb_model, fb_label = _try_payment_fallback(
+                        resolved_provider, task, reason=reason, skip_providers=tried_labels,
+                    )
+                    if fb_client is None:
+                        break
+                    tried_labels.add(fb_label)
+                    fb_kwargs = _build_call_kwargs(
+                        fb_label, fb_model, messages,
+                        temperature=temperature, max_tokens=max_tokens,
+                        tools=tools, timeout=effective_timeout,
+                        extra_body=effective_extra_body,
+                        base_url=str(getattr(fb_client, "base_url", "") or ""))
+                    try:
+                        return _validate_llm_response(
+                            fb_client.chat.completions.create(**fb_kwargs), task)
+                    except Exception as fb_err:
+                        last_fb_err = fb_err
+                        if not (
+                            _is_payment_error(fb_err)
+                            or _is_connection_error(fb_err)
+                            or _is_rate_limit_error(fb_err)
+                            or _is_transient_server_error(fb_err)
+                            or _is_model_not_found_error(fb_err)
+                        ):
+                            raise
+                        if _is_payment_error(fb_err):
+                            _mark_provider_unhealthy(fb_label)
+                        logger.warning(
+                            "Auxiliary %s: fallback %s (%s) failed (%s), cascading to next provider",
+                            task or "call", fb_label, fb_model, fb_err,
+                        )
+                        continue
+                if last_fb_err is not None:
+                    logger.warning(
+                        "Auxiliary %s: %s on %s and all auto fallbacks exhausted (last: %s).",
+                        task or "call", reason, resolved_provider, last_fb_err,
+                    )
             else:
                 fb_client, fb_model, fb_label = _try_configured_fallback_chain(
                     task, resolved_provider or "auto", reason=reason)
@@ -5339,15 +5436,15 @@ def call_llm(
                     fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
                         resolved_provider, task, reason=reason)
 
-            if fb_client is not None:
-                fb_kwargs = _build_call_kwargs(
-                    fb_label, fb_model, messages,
-                    temperature=temperature, max_tokens=max_tokens,
-                    tools=tools, timeout=effective_timeout,
-                    extra_body=effective_extra_body,
-                    base_url=str(getattr(fb_client, "base_url", "") or ""))
-                return _validate_llm_response(
-                    fb_client.chat.completions.create(**fb_kwargs), task)
+                if fb_client is not None:
+                    fb_kwargs = _build_call_kwargs(
+                        fb_label, fb_model, messages,
+                        temperature=temperature, max_tokens=max_tokens,
+                        tools=tools, timeout=effective_timeout,
+                        extra_body=effective_extra_body,
+                        base_url=str(getattr(fb_client, "base_url", "") or ""))
+                    return _validate_llm_response(
+                        fb_client.chat.completions.create(**fb_kwargs), task)
             # All fallback layers exhausted — emit a single user-visible
             # warning so the operator knows aux task is about to fail.
             # (#26882) The error itself is re-raised below.
@@ -5722,17 +5819,20 @@ async def async_call_llm(
                     else:
                         raise
 
-        # ── Payment / connection / rate-limit fallback (mirrors sync call_llm) ──
+        # ── Payment / connection / rate-limit / server-error fallback ──
         should_fallback = (
             _is_payment_error(first_err)
             or _is_connection_error(first_err)
             or _is_rate_limit_error(first_err)
+            or _is_transient_server_error(first_err)
+            or _is_model_not_found_error(first_err)
         )
-        # Capacity errors (payment/quota/connection) bypass the explicit-provider
-        # gate — the provider cannot serve the request regardless of user intent.
-        # See #26803: daily token quota must fall back like a 402 credit error.
         is_auto = resolved_provider in {"auto", "", None}
-        is_capacity_error = _is_payment_error(first_err) or _is_connection_error(first_err)
+        is_capacity_error = (
+            _is_payment_error(first_err)
+            or _is_connection_error(first_err)
+            or _is_transient_server_error(first_err)
+        )
         if should_fallback and (is_auto or is_capacity_error):
             if _is_payment_error(first_err):
                 reason = "payment error"
@@ -5741,20 +5841,66 @@ async def async_call_llm(
                 )
             elif _is_rate_limit_error(first_err):
                 reason = "rate limit"
+            elif _is_transient_server_error(first_err):
+                reason = "server error"
+            elif _is_model_not_found_error(first_err):
+                reason = "model not found"
             else:
                 reason = "connection error"
             logger.info("Auxiliary %s (async): %s on %s (%s), trying fallback",
                         task or "call", reason, resolved_provider, first_err)
 
-            # Fallback order (#26882, #26803):
-            #   1. User-configured fallback_chain (per-task) if set
-            #   2. Main agent model (last-resort safety net)
-            # Auto users get the full auto-detection chain instead — its
-            # Step 1 IS the main agent model.
-            fb_client, fb_model, fb_label = (None, None, "")
             if is_auto:
-                fb_client, fb_model, fb_label = _try_payment_fallback(
-                    resolved_provider, task, reason=reason)
+                tried_labels: set = set()
+                inferred_primary = _infer_provider_from_client_url(
+                    str(getattr(client, "base_url", "") or "")
+                )
+                if inferred_primary:
+                    tried_labels.add(inferred_primary)
+                last_fb_err: Optional[Exception] = None
+                for _attempt in range(6):
+                    fb_client, fb_model, fb_label = _try_payment_fallback(
+                        resolved_provider, task, reason=reason, skip_providers=tried_labels,
+                    )
+                    if fb_client is None:
+                        break
+                    tried_labels.add(fb_label)
+                    fb_kwargs = _build_call_kwargs(
+                        fb_label, fb_model, messages,
+                        temperature=temperature, max_tokens=max_tokens,
+                        tools=tools, timeout=effective_timeout,
+                        extra_body=effective_extra_body,
+                        base_url=str(getattr(fb_client, "base_url", "") or ""))
+                    async_fb, async_fb_model = _to_async_client(
+                        fb_client, fb_model or "", is_vision=(task == "vision")
+                    )
+                    if async_fb_model and async_fb_model != fb_kwargs.get("model"):
+                        fb_kwargs["model"] = async_fb_model
+                    try:
+                        return _validate_llm_response(
+                            await async_fb.chat.completions.create(**fb_kwargs), task)
+                    except Exception as fb_err:
+                        last_fb_err = fb_err
+                        if not (
+                            _is_payment_error(fb_err)
+                            or _is_connection_error(fb_err)
+                            or _is_rate_limit_error(fb_err)
+                            or _is_transient_server_error(fb_err)
+                            or _is_model_not_found_error(fb_err)
+                        ):
+                            raise
+                        if _is_payment_error(fb_err):
+                            _mark_provider_unhealthy(fb_label)
+                        logger.warning(
+                            "Auxiliary %s (async): fallback %s (%s) failed (%s), cascading",
+                            task or "call", fb_label, fb_model, fb_err,
+                        )
+                        continue
+                if last_fb_err is not None:
+                    logger.warning(
+                        "Auxiliary %s (async): %s on %s and all auto fallbacks exhausted (last: %s).",
+                        task or "call", reason, resolved_provider, last_fb_err,
+                    )
             else:
                 fb_client, fb_model, fb_label = _try_configured_fallback_chain(
                     task, resolved_provider or "auto", reason=reason)
@@ -5762,21 +5908,20 @@ async def async_call_llm(
                     fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
                         resolved_provider, task, reason=reason)
 
-            if fb_client is not None:
-                fb_kwargs = _build_call_kwargs(
-                    fb_label, fb_model, messages,
-                    temperature=temperature, max_tokens=max_tokens,
-                    tools=tools, timeout=effective_timeout,
-                    extra_body=effective_extra_body,
-                    base_url=str(getattr(fb_client, "base_url", "") or ""))
-                # Convert sync fallback client to async
-                async_fb, async_fb_model = _to_async_client(
-                    fb_client, fb_model or "", is_vision=(task == "vision")
-                )
-                if async_fb_model and async_fb_model != fb_kwargs.get("model"):
-                    fb_kwargs["model"] = async_fb_model
-                return _validate_llm_response(
-                    await async_fb.chat.completions.create(**fb_kwargs), task)
+                if fb_client is not None:
+                    fb_kwargs = _build_call_kwargs(
+                        fb_label, fb_model, messages,
+                        temperature=temperature, max_tokens=max_tokens,
+                        tools=tools, timeout=effective_timeout,
+                        extra_body=effective_extra_body,
+                        base_url=str(getattr(fb_client, "base_url", "") or ""))
+                    async_fb, async_fb_model = _to_async_client(
+                        fb_client, fb_model or "", is_vision=(task == "vision")
+                    )
+                    if async_fb_model and async_fb_model != fb_kwargs.get("model"):
+                        fb_kwargs["model"] = async_fb_model
+                    return _validate_llm_response(
+                        await async_fb.chat.completions.create(**fb_kwargs), task)
             # All fallback layers exhausted — warn before re-raising. (#26882)
             logger.warning(
                 "Auxiliary %s (async): %s on %s and all fallbacks exhausted "

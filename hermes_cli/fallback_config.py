@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
+
+
+_FAST_FALLBACK_PROVIDER_SPECS: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("groq", ("GROQ_API_KEY", "GROQ_API_KEYS"), "llama-3.3-70b-versatile"),
+    ("gemini", ("GOOGLE_API_KEY", "GEMINI_API_KEY", "GEMINI_API_KEYS"), "gemini-2.5-flash"),
+    ("anthropic", ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS", "ANTHROPIC_TOKEN"), "claude-haiku-4-5-20251001"),
+    ("openrouter", ("OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"), "google/gemini-2.5-flash"),
+    ("openai-api", ("OPENAI_API_KEY", "OPENAI_API_KEYS"), "gpt-4o-mini"),
+    ("deepseek", ("DEEPSEEK_API_KEY", "DEEPSEEK_API_KEYS"), "deepseek-chat"),
+)
 
 
 def _normalized_base_url(value: Any) -> str:
@@ -68,5 +80,79 @@ def get_fallback_chain(config: dict[str, Any] | None) -> list[dict[str, Any]]:
                 continue
             seen.add(identity)
             chain.append(entry)
+
+    return chain
+
+
+def _parse_env_fallback_entries() -> list[dict[str, Any]]:
+    """Parse ``HERMES_FALLBACK_PROVIDERS`` from JSON or comma-separated specs."""
+    raw = (os.getenv("HERMES_FALLBACK_PROVIDERS") or "").strip()
+    if not raw:
+        return []
+    if raw.startswith("[") or raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return []
+        return _iter_fallback_entries(parsed)
+
+    entries: list[dict[str, Any]] = []
+    for item in raw.split(","):
+        spec = item.strip()
+        if not spec or ":" not in spec:
+            continue
+        provider, model = spec.split(":", 1)
+        provider = provider.strip()
+        model = model.strip()
+        if provider and model:
+            entries.append({"provider": provider, "model": model})
+    return entries
+
+
+def resolve_effective_fallback_chain(
+    config: dict[str, Any] | None = None,
+    *,
+    primary_provider: str | None = None,
+    primary_model: str | None = None,
+) -> list[dict[str, Any]]:
+    """Build the ordered fast fallback chain from config, env overrides, and live keys."""
+    chain: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    norm_primary_provider = (primary_provider or "").strip().lower()
+    norm_primary_model = (primary_model or "").strip().lower()
+
+    def _append(entry: dict[str, Any]) -> None:
+        identity = _entry_identity(entry)
+        if identity in seen:
+            return
+        if (
+            norm_primary_provider
+            and identity[0] == norm_primary_provider
+            and (not norm_primary_model or identity[1] == norm_primary_model)
+        ):
+            return
+        seen.add(identity)
+        chain.append(entry)
+
+    for entry in get_fallback_chain(config):
+        _append(entry)
+    for entry in _parse_env_fallback_entries():
+        _append(entry)
+
+    try:
+        from hermes_cli.config import load_env
+        env_file = load_env()
+    except Exception:
+        env_file = {}
+
+    def _has_env_key(var_name: str) -> bool:
+        val = (os.getenv(var_name) or env_file.get(var_name) or "").strip()
+        return bool(val)
+
+    for provider_id, key_vars, default_model in _FAST_FALLBACK_PROVIDER_SPECS:
+        if provider_id == norm_primary_provider:
+            continue
+        if any(_has_env_key(var_name) for var_name in key_vars):
+            _append({"provider": provider_id, "model": default_model})
 
     return chain
