@@ -420,3 +420,426 @@ export function useSessionActions({
       return
     }
 
+    navigate(NEW_CHAT_ROUTE)
+  }, [navigate, selectedStoredSessionId])
+
+  const resumeSession = useCallback(
+    async (storedSessionId: string, replaceRoute = false) => {
+      const requestId = resumeRequestRef.current + 1
+      resumeRequestRef.current = requestId
+
+      const isCurrentResume = () =>
+        resumeRequestRef.current === requestId && selectedStoredSessionIdRef.current === storedSessionId
+
+      const cachedRuntimeId = runtimeIdByStoredSessionIdRef.current.get(storedSessionId)
+      const cachedState = cachedRuntimeId && sessionStateByRuntimeIdRef.current.get(cachedRuntimeId)
+
+      if (cachedRuntimeId && cachedState) {
+        setFreshDraftReady(false)
+        clearNotifications()
+        setSelectedStoredSessionId(storedSessionId)
+        selectedStoredSessionIdRef.current = storedSessionId
+        setActiveSessionId(cachedRuntimeId)
+        activeSessionIdRef.current = cachedRuntimeId
+        syncSessionStateToView(cachedRuntimeId, cachedState)
+        setCurrentCwd(cachedState.cwd)
+        setCurrentBranch(cachedState.branch)
+        setSessionStartedAt(Date.now())
+        clearComposerDraft()
+        clearComposerAttachments()
+
+        void requestGateway<UsageStats>('session.usage', { session_id: cachedRuntimeId })
+          .then(usage => {
+            if (isCurrentResume() && usage) {
+              setCurrentUsage(current => ({ ...current, ...usage }))
+            }
+          })
+          .catch(() => undefined)
+
+        return
+      }
+
+      setFreshDraftReady(false)
+      setActiveSessionId(null)
+      activeSessionIdRef.current = null
+      busyRef.current = true
+      setBusy(true)
+      setAwaitingResponse(false)
+      clearNotifications()
+      setSelectedStoredSessionId(storedSessionId)
+      selectedStoredSessionIdRef.current = storedSessionId
+      setSessionStartedAt(Date.now())
+      const stored = $sessions.get().find(session => session.id === storedSessionId)
+
+      if (stored) {
+        setCurrentUsage(current => ({
+          ...current,
+          input: stored.input_tokens || 0,
+          output: stored.output_tokens || 0,
+          total: (stored.input_tokens || 0) + (stored.output_tokens || 0)
+        }))
+      }
+
+      try {
+        // Load the local snapshot first, then ask the gateway to resume.
+        // Previously these raced:
+        //   1. clear messages to []
+        //   2. local getSessionMessages -> 45 msgs
+        //   3. a second resume path cleared [] again
+        //   4. gateway resume -> 43 msgs
+        // That is the ctrl+R flash chain. Avoid showing an empty thread
+        // while we already have a route-scoped session id, and don't race the
+        // local snapshot against gateway resume.
+        let localSnapshot = $messages.get()
+
+        try {
+          const storedMessages = await getSessionMessages(storedSessionId)
+
+          if (isCurrentResume()) {
+            localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), $messages.get())
+
+            if (!chatMessageArraysEquivalent($messages.get(), localSnapshot)) {
+              setMessages(localSnapshot)
+            }
+          }
+        } catch {
+          // Non-fatal: gateway resume below can still hydrate the session.
+        }
+
+        const resumed = await requestGateway<SessionResumeResponse>('session.resume', {
+          session_id: storedSessionId,
+          cols: 96
+        })
+
+        if (!isCurrentResume()) {
+          return
+        }
+
+        const currentMessages = $messages.get()
+
+        const resumedMessages = preserveLocalAssistantErrors(
+          reconcileResumeMessages(toChatMessages(resumed.messages), currentMessages),
+          currentMessages
+        )
+        // Avoid a second visible transcript rebuild on resume/switch.
+        // `getSessionMessages()` is the stable stored transcript snapshot and
+        // paints first; `session.resume` can return a slightly different
+        // runtime-shaped projection (e.g. tool/system coalescing), which was
+        // causing a second full message-list replacement a second later.
+        // Keep the already-painted local snapshot for the view/cache when it
+        // exists; use gateway messages only as a fallback when no local
+        // snapshot was available.
+
+        const preferredMessages =
+          localSnapshot.length > 0
+            ? localSnapshot
+            : chatMessageArraysEquivalent(currentMessages, resumedMessages)
+              ? currentMessages
+              : resumedMessages
+
+        const messagesForView = preserveLocalAssistantErrors(preferredMessages, currentMessages)
+
+        setActiveSessionId(resumed.session_id)
+        activeSessionIdRef.current = resumed.session_id
+        const runtimeInfo = applyRuntimeInfo(resumed.info)
+
+        patchSessionWorkspace(storedSessionId, runtimeInfo?.cwd)
+
+        updateSessionState(
+          resumed.session_id,
+          state => ({
+            ...state,
+            ...(runtimeInfo ?? {}),
+            messages: messagesForView,
+            busy: false,
+            awaitingResponse: false
+          }),
+          storedSessionId
+        )
+        clearComposerDraft()
+        clearComposerAttachments()
+      } catch (err) {
+        if (!isCurrentResume()) {
+          return
+        }
+
+        try {
+          const fallback = await getSessionMessages(storedSessionId)
+
+          if (!isCurrentResume()) {
+            return
+          }
+
+          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
+        } catch {
+          // Fall through to error toast when stored session is also unreachable
+        }
+        notifyError(err, 'Resume failed')
+      } finally {
+        if (isCurrentResume()) {
+          busyRef.current = false
+          setBusy(false)
+          setAwaitingResponse(false)
+        }
+      }
+    },
+    [
+      activeSessionIdRef,
+      busyRef,
+      requestGateway,
+      runtimeIdByStoredSessionIdRef,
+      selectedStoredSessionIdRef,
+      sessionStateByRuntimeIdRef,
+      syncSessionStateToView,
+      updateSessionState
+    ]
+  )
+
+  const branchCurrentSession = useCallback(
+    async (messageId?: string): Promise<boolean> => {
+      const sourceSessionId = activeSessionIdRef.current
+
+      if (!sourceSessionId) {
+        notify({
+          kind: 'warning',
+          title: 'Nothing to branch',
+          message: 'Start or resume a chat before branching.'
+        })
+
+        return false
+      }
+
+      if (busyRef.current) {
+        notify({
+          kind: 'warning',
+          title: 'Session busy',
+          message: 'Stop the current turn before branching this chat.'
+        })
+
+        return false
+      }
+
+      creatingSessionRef.current = true
+
+      try {
+        const currentMessages = $messages.get()
+
+        const targetIndex = messageId
+          ? currentMessages.findIndex(message => message.id === messageId)
+          : currentMessages.findLastIndex(message => message.role === 'assistant' || message.role === 'user')
+
+        const branchStart = targetIndex >= 0 ? targetIndex : Math.max(currentMessages.length - 1, 0)
+        const branchEnd = targetIndex >= 0 ? targetIndex + 1 : currentMessages.length
+
+        const branchMessages = currentMessages
+          .slice(branchStart, branchEnd)
+          .map(message => ({
+            content: chatMessageText(message),
+            source: message,
+            role: message.role
+          }))
+          .filter(message => message.content.trim() && ['assistant', 'user'].includes(message.role))
+
+        if (!branchMessages.length) {
+          notify({
+            kind: 'warning',
+            title: 'Nothing to branch',
+            message: 'This message has no text to branch from.'
+          })
+
+          return false
+        }
+
+        clearNotifications()
+
+        const cwd = $currentCwd.get().trim()
+
+        const branched = await requestGateway<SessionCreateResponse>('session.create', {
+          cols: 96,
+          ...(cwd && { cwd }),
+          messages: branchMessages.map(({ content, role }) => ({ content, role })),
+          title: 'Branch'
+        })
+
+        const routedSessionId = branched.stored_session_id ?? branched.session_id
+        const preview = branchMessages.map(({ content }) => content).find(Boolean) ?? null
+
+        setFreshDraftReady(false)
+        upsertOptimisticSession(branched, routedSessionId, 'Branch', preview)
+        ensureSessionState(branched.session_id, routedSessionId)
+        setActiveSessionId(branched.session_id)
+        activeSessionIdRef.current = branched.session_id
+        updateSessionState(
+          branched.session_id,
+          state => ({
+            ...state,
+            messages: branchMessages.map(({ source }) => source),
+            busy: false,
+            awaitingResponse: false
+          }),
+          routedSessionId
+        )
+        setSelectedStoredSessionId(routedSessionId)
+        selectedStoredSessionIdRef.current = routedSessionId
+        navigate(sessionRoute(routedSessionId))
+
+        clearComposerDraft()
+        clearComposerAttachments()
+        const runtimeInfo = applyRuntimeInfo(branched.info)
+
+        patchSessionWorkspace(routedSessionId, runtimeInfo?.cwd)
+
+        if (runtimeInfo) {
+          updateSessionState(branched.session_id, state => ({ ...state, ...runtimeInfo }), routedSessionId)
+        }
+
+        return true
+      } catch (err) {
+        notifyError(err, 'Branch failed')
+
+        return false
+      } finally {
+        window.setTimeout(() => {
+          creatingSessionRef.current = false
+        }, 0)
+      }
+    },
+    [
+      activeSessionIdRef,
+      busyRef,
+      creatingSessionRef,
+      ensureSessionState,
+      navigate,
+      requestGateway,
+      selectedStoredSessionIdRef,
+      updateSessionState
+    ]
+  )
+
+  const removeSession = useCallback(
+    async (storedSessionId: string) => {
+      clearNotifications()
+
+      const removed = $sessions.get().find(s => s.id === storedSessionId)
+      const wasSelected = selectedStoredSessionId === storedSessionId
+      const closingRuntimeId = wasSelected ? activeSessionId : null
+      const previousMessages = $messages.get()
+      const previousPinned = $pinnedSessionIds.get()
+
+      setSessions(prev => prev.filter(s => s.id !== storedSessionId))
+      // Keep $sessionsTotal in sync so the sidebar's "Load N more" footer
+      // doesn't keep claiming the removed row is still on the server.
+      setSessionsTotal(prev => Math.max(0, prev - 1))
+      $pinnedSessionIds.set(previousPinned.filter(id => id !== storedSessionId))
+
+      // Tear down before awaiting so the route effect can't resume the
+      // doomed session via the stale /<sid> URL.
+      if (wasSelected) {
+        startFreshSessionDraft(true)
+      }
+
+      try {
+        if (closingRuntimeId) {
+          await requestGateway('session.close', { session_id: closingRuntimeId }).catch(() => undefined)
+        }
+
+        await deleteSession(storedSessionId)
+        clearQueuedPrompts(storedSessionId)
+
+        if (closingRuntimeId) {
+          clearQueuedPrompts(closingRuntimeId)
+        }
+      } catch (err) {
+        if (removed) {
+          setSessions(prev => [removed, ...prev])
+          setSessionsTotal(prev => prev + 1)
+        }
+
+        $pinnedSessionIds.set(previousPinned)
+
+        if (wasSelected) {
+          setFreshDraftReady(false)
+          setSelectedStoredSessionId(storedSessionId)
+          selectedStoredSessionIdRef.current = storedSessionId
+          const stored = $sessions.get().find(session => session.id === storedSessionId)
+
+          if (stored) {
+            setCurrentUsage(current => ({
+              ...current,
+              input: stored.input_tokens || 0,
+              output: stored.output_tokens || 0,
+              total: (stored.input_tokens || 0) + (stored.output_tokens || 0)
+            }))
+          }
+
+          setMessages(previousMessages)
+          navigate(sessionRoute(storedSessionId), { replace: true })
+
+          if (closingRuntimeId) {
+            setActiveSessionId(closingRuntimeId)
+            activeSessionIdRef.current = closingRuntimeId
+          }
+        }
+
+        notifyError(err, 'Delete failed')
+      }
+    },
+    [
+      activeSessionId,
+      activeSessionIdRef,
+      navigate,
+      requestGateway,
+      selectedStoredSessionId,
+      selectedStoredSessionIdRef,
+      startFreshSessionDraft
+    ]
+  )
+
+  const archiveSession = useCallback(
+    async (storedSessionId: string) => {
+      clearNotifications()
+
+      const archived = $sessions.get().find(s => s.id === storedSessionId)
+      const wasSelected = selectedStoredSessionId === storedSessionId
+      const previousPinned = $pinnedSessionIds.get()
+
+      // Soft-hide: drop from the sidebar immediately, keep the data.
+      setSessions(prev => prev.filter(s => s.id !== storedSessionId))
+      // Archived sessions are hidden by the listSessions(min_messages=1) query
+      // on the next refresh, so they count as "removed" for the load-more
+      // footer math.
+      setSessionsTotal(prev => Math.max(0, prev - 1))
+      $pinnedSessionIds.set(previousPinned.filter(id => id !== storedSessionId))
+
+      if (wasSelected) {
+        startFreshSessionDraft(true)
+      }
+
+      try {
+        await setSessionArchived(storedSessionId, true)
+        notify({ durationMs: 2_000, kind: 'success', message: 'Archived' })
+      } catch (err) {
+        if (archived) {
+          setSessions(prev => [archived, ...prev.filter(s => s.id !== storedSessionId)])
+          setSessionsTotal(prev => prev + 1)
+        }
+
+        $pinnedSessionIds.set(previousPinned)
+        notifyError(err, 'Archive failed')
+      }
+    },
+    [selectedStoredSessionId, startFreshSessionDraft]
+  )
+
+  return {
+    archiveSession,
+    branchCurrentSession,
+    closeSettings,
+    createBackendSessionForSend,
+    openSettings,
+    removeSession,
+    resumeSession,
+    selectSidebarItem,
+    startFreshSessionDraft
+  }
+}
