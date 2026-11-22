@@ -412,10 +412,7 @@ const ThinkingDisclosure: FC<{
       {open && (
         <div
           className={cn(
-            // Body sits flush with the "Thinking" header — no left indent —
-            // and inherits the disclosure-level opacity fade defined in
-            // styles.css (~0.67 at rest, 1 on hover/focus).
-            'mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1',
+            'mt-1.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere rounded-r-lg border-l-2 border-(--tk-indigo-border) bg-[color-mix(in_srgb,var(--tk-indigo-soft)_38%,transparent)] py-2 pl-3 pr-2.5',
             isPreview && 'thinking-preview max-h-40'
           )}
           ref={scrollRef}
