@@ -342,6 +342,7 @@ export function ChatView({
         className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
         {...dropHandlers}
       >
+        <div aria-hidden className="tk-ambient-halo pointer-events-none absolute inset-x-0 top-0 z-0 h-72" />
         <AssistantRuntimeProvider runtime={runtime}>
           <Thread
             clampToComposer={showChatBar}
