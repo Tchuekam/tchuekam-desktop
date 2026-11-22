@@ -46,5 +46,8 @@ class StructuredLoggingAndSecurityHeadersMiddleware(BaseHTTPMiddleware):
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none';"
+        fwd_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+        if request.url.scheme == "https" or fwd_proto == "https":
+            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
         return response
