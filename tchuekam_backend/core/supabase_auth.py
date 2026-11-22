@@ -13,25 +13,29 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from tchuekam_backend.core.config import _is_production
 from tchuekam_backend.domain.models import Role, User, UserProfile, UserRole
 from tchuekam_backend.repositories.user_repository import UserRepository
 
 logger = logging.getLogger("tchuekam_backend.supabase_auth")
 
 DEFAULT_SUPABASE_URL = "https://fzoiiusuqvjhwivstbyb.supabase.co"
-DEFAULT_ADMIN_EMAILS = {
-    "founder@tchuekam.com",
-    "tchuekrostand@gmail.com",
-    "rebornedbetalpha@gmail.com",
-}
+_ALLOWED_HS_ALGS = {"HS256", "HS384", "HS512"}
+_ALLOWED_JWKS_ALGS = {"ES256", "ES384", "RS256", "RS384", "PS256"}
 
 
 def get_supabase_url() -> str:
-    return (os.getenv("SUPABASE_URL") or DEFAULT_SUPABASE_URL).strip().rstrip("/")
+    explicit = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    if _is_production():
+        return ""
+    return DEFAULT_SUPABASE_URL
 
 
 def get_supabase_issuer() -> str:
-    return f"{get_supabase_url()}/auth/v1"
+    url = get_supabase_url()
+    return f"{url}/auth/v1" if url else ""
 
 
 @lru_cache(maxsize=4)
@@ -41,12 +45,15 @@ def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
 
 def is_supabase_token(token: str) -> bool:
     """Quickly checks unverified claims to see if a JWT was issued by our Supabase Auth."""
+    expected_issuer = get_supabase_issuer()
+    if not expected_issuer:
+        return False
     try:
         claims = jwt.decode(
             token,
             options={"verify_signature": False, "verify_exp": False, "verify_aud": False},
         )
-        return claims.get("iss") == get_supabase_issuer()
+        return claims.get("iss") == expected_issuer
     except Exception:
         return False
 
@@ -54,11 +61,14 @@ def is_supabase_token(token: str) -> bool:
 def verify_supabase_jwt(token: str) -> Dict[str, Any]:
     """Verifies a Supabase Auth JWT using JWKS (ES256/RS256) or optional HS256 secret."""
     issuer = get_supabase_issuer()
+    if not issuer:
+        raise jwt.InvalidTokenError("SUPABASE_URL must be configured in production.")
+
     header = jwt.get_unverified_header(token)
-    alg = header.get("alg", "")
+    alg = str(header.get("alg") or "").strip()
 
     jwt_secret = (os.getenv("SUPABASE_JWT_SECRET") or "").strip()
-    if alg.startswith("HS"):
+    if alg in _ALLOWED_HS_ALGS:
         if not jwt_secret:
             raise jwt.InvalidTokenError("SUPABASE_JWT_SECRET required for HS* Supabase tokens.")
         return jwt.decode(
@@ -69,13 +79,16 @@ def verify_supabase_jwt(token: str) -> Dict[str, Any]:
             issuer=issuer,
         )
 
+    if alg not in _ALLOWED_JWKS_ALGS:
+        raise jwt.InvalidTokenError(f"Unsupported Supabase JWT algorithm: {alg!r}")
+
     jwks_url = (os.getenv("SUPABASE_JWKS_URL") or f"{issuer}/.well-known/jwks.json").strip()
     jwk_client = _get_jwks_client(jwks_url)
     signing_key = jwk_client.get_signing_key_from_jwt(token)
     return jwt.decode(
         token,
         signing_key.key,
-        algorithms=[alg or "ES256"],
+        algorithms=[alg],
         audience="authenticated",
         issuer=issuer,
     )
@@ -83,8 +96,6 @@ def verify_supabase_jwt(token: str) -> Dict[str, Any]:
 
 def _get_admin_emails() -> set:
     raw = os.getenv("ADMIN_EMAILS", "")
-    if not raw.strip():
-        return set(DEFAULT_ADMIN_EMAILS)
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
@@ -103,7 +114,7 @@ def get_or_provision_supabase_user(
     meta = payload.get("user_metadata") or {}
     if not isinstance(meta, dict):
         meta = {}
-    email_confirmed = bool(meta.get("email_verified") or payload.get("email_verified", True))
+    email_confirmed = bool(payload.get("email_confirmed_at") or payload.get("email_verified") is True)
 
     if user is None:
         username = (meta.get("username") or email.split("@")[0]).strip().lower()
@@ -138,7 +149,7 @@ def get_or_provision_supabase_user(
             if user_role:
                 db.add(UserRole(user_id=user.id, role_id=user_role.id))
 
-            if email in _get_admin_emails():
+            if email_confirmed and email in _get_admin_emails():
                 admin_role = db.query(Role).filter(Role.name == "Admin").first()
                 if admin_role:
                     db.add(UserRole(user_id=user.id, role_id=admin_role.id))
@@ -160,7 +171,7 @@ def get_or_provision_supabase_user(
 
     session_id = str(payload.get("session_id") or f"supabase:{user.id}")
     jti = str(payload.get("jti") or f"sb:{user.id}:{session_id}")
-    return user, session_id, jti
+    return user, jti, session_id
 
 
 def resolve_supabase_bearer(token: str, db: Session) -> Optional[Tuple[User, str, str]]:
