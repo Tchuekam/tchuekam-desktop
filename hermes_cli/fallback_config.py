@@ -8,8 +8,12 @@ from typing import Any
 
 
 _FAST_FALLBACK_PROVIDER_SPECS: tuple[tuple[str, tuple[str, ...], str], ...] = (
-    ("groq", ("GROQ_API_KEY", "GROQ_API_KEYS"), "llama-3.3-70b-versatile"),
     ("gemini", ("GOOGLE_API_KEY", "GEMINI_API_KEY", "GEMINI_API_KEYS"), "gemini-2.5-flash"),
+    ("gemini", ("GOOGLE_API_KEY", "GEMINI_API_KEY", "GEMINI_API_KEYS"), "gemini-3.1-flash-lite"),
+    ("groq", ("GROQ_API_KEY", "GROQ_API_KEYS"), "openai/gpt-oss-120b"),
+    ("groq", ("GROQ_API_KEY", "GROQ_API_KEYS"), "qwen/qwen3.8-27b"),
+    ("groq", ("GROQ_API_KEY", "GROQ_API_KEYS"), "openai/gpt-oss-20b"),
+    ("groq", ("GROQ_API_KEY", "GROQ_API_KEYS"), "llama-3.1-8b-instant"),
     ("anthropic", ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS", "ANTHROPIC_TOKEN"), "claude-haiku-4-5-20251001"),
     ("openrouter", ("OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"), "google/gemini-2.5-flash"),
     ("openai-api", ("OPENAI_API_KEY", "OPENAI_API_KEYS"), "gpt-4o-mini"),
@@ -114,6 +118,7 @@ def resolve_effective_fallback_chain(
     *,
     primary_provider: str | None = None,
     primary_model: str | None = None,
+    include_local: bool = False,
 ) -> list[dict[str, Any]]:
     """Build the ordered fast fallback chain from config, env overrides, and live keys."""
     chain: list[dict[str, Any]] = []
@@ -150,9 +155,22 @@ def resolve_effective_fallback_chain(
         return bool(val)
 
     for provider_id, key_vars, default_model in _FAST_FALLBACK_PROVIDER_SPECS:
-        if provider_id == norm_primary_provider:
+        if provider_id == norm_primary_provider and (
+            not norm_primary_model
+            or norm_primary_model == "gemini-2.5-flash"
+            or default_model.strip().lower() == norm_primary_model
+        ):
             continue
         if any(_has_env_key(var_name) for var_name in key_vars):
             _append({"provider": provider_id, "model": default_model})
+
+    if include_local and norm_primary_provider != "mbowagpt":
+        try:
+            from agent.local_runtime import get_local_runtime_manager
+
+            if get_local_runtime_manager().is_local_available():
+                _append({"provider": "mbowagpt", "model": "mbowagpt-auto"})
+        except Exception:
+            pass
 
     return chain
