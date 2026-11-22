@@ -115,11 +115,13 @@ function ChatHeader({
           title={title}
         >
           <Button
-            className="pointer-events-auto h-6 min-w-0 gap-1 rounded-md border border-transparent bg-transparent px-2 py-0 text-(--ui-text-secondary) hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:border-(--ui-stroke-tertiary) data-[state=open]:bg-(--ui-control-active-background) [-webkit-app-region:no-drag]"
+            className="pointer-events-auto h-7 min-w-0 gap-1.5 rounded-lg border border-transparent bg-transparent px-2.5 py-0 text-(--ui-text-secondary) transition-all duration-150 hover:border-(--tk-glass-border) hover:bg-(--tk-glass-subtle-bg) hover:text-foreground data-[state=open]:border-(--tk-indigo-border) data-[state=open]:bg-(--tk-indigo-soft) data-[state=open]:text-foreground [-webkit-app-region:no-drag]"
             type="button"
             variant="ghost"
           >
-            <h2 className="max-w-full truncate text-[0.75rem] font-medium leading-none sm:max-w-[52vw]">{title}</h2>
+            <h2 className="max-w-full truncate text-[0.8125rem] font-medium tracking-[-0.01em] leading-none sm:max-w-[52vw]">
+              {title}
+            </h2>
             <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-down" size="0.8125rem" />
           </Button>
         </SessionActionsMenu>
@@ -318,7 +320,7 @@ export function ChatView({
       <NotificationStack />
 
       {IS_WEB && !gatewayOpen && gatewayState !== 'idle' && (
-        <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+        <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs text-foreground backdrop-blur-md">
           <span className="truncate">
             {gatewayState === 'connecting'
               ? 'Reconnecting to TchuekaM gateway…'
@@ -340,6 +342,7 @@ export function ChatView({
         className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
         {...dropHandlers}
       >
+        <div aria-hidden className="tk-ambient-halo pointer-events-none absolute inset-x-0 top-0 z-0 h-72" />
         <AssistantRuntimeProvider runtime={runtime}>
           <Thread
             clampToComposer={showChatBar}

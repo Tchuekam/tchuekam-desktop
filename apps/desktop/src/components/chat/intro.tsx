@@ -42,15 +42,17 @@ const STARTERS: ReadonlyArray<{ icon: typeof IconChartBar; label: string; prompt
 function StarterCard({ icon: Icon, label, prompt }: (typeof STARTERS)[number]) {
   return (
     <button
-      className="group flex h-full cursor-pointer flex-col items-start gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors duration-150 ease-out hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="tk-glass-subtle tk-surface-hover group flex h-full cursor-pointer flex-col items-start gap-3 rounded-xl p-3.5 text-left hover:-translate-y-0.5 hover:border-(--tk-indigo-border) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--tk-indigo-border)"
       onClick={() => {
         requestComposerInsert(prompt, { mode: 'inline', target: 'main' })
         requestComposerFocus('main')
       }}
       type="button"
     >
-      <Icon className="size-4 shrink-0 text-muted-foreground transition-colors duration-150 group-hover:text-foreground" stroke={1.5} />
-      <span className="text-[0.8125rem] font-normal leading-snug text-foreground">{label}</span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-bg-tertiary) text-(--ui-text-secondary) transition-colors duration-200 group-hover:bg-(--tk-indigo-soft) group-hover:text-(--tk-indigo-text)">
+        <Icon className="size-4" stroke={1.6} />
+      </span>
+      <span className="text-[0.8125rem] font-medium leading-snug text-foreground/92">{label}</span>
     </button>
   )
 }
@@ -210,13 +212,22 @@ export function Intro({ personality, seed }: IntroProps) {
       data-slot="aui_intro"
     >
       <div className="w-full min-w-0 max-w-2xl">
-        <h1 className="m-0 text-center text-[2rem] font-medium leading-tight tracking-tight text-foreground">
+        <div className="mb-4 flex justify-center">
+          <span className="inline-flex items-center gap-2 rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-1 text-[0.7rem] font-medium tracking-[0.02em] text-(--ui-text-secondary) shadow-xs backdrop-blur-md">
+            <span aria-hidden className="size-1.5 rounded-full bg-linear-to-r from-(--tk-indigo) to-(--tk-cyan)" />
+            TchuekaM Intelligence
+          </span>
+        </div>
+
+        <h1 className="m-0 text-center text-[clamp(1.625rem,3vw,2.125rem)] font-medium leading-[1.18] tracking-[-0.025em] text-foreground">
           {copy.headline}
         </h1>
 
-        <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-relaxed text-muted-foreground">{copy.body}</p>
+        <p className="mx-auto mt-3 max-w-lg text-center text-[0.9rem] leading-relaxed text-(--ui-text-secondary)">
+          {copy.body}
+        </p>
 
-        <div className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {STARTERS.map(starter => (
             <StarterCard key={starter.label} {...starter} />
           ))}

@@ -250,7 +250,7 @@ const AssistantMessage: FC<{ onBranchInNewChat?: (messageId: string) => void }> 
         )}
         <MessagePrimitive.Error>
           <ErrorPrimitive.Root
-            className="mt-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
+            className="mt-2.5 rounded-xl border border-destructive/30 bg-destructive/8 px-3.5 py-2.5 text-[0.8125rem] leading-relaxed text-destructive backdrop-blur-xs"
             role="alert"
           >
             <ErrorPrimitive.Message />
@@ -273,7 +273,10 @@ const StatusRow: FC<{ children: ReactNode; label: string } & React.ComponentProp
   <div
     aria-label={label}
     aria-live="polite"
-    className={cn('flex max-w-full items-center gap-2 self-start text-sm text-muted-foreground/70', className)}
+    className={cn(
+      'flex max-w-full items-center gap-2.5 self-start rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-1 text-xs text-(--ui-text-secondary) shadow-xs backdrop-blur-sm',
+      className
+    )}
     role="status"
     {...rest}
   >
@@ -286,8 +289,9 @@ const ResponseLoadingIndicator: FC = () => {
 
   return (
     <StatusRow data-slot="aui_response-loading" label="TchuekaM is loading a response">
-      <span aria-hidden="true" className="dither inline-block size-3 rounded-[2px] text-midground/80 animate-pulse" />
-      <ActivityTimerText seconds={elapsed} />
+      <span aria-hidden="true" className="tk-thinking-dot inline-block size-2 rounded-full" />
+      <span className="shimmer font-medium text-foreground/75">Thinking</span>
+      <ActivityTimerText className="tabular-nums text-[0.7rem] text-(--ui-text-tertiary)" seconds={elapsed} />
     </StatusRow>
   )
 }
@@ -381,11 +385,18 @@ const ThinkingDisclosure: FC<{
       ref={enterRef}
     >
       <DisclosureRow onToggle={() => setUserOpen(!open)} open={open}>
-        <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              pending ? 'tk-thinking-dot' : 'bg-(--ui-text-quaternary)'
+            )}
+          />
           <span
             className={cn(
               'text-[length:var(--conversation-tool-font-size)] font-medium leading-(--conversation-line-height) text-(--ui-text-secondary)',
-              pending && 'shimmer text-foreground/55'
+              pending && 'shimmer text-foreground/75'
             )}
           >
             Thinking
@@ -401,10 +412,7 @@ const ThinkingDisclosure: FC<{
       {open && (
         <div
           className={cn(
-            // Body sits flush with the "Thinking" header — no left indent —
-            // and inherits the disclosure-level opacity fade defined in
-            // styles.css (~0.67 at rest, 1 on hover/focus).
-            'mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1',
+            'mt-1.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere rounded-r-lg border-l-2 border-(--tk-indigo-border) bg-[color-mix(in_srgb,var(--tk-indigo-soft)_38%,transparent)] py-2 pl-3 pr-2.5',
             isPreview && 'thinking-preview max-h-40'
           )}
           ref={scrollRef}
@@ -450,8 +458,8 @@ const ReasoningTextPart: FC<{ text: string; status?: { type: string } }> = ({ te
   return (
     <div
       className={cn(
-        'whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground/85',
-        status?.type === 'running' && 'shimmer text-muted-foreground/55'
+        'whitespace-pre-wrap text-[0.78125rem] leading-[1.6] text-(--ui-text-secondary)',
+        status?.type === 'running' && 'shimmer text-(--ui-text-secondary)/70'
       )}
       data-slot="aui_reasoning-text"
     >
@@ -638,7 +646,7 @@ function messageAttachmentRefs(value: unknown): string[] {
 function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
   return (
     <div
-      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-2"
+      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-[color-mix(in_srgb,var(--ui-chat-surface-background)_84%,transparent)] px-4 pb-(--conversation-turn-gap) pt-2 backdrop-blur-md"
       data-role="user"
       data-slot="aui_user-message-root"
     >
@@ -648,11 +656,11 @@ function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
 }
 
 // Shared "user bubble" base. Both the read-only message and the inline
-// edit composer render the same bubble surface (rounded glass card,
-// shadow-composer); they only differ in border weight, cursor, and
-// padding-right (the read-only view reserves room for the restore icon).
+// edit composer render the same bubble surface (rounded frosted glass card,
+// specular top edge + soft ambient shadow); they only differ in border weight,
+// cursor, and padding-right (the read-only view reserves room for the restore icon).
 const USER_BUBBLE_BASE_CLASS =
-  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border bg-(--dt-user-bubble) px-3 py-2 text-left shadow-composer'
+  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border border-(--tk-glass-border) bg-(--dt-user-bubble) px-4 py-2.5 text-left shadow-(--tk-glass-shadow) backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-180 ease-out'
 
 const USER_ACTION_ICON_BUTTON_CLASS =
   'grid cursor-pointer place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
@@ -719,8 +727,8 @@ const UserMessage: FC<{
 
   const bubbleClassName = cn(
     USER_BUBBLE_BASE_CLASS,
-    'border-(--ui-stroke-tertiary) pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors',
-    !threadRunning && 'cursor-pointer hover:border-(--ui-stroke-secondary)'
+    'border-(--tk-glass-border) pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95',
+    !threadRunning && 'cursor-pointer hover:border-(--tk-indigo-border)'
   )
 
   const bubbleContent = (
@@ -834,12 +842,12 @@ const SystemMessage: FC = () => {
   if (slashStatus?.groups) {
     return (
       <MessagePrimitive.Root
-        className="max-w-[min(86%,44rem)] self-center px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/60"
+        className="tk-glass-subtle max-w-[min(86%,44rem)] self-center rounded-full px-3.5 py-1 text-center text-[0.6875rem] leading-5 text-(--ui-text-secondary)"
         data-role="system"
         data-slot="aui_system-message-root"
       >
-        <span className="font-mono text-muted-foreground/55">{slashStatus.groups.command}</span>
-        <span className="mx-1.5 text-muted-foreground/35">·</span>
+        <span className="font-mono font-medium text-(--tk-indigo-text)">{slashStatus.groups.command}</span>
+        <span className="mx-1.5 text-muted-foreground/45">·</span>
         <span className="whitespace-pre-wrap">{slashStatus.groups.output.trim()}</span>
       </MessagePrimitive.Root>
     )
@@ -847,7 +855,7 @@ const SystemMessage: FC = () => {
 
   return (
     <MessagePrimitive.Root
-      className="max-w-[min(86%,44rem)] self-center px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/55"
+      className="tk-glass-subtle max-w-[min(86%,44rem)] self-center rounded-full px-3.5 py-1 text-center text-[0.6875rem] leading-5 text-(--ui-text-tertiary)"
       data-role="system"
       data-slot="aui_system-message-root"
     >
