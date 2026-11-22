@@ -643,7 +643,7 @@ export function BusinessView() {
                           value={renameDraft}
                         />
                         <button
-                          className="rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground shadow-2xs transition hover:brightness-105"
+                          className="tk-btn-primary rounded-xl px-3 py-1 text-xs font-semibold text-white"
                           onClick={() => handleCommitRename(doc.id)}
                           type="button"
                         >
@@ -651,7 +651,7 @@ export function BusinessView() {
                         </button>
                         <button
                           aria-label="Cancel rename"
-                          className="rounded-lg border border-border/70 bg-background px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+                          className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                           onClick={() => setRenamingId(null)}
                           type="button"
                         >
@@ -661,20 +661,20 @@ export function BusinessView() {
                     ) : (
                       <div className="flex flex-wrap items-center gap-2">
                         <button
-                          className="truncate text-sm font-semibold hover:text-primary hover:underline transition"
+                          className="truncate text-sm font-semibold transition-colors hover:text-(--tk-indigo-text) hover:underline"
                           onClick={() => openBusinessDocument(doc.id)}
                           type="button"
                         >
                           {doc.title}
                         </button>
-                        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[0.625rem] font-bold uppercase text-primary">
+                        <span className="rounded-md bg-(--tk-indigo-soft) px-1.5 py-0.5 text-[0.625rem] font-bold uppercase text-(--tk-indigo-text)">
                           {doc.type}
                         </span>
                         <span
                           className={cn(
                             'rounded-md px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase',
                             doc.status === 'final'
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-400'
                               : 'bg-muted text-muted-foreground'
                           )}
                         >
@@ -682,7 +682,7 @@ export function BusinessView() {
                         </span>
                       </div>
                     )}
-                    <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">
+                    <div className="mt-1 text-[0.6875rem] tabular-nums text-muted-foreground">
                       Template: {doc.templateId} · Language: {doc.language.toUpperCase()} · Updated{' '}
                       {new Date(doc.updatedAt).toLocaleDateString()}
                     </div>
@@ -691,7 +691,7 @@ export function BusinessView() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       aria-label={`Open ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold shadow-2xs transition hover:border-primary/40 hover:bg-muted"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-semibold transition hover:border-(--tk-indigo-border) hover:bg-muted"
                       onClick={() => openBusinessDocument(doc.id)}
                       type="button"
                     >
