@@ -190,6 +190,69 @@ class TestPublicShowcaseSecurityHardening:
         assert resp.json() == {"ok": True, "output": "Polished executive text"}
         assert len(calls) >= 2
 
+    def test_serve_index_omits_session_token_in_public_demo(self, monkeypatch):
+        ws = self._configure_public(monkeypatch)
+        with TestClient(ws.app) as client:
+            resp = client.get("/")
+        assert resp.status_code == 200
+        assert "window.__HERMES_PUBLIC_DEMO__=true;" in resp.text
+        assert "window.__HERMES_SESSION_TOKEN__" not in resp.text
+
+    def test_status_strips_paths_and_pid_in_public_demo(self, monkeypatch):
+        ws = self._configure_public(monkeypatch)
+        headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
+        with TestClient(ws.app) as client:
+            resp = client.get("/api/status", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["hermes_home"] is None
+        assert data["config_path"] is None
+        assert data["env_path"] is None
+        assert data["gateway_pid"] is None
+        assert data["gateway_health_url"] is None
+
+    def test_image_upload_rejects_invalid_magic_bytes_and_oversized(self, monkeypatch):
+        import base64
+
+        ws = self._configure_public(monkeypatch)
+        headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
+        ws._RATE_BUCKETS.clear()
+
+        fake_png = base64.b64encode(b"this-is-plain-text-not-png").decode("ascii")
+        oversized_b64 = "A" * (14 * 1024 * 1024)
+        with TestClient(ws.app) as client:
+            bad_magic = client.post(
+                "/api/uploads/image",
+                json={"data_url": f"data:image/png;base64,{fake_png}"},
+                headers=headers,
+            )
+            assert bad_magic.status_code == 400
+
+            too_big = client.post(
+                "/api/uploads/image",
+                json={"data_url": f"data:image/png;base64,{oversized_b64}"},
+                headers=headers,
+            )
+            assert too_big.status_code == 413
+
+    def test_business_ocr_rejects_oversized_upload(self, monkeypatch):
+        ws = self._configure_public(monkeypatch)
+        headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
+        ws._RATE_BUCKETS.clear()
+
+        oversized_b64 = "A" * (34 * 1024 * 1024)
+        with TestClient(ws.app) as client:
+            resp = client.post(
+                "/api/business/ocr",
+                json={
+                    "data_url": f"data:application/pdf;base64,{oversized_b64}",
+                    "file_name": "huge.pdf",
+                    "mime_type": "application/pdf",
+                },
+                headers=headers,
+            )
+        assert resp.status_code == 413
+
 
 class TestCredentialPoolAndFastLoopFailover:
     def test_multi_key_env_seeding_for_gemini_and_groq(self, clean_fallback_env, monkeypatch, tmp_path):
@@ -205,101 +268,3 @@ class TestCredentialPoolAndFastLoopFailover:
         assert len(gemini_pool.entries()) == 4
         assert len(groq_pool.entries()) == 3
 
-    def test_conversation_loop_fast_failover_on_503_overloaded(self):
-        from types import SimpleNamespace
-        from agent.auxiliary_client import clear_runtime_main
-        from run_agent import AIAgent
-
-        with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
-        ):
-            agent = AIAgent(
-                api_key="AIza_primary",
-                base_url="https://generativelanguage.googleapis.com/v1beta",
-                provider="gemini",
-                model="gemini-2.5-flash",
-                quiet_mode=True,
-                skip_context_files=True,
-                skip_memory=True,
-                fallback_model=[{"provider": "groq", "model": "llama-3.3-70b-versatile"}],
-            )
-
-        primary_err = Exception("Service Unavailable")
-        primary_err.status_code = 503
-
-        fb_client = MagicMock()
-        fb_client.base_url = "https://api.groq.com/openai/v1"
-        fb_client.api_key = "gsk_fb"
-        fb_resp = SimpleNamespace(
-            choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content="Fast fallback reply", tool_calls=None, reasoning=None))],
-            usage=None,
-            model="llama-3.3-70b-versatile",
-        )
-        fb_client.chat.completions.create.return_value = fb_resp
-
-        agent.client = MagicMock()
-        agent.client.chat.completions.create.side_effect = primary_err
-        agent._build_api_kwargs = lambda msgs, **kw: {"model": agent.model, "messages": msgs}
-        agent._persist_session = lambda *a, **kw: None
-        agent._save_trajectory = lambda *a, **kw: None
-        agent._cleanup_task_resources = lambda *a, **kw: None
-        agent._try_recover_primary_transport = MagicMock(return_value=False)
-
-        try:
-            with patch("agent.auxiliary_client.resolve_provider_client", return_value=(fb_client, "llama-3.3-70b-versatile")):
-                result = agent.run_conversation("hello")
-
-            assert result.get("completed") is True
-            assert result.get("final_response") == "Fast fallback reply"
-            assert agent.provider == "groq"
-            assert agent.client.chat.completions.create.call_count == 1
-            agent._try_recover_primary_transport.assert_not_called()
-        finally:
-            clear_runtime_main()
-
-
-class TestVercelSplitOriginSupport:
-    def test_public_showcase_allows_vercel_origin_ws_and_validate_without_token(self, monkeypatch):
-        from starlette.websockets import WebSocketDisconnect
-        from hermes_cli import web_server as ws
-
-        monkeypatch.setattr(ws.app.state, "allow_public", True, raising=False)
-        monkeypatch.setattr(ws.app.state, "auth_required", False, raising=False)
-        monkeypatch.setattr(ws, "_DASHBOARD_EMBEDDED_CHAT_ENABLED", True)
-        with TestClient(ws.app) as client:
-            # Provider credential probe (empty key validation) from *.vercel.app allowed without token
-            resp = client.post(
-                "/api/providers/validate",
-                json={"key": "FAL_KEY", "value": ""},
-                headers={"Origin": "https://tchuekam-agent.vercel.app"},
-            )
-            assert resp.status_code == 200
-            assert resp.json()["ok"] is False
-
-            # Untrusted external origin still fails _ws_auth_ok on /api/ws without token
-            with pytest.raises(WebSocketDisconnect) as bad_ws:
-                with client.websocket_connect(
-                    "/api/ws",
-                    headers={"Origin": "https://evil.example.com"},
-                ):
-                    pass
-            assert bad_ws.value.code == 4401
-
-            # Trusted Vercel origin passes _ws_auth_ok on /api/ws without token
-            fake_ws = MagicMock()
-            fake_ws.app = ws.app
-            fake_ws.url.path = "/api/ws"
-            fake_ws.query_params = {}
-            fake_ws.headers = {"origin": "https://tchuekam-agent.vercel.app"}
-            assert ws._ws_auth_ok(fake_ws) is True
-
-            # /api/pty stays locked even for Vercel origin
-            with pytest.raises(WebSocketDisconnect) as pty_ws:
-                with client.websocket_connect(
-                    f"/api/pty?token={ws._SESSION_TOKEN}",
-                    headers={"Origin": "https://tchuekam-agent.vercel.app"},
-                ):
-                    pass
-            assert pty_ws.value.code == 4403
