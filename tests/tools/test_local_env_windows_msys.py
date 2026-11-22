@@ -58,12 +58,16 @@ class TestMsysToWindowsPath:
         assert _msys_to_windows_path(r"C:\Users\NVIDIA") == r"C:\Users\NVIDIA"
 
     def test_does_not_translate_multi_char_first_segment(self, monkeypatch):
-        """``/tmp/foo`` and ``/home/x`` must NOT be misread as drive paths
-        just because they start with ``/`` and a single letter — the regex
-        only matches when the first segment is exactly one character."""
+        """``/var/log`` and ``/home/x`` must NOT be misread as drive paths
+        just because they start with ``/`` — the regex only matches when the
+        first segment is a single drive letter (plus ``/tmp`` tempdir mapping)."""
+        import os
+        import tempfile
+
         monkeypatch.setattr(local_mod, "_IS_WINDOWS", True)
-        assert _msys_to_windows_path("/tmp/foo") == "/tmp/foo"
         assert _msys_to_windows_path("/home/x") == "/home/x"
+        assert _msys_to_windows_path("/var/log") == "/var/log"
+        assert _msys_to_windows_path("/tmp/foo") == os.path.normpath(tempfile.gettempdir() + "\\foo")
 
     def test_empty_string(self, monkeypatch):
         monkeypatch.setattr(local_mod, "_IS_WINDOWS", True)

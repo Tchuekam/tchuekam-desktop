@@ -49,9 +49,10 @@ class TestConfigureWindowsStdio:
         yield
         sys.modules.pop("hermes_cli.stdio", None)
 
-    def test_no_op_on_posix(self):
+    def test_no_op_on_posix(self, monkeypatch):
         from hermes_cli import stdio
 
+        monkeypatch.setattr(stdio, "is_windows", lambda: False)
         assert stdio.is_windows() is False
         result = stdio.configure_windows_stdio()
         assert result is False
@@ -286,6 +287,8 @@ class TestSigkillFallback:
 
     def test_getattr_fallback_prefers_sigkill_when_present(self):
         """On POSIX the fallback is a no-op: real SIGKILL wins."""
+        if not hasattr(signal, "SIGKILL"):
+            pytest.skip("signal.SIGKILL is not defined on Windows")
         result = getattr(signal, "SIGKILL", signal.SIGTERM)
         assert result == signal.SIGKILL
 
@@ -622,6 +625,8 @@ class TestKanbanWaitpidWindowsGuard:
         source = (root / "hermes_cli" / "kanban_db.py").read_text(encoding="utf-8")
         # Find the waitpid call and confirm it's inside a POSIX gate.
         idx = source.find("os.waitpid(-1, os.WNOHANG)")
+        if idx < 0:
+            idx = source.find('os.waitpid(-1, getattr(os, "WNOHANG"')
         assert idx > 0, "waitpid call must exist"
         # Look backwards up to 400 chars for the gate. Accept either form:
         #   `if os.name != "nt":` (run iff POSIX), or

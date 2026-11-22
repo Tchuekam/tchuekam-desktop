@@ -26,13 +26,11 @@ def test_read_document_handles_docx_xlsx_rtf_csv_pdf(tmp_path):
     assert res_rtf["success"] is True
     assert "Hello TchuekaM Offline" in res_rtf["content"]
 
-    # 3. DOCX
-    from docx import Document
+    # 3. DOCX (uses python-docx when installed, pure-stdlib OOXML otherwise)
+    from agent.self_consciousness import write_minimal_docx
 
     docx_path = tmp_path / "pitch.docx"
-    doc = Document()
-    doc.add_paragraph("Giantech Empire Investor Pitch Deck")
-    doc.save(str(docx_path))
+    write_minimal_docx(docx_path, "Giantech Empire Investor Pitch Deck", "Executive summary paragraph")
     res_docx = json.loads(read_document(str(docx_path)))
     assert res_docx["success"] is True
     assert "Giantech Empire Investor Pitch Deck" in res_docx["content"]
