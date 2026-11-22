@@ -833,6 +833,22 @@ canvas {
       box-shadow: 0 0 0 4px var(--tk-cyan-soft);
     }
   }
+
+  .tk-thinking-dot {
+    background: linear-gradient(135deg, var(--tk-indigo), var(--tk-cyan));
+    animation: tk-breathe 2.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tk-thinking-dot {
+      animation: none;
+    }
+
+    .tk-btn-primary,
+    .tk-surface-hover {
+      transition: none;
+    }
+  }
 }
 
 /* Bottom clearance lives on [data-slot='aui_composer-clearance'] —
