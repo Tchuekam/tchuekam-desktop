@@ -604,27 +604,27 @@ export function BusinessLocalAiWorkspaceDrawer({
   }
 
   return (
-    <div className="border-b border-border/70 bg-muted/25 px-3 py-3 sm:px-6">
+    <div className="border-b border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-3 backdrop-blur-md sm:px-6">
       <div className="mx-auto max-w-5xl space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Codicon className="text-primary" name="chip" size="0.95rem" />
-            <span className="text-xs font-bold">Business Hub Local Agent</span>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.625rem] font-semibold text-primary">
+            <Codicon className="text-(--tk-indigo-text)" name="chip" size="0.95rem" />
+            <span className="text-xs font-semibold">Business Hub Local Agent</span>
+            <span className="rounded-full bg-(--tk-indigo-soft) px-2 py-0.5 text-[0.625rem] font-semibold text-(--tk-indigo-text)">
               {status?.installed ? status.activeModelName : 'Not Installed'}
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
             <button
-              className="rounded-lg border border-border/70 bg-card px-2.5 py-1 text-[0.6875rem] font-semibold hover:border-primary/40"
+              className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-[0.6875rem] font-semibold transition hover:border-(--tk-indigo-border)"
               onClick={handleInstantAudit}
               type="button"
             >
               Audit & [to confirm]
             </button>
             <button
-              className="rounded-lg border border-border/70 bg-card px-2.5 py-1 text-[0.6875rem] font-semibold hover:border-primary/40 disabled:opacity-50"
+              className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-[0.6875rem] font-semibold transition hover:border-(--tk-indigo-border) disabled:opacity-50"
               disabled={busy}
               onClick={() =>
                 void handleSend(
@@ -638,7 +638,7 @@ export function BusinessLocalAiWorkspaceDrawer({
               Draft / Improve
             </button>
             <button
-              className="rounded-lg border border-border/70 bg-card px-2.5 py-1 text-[0.6875rem] font-semibold hover:border-primary/40"
+              className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-[0.6875rem] font-semibold transition hover:border-(--tk-indigo-border)"
               onClick={() => $businessLocalAiModalOpen.set(true)}
               type="button"
             >
@@ -656,12 +656,12 @@ export function BusinessLocalAiWorkspaceDrawer({
         </div>
 
         {messages.length > 0 && (
-          <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-border/60 bg-card/80 p-2.5">
+          <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-bg) p-2.5">
             {messages.map(msg => (
               <div
                 className={cn(
                   'rounded-lg px-2.5 py-2 text-xs leading-relaxed whitespace-pre-wrap',
-                  msg.role === 'user' ? 'bg-muted/70 font-medium' : 'bg-primary/5'
+                  msg.role === 'user' ? 'bg-muted/70 font-medium' : 'bg-(--tk-indigo-soft)'
                 )}
                 key={msg.id}
               >
