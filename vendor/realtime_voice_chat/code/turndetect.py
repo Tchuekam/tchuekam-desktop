@@ -269,3 +269,274 @@ class TurnDetection:
         # Base 'fast' settings (speed_factor = 0.0)
         fast = {
             'detection_speed': 0.5,
+            'ellipsis_pause': 2.3,
+            'punctuation_pause': 0.39,
+            'exclamation_pause': 0.35,
+            'question_pause': 0.33,
+            'unknown_sentence_detection_pause': 1.25
+        }
+
+        # Target 'very slow' settings (speed_factor = 1.0)
+        very_slow = {
+            'detection_speed': 1.7,
+            'ellipsis_pause': 3.0,
+            'punctuation_pause': 0.9,
+            'exclamation_pause': 0.8,
+            'question_pause': 0.8,
+            'unknown_sentence_detection_pause': 1.9
+        }
+
+        # Linear interpolation for each parameter
+        self.detection_speed = fast['detection_speed'] + speed_factor * (very_slow['detection_speed'] - fast['detection_speed'])
+        self.ellipsis_pause = fast['ellipsis_pause'] + speed_factor * (very_slow['ellipsis_pause'] - fast['ellipsis_pause'])
+        self.punctuation_pause = fast['punctuation_pause'] + speed_factor * (very_slow['punctuation_pause'] - fast['punctuation_pause'])
+        self.exclamation_pause = fast['exclamation_pause'] + speed_factor * (very_slow['exclamation_pause'] - fast['exclamation_pause'])
+        self.question_pause = fast['question_pause'] + speed_factor * (very_slow['question_pause'] - fast['question_pause'])
+        self.unknown_sentence_detection_pause = fast['unknown_sentence_detection_pause'] + speed_factor * (very_slow['unknown_sentence_detection_pause'] - fast['unknown_sentence_detection_pause'])
+        logger.info(f"🎤⚙️ Updated turn detection settings with speed_factor={speed_factor:.2f}")
+
+
+    def suggest_time(
+            self,
+            time_val: float, # Renamed from 'time' to avoid shadowing builtin
+            text: str = None
+        ) -> None:
+        """
+        Invokes the `on_new_waiting_time` callback with the suggested pause duration.
+
+        Only triggers the callback if the new suggested time is different from the
+        currently stored `current_waiting_time` to avoid redundant calls.
+
+        Args:
+            time_val: The calculated suggested waiting time in seconds.
+            text: The text segment associated with this waiting time calculation.
+        """
+        if time_val == self.current_waiting_time:
+            return # No change, do nothing
+
+        self.current_waiting_time = time_val
+
+        if self.on_new_waiting_time:
+            self.on_new_waiting_time(time_val, text)
+
+    def get_completion_probability(
+        self,
+        sentence: str
+    ) -> float:
+        """
+        Calculates the probability that the given sentence is complete using the ML model.
+
+        Uses an internal LRU cache (`_completion_probability_cache`) to store and
+        retrieve results for previously seen sentences, improving performance.
+
+        Args:
+            sentence: The input sentence string to analyze.
+
+        Returns:
+            A float representing the probability (between 0.0 and 1.0) that the
+            sentence is considered complete by the model.
+        """
+        # Check cache first
+        if sentence in self._completion_probability_cache:
+            self._completion_probability_cache.move_to_end(sentence) # Mark as recently used
+            return self._completion_probability_cache[sentence]
+
+        # If not in cache, run model prediction
+        import torch
+        import torch.nn.functional as F
+
+        inputs = self.tokenizer(
+            sentence,
+            return_tensors="pt",
+            truncation=True,
+            padding="max_length",
+            max_length=self.max_length
+        )
+        # Move input tensors to the correct device (CPU or GPU)
+        inputs = {key: value.to(self.device) for key, value in inputs.items()}
+
+        with torch.no_grad(): # Disable gradient calculation for inference
+            outputs = self.classification_model(**inputs)
+
+        logits = outputs.logits
+        # Apply softmax to get probabilities [prob_incomplete, prob_complete]
+        probabilities = F.softmax(logits, dim=1).squeeze().tolist()
+        prob_complete = probabilities[1] # Index 1 corresponds to 'complete' label
+
+        # Store the result in the cache
+        self._completion_probability_cache[sentence] = prob_complete
+        self._completion_probability_cache.move_to_end(sentence) # Mark as recently used
+
+        # Maintain cache size (LRU eviction)
+        if len(self._completion_probability_cache) > self._completion_probability_cache_max_size:
+            self._completion_probability_cache.popitem(last=False) # Remove the least recently used item
+
+        return prob_complete
+
+    def get_suggested_whisper_pause(self, text: str) -> float:
+        """
+        Determines a base pause duration based on the text's ending punctuation.
+
+        Checks for specific ending patterns ('...', '.', '!', '?') and returns
+        a corresponding pause duration defined by the instance's settings
+        (e.g., `self.ellipsis_pause`). Returns `self.unknown_sentence_detection_pause`
+        if no specific punctuation is matched.
+
+        Args:
+            text: The input text string.
+
+        Returns:
+            The suggested pause duration in seconds based on ending punctuation.
+        """
+        if ends_with_string(text, "..."):
+            return self.ellipsis_pause
+        elif ends_with_string(text, "."):
+            return self.punctuation_pause
+        elif ends_with_string(text, "!"):
+            return self.exclamation_pause
+        elif ends_with_string(text, "?"):
+            return self.question_pause
+        else:
+            # No specific ending detected, use the general pause for unknown endings
+            return self.unknown_sentence_detection_pause
+
+    def _text_worker(
+        self
+    ) -> None:
+        """
+        Background worker thread that processes text from the queue for turn detection.
+
+        Continuously retrieves text items from `self.text_queue`. For each item, it:
+        1. Preprocesses the text.
+        2. Updates text history deques.
+        3. Finds recent matching text segments to analyze punctuation consistency.
+        4. Calculates an average pause based on observed punctuation in matches.
+        5. Cleans the text further for the sentence completion model.
+        6. Gets the completion probability from the model (using cache).
+        7. Interpolates the model's probability to another pause value.
+        8. Combines the punctuation-based pause and model-based pause using weighting.
+        9. Applies a speed factor and adjustments (e.g., for ellipses).
+        10. Ensures the final pause meets minimum pipeline latency requirements.
+        11. Calls `suggest_time` with the final calculated pause duration.
+        Handles queue timeouts gracefully to allow for potential shutdown.
+        """
+        while True:
+            try:
+                # Wait for text from the queue, with a timeout to avoid blocking forever
+                text = self.text_queue.get(block=True, timeout=0.1)
+            except queue.Empty:
+                # No text received within the timeout, loop again
+                time.sleep(0.01) # Small sleep to yield CPU when idle
+                continue
+
+            # --- Processing starts when text is received ---
+            logger.info(f"🎤⚙️ Starting pause calculation for: \"{text}\"")
+            
+            processed_text = preprocess_text(text) # Apply initial cleaning
+
+            # Update history deques
+            current_time = time.time()
+            self.text_time_deque.append((current_time, processed_text))
+            text_without_punctuation = strip_ending_punctuation(processed_text)
+            self.texts_without_punctuation.append((processed_text, text_without_punctuation))
+
+            # Analyze recent matching texts for consistent punctuation pauses
+            matches = find_matching_texts(self.texts_without_punctuation)
+
+            added_pauses = 0
+            contains_ellipses = False
+            if matches: # Avoid division by zero if matches is empty
+                for i, match in enumerate(matches):
+                    same_text, _ = match # We only need the original text here
+                    whisper_suggested_pause_match = self.get_suggested_whisper_pause(same_text)
+                    added_pauses += whisper_suggested_pause_match
+                    if ends_with_string(same_text, "..."):
+                        contains_ellipses = True
+                # Calculate average pause based on recent consistent segments
+                avg_pause = added_pauses / len(matches)
+            else:
+                # If no matches, use the pause suggested by the current text directly
+                 avg_pause = self.get_suggested_whisper_pause(processed_text)
+                 if ends_with_string(processed_text, "..."):
+                    contains_ellipses = True
+
+            whisper_suggested_pause = avg_pause # Use the averaged pause
+
+            # Prepare text for the sentence completion model (remove all punctuation)
+            import string
+            transtext = processed_text.translate(str.maketrans('', '', string.punctuation))
+            # Further clean potentially remaining non-alphanumeric chars at the end
+            cleaned_for_model = re.sub(r'[^a-zA-Z\s]+$', '', transtext).rstrip() # Also remove trailing spaces
+
+            # Get sentence completion probability
+            prob_complete = self.get_completion_probability(cleaned_for_model)
+
+            # Interpolate probability to a pause duration
+            sentence_finished_model_pause = interpolate_detection(prob_complete)
+
+            # Combine pauses: weighted average giving more importance to punctuation pause
+            weight_towards_whisper = 0.65
+            weighted_pause = (weight_towards_whisper * whisper_suggested_pause +
+                             (1 - weight_towards_whisper) * sentence_finished_model_pause)
+
+            # Apply overall speed factor
+            final_pause = weighted_pause * self.detection_speed
+
+            # Add slight extra pause if ellipses were detected recently
+            if contains_ellipses:
+                final_pause += 0.2
+
+            logger.info(f"🎤📊 Calculated pauses: Punct={whisper_suggested_pause:.2f}, Model={sentence_finished_model_pause:.2f}, Weighted={weighted_pause:.2f}, Final={final_pause:.2f} for \"{processed_text}\" (Prob={prob_complete:.2f})")
+
+
+            # Ensure final pause is not less than the pipeline latency overhead
+            min_pause = self.pipeline_latency + self.pipeline_latency_overhead
+            if final_pause < min_pause:
+                logger.info(f"🎤⚠️ Final pause ({final_pause:.2f}s) is less than minimum ({min_pause:.2f}s). Using minimum.")
+                final_pause = min_pause
+            
+            # Suggest the calculated time via callback
+            self.suggest_time(final_pause, processed_text) # Use processed_text for context
+
+            # Mark task as done for the queue (important if using queue.join())
+            self.text_queue.task_done()
+
+    def calculate_waiting_time(
+            self,
+            text: str) -> None:
+        """
+        Adds a text segment to the processing queue for waiting time calculation.
+
+        This is the entry point for feeding text into the turn detection system.
+        The actual calculation happens asynchronously in the background worker thread.
+
+        Args:
+            text: The text segment (e.g., from STT) to be processed.
+        """
+        logger.info(f"🎤📥 Queuing text for pause calculation: \"{text}\"")
+        self.text_queue.put(text)
+
+    def reset(self) -> None:
+        """
+        Resets the internal state of the TurnDetection instance.
+
+        Clears the text history deques, the model prediction cache, and resets the
+        current waiting time tracker. Useful for starting a new conversation or
+        interaction context.
+        """
+        logger.info("🎤🔄 Resetting TurnDetection state.")
+        # Clear the history deques
+        self.text_time_deque.clear()
+        self.texts_without_punctuation.clear()
+        # Reset the last suggested time
+        self.current_waiting_time = -1
+        # Clear the prediction cache
+        if hasattr(self, "_completion_probability_cache"):
+            self._completion_probability_cache.clear()
+        # Clear the processing queue (optional, might discard unprocessed items)
+        # while not self.text_queue.empty():
+        #     try:
+        #         self.text_queue.get_nowait()
+        #         self.text_queue.task_done()
+        #     except queue.Empty:
+        #         break
