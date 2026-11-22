@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { HERMES_BASE_PATH } from "@/lib/api";
+import { getStoredSupabaseAccessToken } from "@/lib/supabaseAuth";
 import {
   Activity,
   Brain,
@@ -29,11 +31,19 @@ export default function BioComputePlaygroundPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
     }
@@ -41,53 +51,46 @@ export default function BioComputePlaygroundPage() {
 
   const runExperiment = async () => {
     setIsRunning(true);
+    setError(null);
     try {
       const formData = new FormData();
       formData.append("backend", selectedBackend);
       formData.append("dataset", selectedDataset);
+      formData.append("task", selectedTask);
       if (selectedFile) {
         formData.append("file", selectedFile);
       }
 
-      const res = await fetch("/api/v1/biocompute/experiment/run", {
+      const headers = new Headers();
+      const sessionToken = window.__HERMES_SESSION_TOKEN__;
+      if (sessionToken) {
+        headers.set("X-Hermes-Session-Token", sessionToken);
+      }
+      const sbToken = getStoredSupabaseAccessToken();
+      if (sbToken) {
+        headers.set("Authorization", `Bearer ${sbToken}`);
+      }
+
+      const res = await fetch(`${HERMES_BASE_PATH}/api/v1/biocompute/experiment/run`, {
         method: "POST",
+        headers,
+        credentials: "include",
         body: formData,
       });
 
       if (!res.ok) {
-        throw new Error("Server error running experiment");
+        const msg = await res.text().catch(() => res.statusText);
+        throw new Error(`Experiment execution failed (HTTP ${res.status}): ${msg}`);
       }
       const data = await res.json();
       setResult(data);
     } catch (err) {
-      // Fallback synthetic result if backend is offline
-      setTimeout(() => {
-        setResult({
-          ok: true,
-          input_source: selectedFile ? selectedFile.name : "Sample Image (Digit 7)",
-          backend: selectedBackend,
-          dataset: selectedDataset,
-          prediction: "DIGIT 7",
-          confidence: 87.4,
-          processing_time_s: 0.427,
-          total_spikes: 24,
-          neural_raster: Array.from({ length: 16 }, (_, i) => ({
-            channel: i,
-            time_ms: Math.round(i * 22.5),
-          })),
-          benchmark: [
-            { model: "Tiny CNN", accuracy: "94.2%", samples: "200", latency: "1.2 ms", power_est: "250 W (GPU)" },
-            { model: "Digital Reservoir", accuracy: "88.5%", samples: "200", latency: "0.8 ms", power_est: "15 W (CPU)" },
-            { model: "BioCompute Simulator", accuracy: "87.4%", samples: "200", latency: "1.8 ms", power_est: "0.5 W (Sim)" },
-            { model: "FinalSpark (Live Biological)", accuracy: "84.0%", samples: "50", latency: "427 ms", power_est: "< 0.01 W (Organoid)" },
-          ],
-          tchuekam_analysis:
-            "**TchueKAM Analysis:** The input image was encoded into a 16-channel neural feature vector. " +
-            `The **${selectedBackend}** backend processed the pattern, generating 24 detected event spikes across channels. ` +
-            "Feature activation peaks aligned strongly with top/right stroke channels. " +
-            "**Verdict:** High-confidence classification as `DIGIT 7` (87.4% confidence).",
-        });
-      }, 600);
+      setResult(null);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to run BioCompute experiment against backend.",
+      );
     } finally {
       setIsRunning(false);
     }
@@ -300,6 +303,12 @@ export default function BioComputePlaygroundPage() {
           </div>
 
           {/* Results & TchueKAM Analysis */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-xs text-red-300">
+              {error}
+            </div>
+          )}
+
           {result && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center">

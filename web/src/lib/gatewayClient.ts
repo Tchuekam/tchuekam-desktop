@@ -65,6 +65,7 @@ const ANY = "*";
 export class GatewayClient {
   private ws: WebSocket | null = null;
   private reqId = 0;
+  private connectAttempt = 0;
   private pending = new Map<string, Pending>();
   private listeners = new Map<string, Set<(ev: GatewayEvent) => void>>();
   private _state: ConnectionState = "idle";
@@ -107,20 +108,25 @@ export class GatewayClient {
 
   async connect(token?: string): Promise<void> {
     if (this._state === "open" || this._state === "connecting") return;
+    const attempt = ++this.connectAttempt;
     this.setState("connecting");
 
-    // Gated mode: legacy ``?token=`` is rejected by ``_ws_auth_ok``; the
-    // SPA must fetch a single-use ticket via /api/auth/ws-ticket instead.
-    // Explicit ``token`` overrides the gate check (test-only path).
     let authParamName: string;
     let authParamValue: string;
     if (token) {
       authParamName = "token";
       authParamValue = token;
     } else if (window.__HERMES_AUTH_REQUIRED__) {
-      const { ticket } = await getWsTicket();
-      authParamName = "ticket";
-      authParamValue = ticket;
+      try {
+        const { ticket } = await getWsTicket();
+        authParamName = "ticket";
+        authParamValue = ticket;
+      } catch (err) {
+        if (attempt === this.connectAttempt) {
+          this.setState("error");
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
     } else {
       authParamName = "token";
       authParamValue = window.__HERMES_SESSION_TOKEN__ ?? "";
@@ -130,6 +136,10 @@ export class GatewayClient {
           "Session token not available — page must be served by the Hermes dashboard",
         );
       }
+    }
+
+    if (attempt !== this.connectAttempt) {
+      return;
     }
 
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
@@ -151,6 +161,9 @@ export class GatewayClient {
     });
 
     ws.addEventListener("close", () => {
+      if (this.ws === ws) {
+        this.ws = null;
+      }
       this.setState("closed");
       this.rejectAllPending(new Error("WebSocket closed"));
     });
@@ -172,8 +185,10 @@ export class GatewayClient {
   }
 
   close() {
+    this.connectAttempt++;
     this.ws?.close();
     this.ws = null;
+    this.rejectAllPending(new Error("WebSocket closed"));
   }
 
   private dispatch(msg: Record<string, unknown>) {

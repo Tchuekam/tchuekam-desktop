@@ -32,9 +32,12 @@ export function getSupabaseConfig() {
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
     if (host && host !== "localhost" && host !== "127.0.0.1") {
-      defaultPortalUrl = host.endsWith(".up.railway.app")
-        ? "https://tchuekam-auth-production.up.railway.app"
-        : "https://auth.tchuekam.com";
+      defaultPortalUrl =
+        host.endsWith(".up.railway.app") ||
+        host.endsWith(".vercel.app") ||
+        host.endsWith(".netlify.app")
+          ? "https://tchuekam-auth-production.up.railway.app"
+          : "https://auth.tchuekam.com";
     }
   }
   return {

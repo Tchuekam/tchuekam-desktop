@@ -469,6 +469,7 @@ export const en: Translations = {
       pkce: "Browser login (PKCE)",
       device_code: "Device code",
       external: "External CLI",
+      loopback: "Browser Login",
     },
     expiresIn: "expires in {time}",
   },

@@ -1,5 +1,5 @@
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
-import type { StatusResponse } from "@/lib/api";
+import { HERMES_BASE_PATH, type StatusResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 
@@ -22,7 +22,7 @@ export function SidebarFooter({ status }: SidebarFooterProps) {
         </Typography>
 
         <a
-          href="/api/download/android"
+          href={`${HERMES_BASE_PATH}/api/download/android`}
           download="TchueKAM-Mobile.apk"
           title="1-Click Download Android APK"
           className={cn(

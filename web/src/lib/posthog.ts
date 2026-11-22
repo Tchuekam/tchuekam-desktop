@@ -1,14 +1,16 @@
 /**
  * PostHog Product Analytics & Telemetry for Tchuekam Agent.
- * Tracks usage metrics (sessions, active models, gateway connections, tool calls)
- * while respecting user privacy opt-outs.
+ * Uses only a public project token configured at build time via VITE_POSTHOG_KEY (phc_*).
  */
 
-const POSTHOG_KEY = "phx_JurRLsvuQkiD4awJxMybMws47BSpuThTQteQSTwkK6YhdkTy";
+const POSTHOG_KEY = (
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_POSTHOG_KEY ??
+  ""
+).trim();
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 let distinctId = "";
-let isEnabled = true;
+let isEnabled = POSTHOG_KEY.startsWith("phc_");
 
 function getDistinctId(): string {
   if (distinctId) return distinctId;
@@ -27,12 +29,17 @@ function getDistinctId(): string {
 }
 
 export function initPostHog(): void {
+  if (!POSTHOG_KEY.startsWith("phc_")) {
+    isEnabled = false;
+    return;
+  }
   try {
     const optOut = localStorage.getItem("tchuekam_telemetry_opt_out");
     if (optOut === "true") {
       isEnabled = false;
       return;
     }
+    isEnabled = true;
     getDistinctId();
     trackEvent("app_launched", {
       url: window.location.href,
@@ -47,8 +54,8 @@ export function initPostHog(): void {
   }
 }
 
-export function trackEvent(eventName: string, properties: Record<string, any> = {}): void {
-  if (!isEnabled) return;
+export function trackEvent(eventName: string, properties: Record<string, unknown> = {}): void {
+  if (!isEnabled || !POSTHOG_KEY.startsWith("phc_")) return;
   try {
     const payload = {
       api_key: POSTHOG_KEY,
@@ -75,14 +82,16 @@ export function trackEvent(eventName: string, properties: Record<string, any> = 
         keepalive: true,
       }).catch(() => {});
     }
-  } catch (err) {
+  } catch {
     // Silent fail for telemetry
   }
 }
 
 export function setTelemetryOptOut(optOut: boolean): void {
-  isEnabled = !optOut;
+  isEnabled = !optOut && POSTHOG_KEY.startsWith("phc_");
   try {
     localStorage.setItem("tchuekam_telemetry_opt_out", String(optOut));
-  } catch {}
+  } catch {
+    // Ignore storage failures
+  }
 }

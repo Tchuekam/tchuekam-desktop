@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Brain,
   ChevronDown,
@@ -939,7 +940,7 @@ export default function ModelsPage() {
                   …) and provider retries, so they diverge from your provider
                   bill. Enable{" "}
                   <span className="font-mono">dashboard.show_token_analytics</span>{" "}
-                  in <a href="/config" className="underline">Config</a> to
+                  in <Link to="/config" className="underline">Config</Link> to
                   show the local debug estimate anyway.
                 </p>
               )}

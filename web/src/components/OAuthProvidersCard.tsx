@@ -155,7 +155,7 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
                         tone="outline"
                         className="text-xs tracking-wide"
                       >
-                        {t.oauth.flowLabels[p.flow]}
+                        {t.oauth.flowLabels[p.flow] ?? p.flow}
                       </Badge>
                       {p.status.logged_in && (
                         <Badge tone="success" className="text-xs">

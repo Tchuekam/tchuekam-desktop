@@ -163,7 +163,20 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
     let unmounting = false;
     let ws: WebSocket | null = null;
     void (async () => {
-      const [authName, authValue] = await buildWsAuthParam();
+      let authName: string;
+      let authValue: string;
+      try {
+        [authName, authValue] = await buildWsAuthParam();
+      } catch (err) {
+        if (!unmounting) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "events feed authentication failed",
+          );
+        }
+        return;
+      }
       if (!authValue || unmounting) {
         return;
       }

@@ -190,6 +190,69 @@ class TestPublicShowcaseSecurityHardening:
         assert resp.json() == {"ok": True, "output": "Polished executive text"}
         assert len(calls) >= 2
 
+    def test_serve_index_omits_session_token_in_public_demo(self, monkeypatch):
+        ws = self._configure_public(monkeypatch)
+        with TestClient(ws.app) as client:
+            resp = client.get("/")
+        assert resp.status_code == 200
+        assert "window.__HERMES_PUBLIC_DEMO__=true;" in resp.text
+        assert "window.__HERMES_SESSION_TOKEN__" not in resp.text
+
+    def test_status_strips_paths_and_pid_in_public_demo(self, monkeypatch):
+        ws = self._configure_public(monkeypatch)
+        headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
+        with TestClient(ws.app) as client:
+            resp = client.get("/api/status", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["hermes_home"] is None
+        assert data["config_path"] is None
+        assert data["env_path"] is None
+        assert data["gateway_pid"] is None
+        assert data["gateway_health_url"] is None
+
+    def test_image_upload_rejects_invalid_magic_bytes_and_oversized(self, monkeypatch):
+        import base64
+
+        ws = self._configure_public(monkeypatch)
+        headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
+        ws._RATE_BUCKETS.clear()
+
+        fake_png = base64.b64encode(b"this-is-plain-text-not-png").decode("ascii")
+        oversized_b64 = "A" * (14 * 1024 * 1024)
+        with TestClient(ws.app) as client:
+            bad_magic = client.post(
+                "/api/uploads/image",
+                json={"data_url": f"data:image/png;base64,{fake_png}"},
+                headers=headers,
+            )
+            assert bad_magic.status_code == 400
+
+            too_big = client.post(
+                "/api/uploads/image",
+                json={"data_url": f"data:image/png;base64,{oversized_b64}"},
+                headers=headers,
+            )
+            assert too_big.status_code == 413
+
+    def test_business_ocr_rejects_oversized_upload(self, monkeypatch):
+        ws = self._configure_public(monkeypatch)
+        headers = {ws._SESSION_HEADER_NAME: ws._SESSION_TOKEN}
+        ws._RATE_BUCKETS.clear()
+
+        oversized_b64 = "A" * (34 * 1024 * 1024)
+        with TestClient(ws.app) as client:
+            resp = client.post(
+                "/api/business/ocr",
+                json={
+                    "data_url": f"data:application/pdf;base64,{oversized_b64}",
+                    "file_name": "huge.pdf",
+                    "mime_type": "application/pdf",
+                },
+                headers=headers,
+            )
+        assert resp.status_code == 413
+
 
 class TestCredentialPoolAndFastLoopFailover:
     def test_multi_key_env_seeding_for_gemini_and_groq(self, clean_fallback_env, monkeypatch, tmp_path):
@@ -303,3 +366,176 @@ class TestVercelSplitOriginSupport:
                 ):
                     pass
             assert pty_ws.value.code == 4403
+
+
+class TestMultiTurnStickyFallbackAndSanitization:
+    def test_same_provider_gemini_fallback_included_when_primary_model_differs(
+        self, clean_fallback_env, monkeypatch
+    ):
+        from hermes_cli.fallback_config import resolve_effective_fallback_chain
+
+        monkeypatch.setenv("GEMINI_API_KEY", "AIza_test")
+        monkeypatch.setenv("GROQ_API_KEYS", "gsk_1,gsk_2,gsk_3")
+
+        chain = resolve_effective_fallback_chain(
+            {},
+            primary_provider="gemini",
+            primary_model="gemini-3.6-flash",
+        )
+        providers = [(e["provider"], e["model"]) for e in chain]
+        assert ("gemini", "gemini-2.5-flash") in providers
+        assert ("groq", "openai/gpt-oss-120b") in providers
+        assert ("groq", "qwen/qwen3.8-27b") in providers
+
+    def test_multi_turn_gemini_to_groq_strips_reasoning_content_and_stays_sticky(self):
+        from types import SimpleNamespace
+        from agent.auxiliary_client import clear_runtime_main
+        from run_agent import AIAgent
+
+        with (
+            patch("run_agent.get_tool_definitions", return_value=[]),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("run_agent.OpenAI"),
+        ):
+            agent = AIAgent(
+                api_key="AIza_primary",
+                base_url="https://generativelanguage.googleapis.com/v1beta",
+                provider="gemini",
+                model="gemini-3.6-flash",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+                fallback_model=[{"provider": "groq", "model": "openai/gpt-oss-120b"}],
+            )
+
+        primary_client = MagicMock()
+        err_503 = Exception("Gemini 503 overloaded")
+        err_503.status_code = 503
+        primary_client.chat.completions.create.side_effect = err_503
+
+        sent_payloads = []
+        groq_client = MagicMock()
+        groq_client.base_url = "https://api.groq.com/openai/v1"
+        groq_client.api_key = "gsk_working"
+
+        def _groq_create(**kwargs):
+            import copy
+            sent_payloads.append(copy.deepcopy(kwargs.get("messages", [])))
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(
+                            content=f"Groq turn {len(sent_payloads)} reply",
+                            tool_calls=None,
+                            reasoning="internal reasoning",
+                            reasoning_content="internal reasoning",
+                        ),
+                    )
+                ],
+                usage=None,
+                model="openai/gpt-oss-120b",
+            )
+
+        groq_client.chat.completions.create.side_effect = _groq_create
+        agent.client = primary_client
+        agent._persist_session = lambda *a, **kw: None
+        agent._save_trajectory = lambda *a, **kw: None
+        agent._cleanup_task_resources = lambda *a, **kw: None
+        agent._try_recover_primary_transport = MagicMock(return_value=False)
+
+        prior_history = [
+            {"role": "user", "content": "Run a tool for me"},
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning": "Gemini thought",
+                "reasoning_content": "Gemini thought",
+                "reasoning_details": [{"type": "reasoning.summary", "summary": "Gemini thought"}],
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "web_search", "arguments": '{"query":"test"}'},
+                        "extra_content": {"google": {"thought_signature": "sig-abc"}},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "name": "web_search", "content": '{"ok":true}'},
+        ]
+
+        try:
+            with patch(
+                "agent.auxiliary_client.resolve_provider_client",
+                return_value=(groq_client, "openai/gpt-oss-120b"),
+            ):
+                turn1 = agent.run_conversation("First follow-up", conversation_history=prior_history)
+                assert turn1.get("completed") is True
+                assert turn1.get("final_response") == "Groq turn 1 reply"
+                assert agent.provider == "groq"
+                assert agent.model == "openai/gpt-oss-120b"
+                assert getattr(agent, "_sticky_fallback_active", False) is True
+
+                # Verify Groq payload had reasoning_content, reasoning_details, and extra_content stripped
+                assistant_msgs = [m for m in sent_payloads[0] if m.get("role") == "assistant"]
+                assert assistant_msgs
+                for am in assistant_msgs:
+                    assert "reasoning_content" not in am
+                    assert "reasoning_details" not in am
+                    for tc in am.get("tool_calls") or []:
+                        assert "extra_content" not in tc
+
+                # Turn 2: must stay sticky on the working Groq model without rotating back to broken Gemini
+                primary_client.chat.completions.create.reset_mock()
+                turn2 = agent.run_conversation(
+                    "Second follow-up",
+                    conversation_history=turn1["messages"],
+                )
+                assert turn2.get("completed") is True
+                assert turn2.get("final_response") == "Groq turn 2 reply"
+                assert agent.provider == "groq"
+                assert agent.model == "openai/gpt-oss-120b"
+                primary_client.chat.completions.create.assert_not_called()
+        finally:
+            clear_runtime_main()
+
+    def test_gemini_native_coalesces_consecutive_tool_results_and_classifies_timeout(self):
+        import httpx
+        from agent.error_classifier import FailoverReason, classify_api_error
+        from agent.gemini_native_adapter import GeminiNativeClient, build_gemini_request
+
+        req = build_gemini_request(
+            messages=[
+                {"role": "user", "content": "Check two cities"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {"id": "c1", "type": "function", "function": {"name": "weather", "arguments": '{"city":"Yaounde"}'}},
+                        {"id": "c2", "type": "function", "function": {"name": "weather", "arguments": '{"city":"Douala"}'}},
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": '{"temp":28}'},
+                {"role": "tool", "tool_call_id": "c2", "content": '{"temp":31}'},
+            ],
+            tools=[],
+            tool_choice=None,
+        )
+        assert [c["role"] for c in req["contents"]] == ["user", "model", "user"]
+        assert len(req["contents"][2]["parts"]) == 2
+
+        class _TimeoutHTTP:
+            def post(self, *a, **kw):
+                raise httpx.ReadTimeout("timed out waiting for Gemini")
+
+            def close(self):
+                pass
+
+        client = GeminiNativeClient(api_key="AIza-test", http_client=_TimeoutHTTP())
+        with pytest.raises(Exception) as exc_info:
+            client.chat.completions.create(
+                model="gemini-3.5-flash",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        classified = classify_api_error(exc_info.value)
+        assert classified.reason == FailoverReason.timeout

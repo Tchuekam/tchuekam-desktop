@@ -173,14 +173,9 @@ async function getSessionToken(): Promise<string> {
  * fetch a fresh ticket.
  */
 export async function getWsTicket(): Promise<{ ticket: string; ttl_seconds: number }> {
-  const res = await fetch(`${BASE}/api/auth/ws-ticket`, {
+  return fetchJSON<{ ticket: string; ttl_seconds: number }>("/api/auth/ws-ticket", {
     method: "POST",
-    credentials: "include",
   });
-  if (!res.ok) {
-    throw new Error(`/api/auth/ws-ticket: HTTP ${res.status}`);
-  }
-  return res.json();
 }
 
 /**
@@ -228,7 +223,7 @@ export const api = {
       // /auth/logout returns 302 → /login. Follow that with a full-page
       // navigation rather than letting fetch() opaquely consume the
       // redirect — the SPA needs to leave the protected area.
-      window.location.assign("/login");
+      window.location.assign(`${BASE}/login`);
       return r;
     }),
   getSessions: (limit = 20, offset = 0) =>
@@ -266,7 +261,7 @@ export const api = {
     ),
   getSessionStats: () => fetchJSON<SessionStoreStats>("/api/sessions/stats"),
   exportSessionUrl: (id: string) =>
-    `/api/sessions/${encodeURIComponent(id)}/export`,
+    `${BASE}/api/sessions/${encodeURIComponent(id)}/export`,
   pruneSessions: (older_than_days: number, source?: string) =>
     fetchJSON<{ ok: boolean; removed: number }>("/api/sessions/prune", {
       method: "POST",
@@ -1420,8 +1415,8 @@ export interface OAuthProvider {
   id: string;
   name: string;
   /** "pkce" (browser redirect + paste code), "device_code" (show code + URL),
-   *  or "external" (delegated to a separate CLI like Claude Code or Qwen). */
-  flow: "pkce" | "device_code" | "external";
+   *  "loopback" (local callback listener), or "external" (delegated to CLI). */
+  flow: "pkce" | "device_code" | "external" | "loopback";
   cli_command: string;
   docs_url: string;
   status: OAuthProviderStatus;
@@ -1436,6 +1431,12 @@ export type OAuthStartResponse =
   | {
       session_id: string;
       flow: "pkce";
+      auth_url: string;
+      expires_in: number;
+    }
+  | {
+      session_id: string;
+      flow: "loopback";
       auth_url: string;
       expires_in: number;
     }

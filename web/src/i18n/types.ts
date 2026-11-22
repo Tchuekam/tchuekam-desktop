@@ -487,6 +487,7 @@ export interface Translations {
       pkce: string;
       device_code: string;
       external: string;
+      loopback?: string;
     };
     expiresIn: string;
   };

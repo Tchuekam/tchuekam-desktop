@@ -574,7 +574,19 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     let onDataDisposable: { dispose(): void } | null = null;
     let onResizeDisposable: { dispose(): void } | null = null;
     void (async () => {
-      const authParam = await buildWsAuthParam();
+      let authParam: [string, string];
+      try {
+        authParam = await buildWsAuthParam();
+      } catch (err) {
+        if (!unmounting) {
+          setBanner(
+            err instanceof Error
+              ? err.message
+              : "Failed to authenticate chat session.",
+          );
+        }
+        return;
+      }
       if (unmounting) return;
       const url = buildWsUrl(authParam, resumeParam, channel);
       const ws = new WebSocket(url);
