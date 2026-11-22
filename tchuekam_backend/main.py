@@ -3,6 +3,8 @@ Point d'entrée principal de l'application FastAPI backend TchueKAM avec sécuri
 """
 
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -11,7 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tchuekam_backend.api.router import api_router
-from tchuekam_backend.core.config import settings
+from tchuekam_backend.core.config import _is_production, settings
 from tchuekam_backend.core.database import SessionLocal, init_db
 from tchuekam_backend.core.exception_handlers import (
     app_exception_handler,
@@ -41,10 +43,10 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # Start Telegram / Hermes Gateway if configured
+    # Start Telegram / Hermes Gateway only when explicitly opted in
     gateway_runner = None
     gateway_task = None
-    if settings.TELEGRAM_BOT_TOKEN:
+    if settings.TELEGRAM_BOT_TOKEN and os.getenv("TCHUEKAM_ENABLE_EMBEDDED_TELEGRAM", "").strip() == "1":
         try:
             from hermes_cli.env_loader import load_hermes_dotenv
             load_hermes_dotenv()
@@ -78,13 +80,15 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error stopping Telegram Bot Gateway: {e}")
 
 
+_enable_docs = (not _is_production()) or os.getenv("ENABLE_API_DOCS", "").strip() == "1"
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Backend API REST Enterprise pour TchueKAM SaaS Multi-Tenant.",
     version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json" if _enable_docs else None,
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
     lifespan=lifespan,
 )
 
@@ -95,21 +99,20 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(StructuredLoggingAndSecurityHeadersMiddleware)
 
 # 3. Configuration CORS
-#
-# Garde-fou : Starlette, avec ``allow_origins=["*"]`` ET
-# ``allow_credentials=True``, renvoie l'origine de la requête accompagnée de
-# ``Access-Control-Allow-Credentials: true`` — n'importe quel site peut alors
-# lire des réponses authentifiées. Les deux sont donc mutuellement exclusifs :
-# si une configuration réintroduit le joker, on désactive les credentials
-# plutôt que d'ouvrir l'API.
 _cors_origins = list(settings.ALLOWED_ORIGINS)
 _cors_allow_credentials = "*" not in _cors_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=_cors_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Organization-Id",
+        "X-Hermes-Session-Token",
+        "X-Requested-With",
+    ],
 )
 
 # Exception Handlers Centralisés
@@ -123,6 +126,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health", tags=["Health"], response_model=APIResponse[dict])
+@app.get(f"{settings.API_V1_STR}/health", tags=["Health"], response_model=APIResponse[dict])
 def health_check():
     """Endpoint de contrôle de santé (Health Check)."""
     return APIResponse(
