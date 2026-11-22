@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 from typing import Any
 
 from tui_gateway import server
@@ -62,17 +63,23 @@ class WSTransport:
     should use :meth:`write_async` from the loop thread.
     """
 
+    is_ws = True
+
     def __init__(
         self,
         ws: Any,
         loop: asyncio.AbstractEventLoop,
         *,
         peer: str = "unknown",
+        restricted: bool = False,
+        owner_id: str | None = None,
     ) -> None:
         self._ws = ws
         self._loop = loop
         self._peer = peer
         self._closed = False
+        self.restricted = bool(restricted)
+        self.owner_id = owner_id or secrets.token_urlsafe(16)
 
     def write(self, obj: dict) -> bool:
         if self._closed:
@@ -131,7 +138,7 @@ def _ws_peer_label(ws: Any) -> str:
     return f"{host}:{port}" if port is not None else host
 
 
-async def handle_ws(ws: Any) -> None:
+async def handle_ws(ws: Any, *, restricted: bool = False) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
     peer = _ws_peer_label(ws)
     transport: WSTransport | None = None
@@ -144,9 +151,14 @@ async def handle_ws(ws: Any) -> None:
     try:
         await ws.accept()
         disconnect_reason = "connected"
-        _log.info("ws accepted peer=%s", peer)
+        _log.info("ws accepted peer=%s restricted=%s", peer, restricted)
 
-        transport = WSTransport(ws, asyncio.get_running_loop(), peer=peer)
+        transport = WSTransport(
+            ws,
+            asyncio.get_running_loop(),
+            peer=peer,
+            restricted=restricted,
+        )
 
         ready_ok = await transport.write_async(
             {
@@ -255,28 +267,27 @@ async def handle_ws(ws: Any) -> None:
                 )
                 break
     finally:
-        detached_sessions = 0
+        cleaned_sessions = 0
         if transport is not None:
             transport.close()
-
-            # Detach the transport from any sessions it owned so later emits
-            # fall back to stdio instead of crashing into a closed socket.
-            for _, sess in list(server._sessions.items()):
-                if sess.get("transport") is transport:
-                    sess["transport"] = server._stdio_transport
-                    detached_sessions += 1
+            try:
+                cleaned_sessions = await asyncio.to_thread(
+                    server.cleanup_transport_sessions, transport
+                )
+            except Exception as exc:
+                _log.warning("ws session cleanup failed peer=%s error=%s", peer, exc)
         try:
             await ws.close()
         except Exception as exc:
             _log.debug("ws close failed peer=%s error=%s", peer, exc)
         _log.info(
             "ws closed peer=%s reason=%s messages=%d parse_errors=%d "
-            "dispatch_crashes=%d send_failures=%d detached_sessions=%d",
+            "dispatch_crashes=%d send_failures=%d cleaned_sessions=%d",
             peer,
             disconnect_reason,
             messages,
             parse_errors,
             dispatch_crashes,
             send_failures,
-            detached_sessions,
+            cleaned_sessions,
         )
