@@ -68,7 +68,7 @@ function AttachmentPill({ attachment, onRemove }: { attachment: ComposerAttachme
     >
       <button
         aria-label={canPreview ? `Preview ${attachment.label}` : attachment.label}
-        className="flex max-w-56 items-center gap-2 border border-border/60 bg-background/50 px-2 py-1.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] transition-colors hover:border-primary/35 hover:bg-accent/45 disabled:cursor-default"
+        className="flex max-w-56 items-center gap-2 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-1.5 text-left shadow-xs backdrop-blur-sm transition-all duration-150 hover:border-(--tk-indigo-border) hover:bg-[color-mix(in_srgb,var(--tk-indigo-soft)_38%,var(--tk-glass-subtle-bg))] disabled:cursor-default"
         disabled={!canPreview}
         onClick={() => void openPreview()}
         title={canPreview ? `Preview ${attachment.label}` : attachment.label}
@@ -77,12 +77,12 @@ function AttachmentPill({ attachment, onRemove }: { attachment: ComposerAttachme
         {attachment.previewUrl && attachment.kind === 'image' ? (
           <img
             alt={attachment.label}
-            className="size-8 shrink-0 border border-border/70 object-cover"
+            className="size-8 shrink-0 rounded-lg border border-(--tk-glass-border) object-cover"
             draggable={false}
             src={attachment.previewUrl}
           />
         ) : (
-          <span className="grid size-8 shrink-0 place-items-center border border-border/55 bg-muted/35 text-muted-foreground">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-(--tk-glass-border) bg-(--ui-bg-tertiary) text-(--ui-text-secondary)">
             <Icon className="size-3.5" />
           </span>
         )}
