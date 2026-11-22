@@ -58,7 +58,11 @@ class WorkspaceService:
         name: Optional[str] = None,
         description: Optional[str] = None,
         settings_json: Optional[str] = None,
+        org_id: Optional[str] = None,
     ) -> Optional[Workspace]:
+        existing = self.workspace_repo.get_by_id(workspace_id)
+        if not existing or (org_id is not None and existing.org_id != org_id):
+            return None
         ws = self.workspace_repo.update(workspace_id, name=name, description=description, settings_json=settings_json)
         if ws:
             self.audit_repo.log("WORKSPACE_UPDATED", user_id=user_id, org_id=ws.org_id, resource=ws.name)
