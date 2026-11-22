@@ -16,9 +16,8 @@ export const GHOST_ICON_BTN = cn(
 // Uses the signature top-lit electric indigo treatment so the composer
 // reads as an intentional, precision-engineered control deck.
 export const PRIMARY_ICON_BTN = cn(
-  'size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full p-0',
-  'bg-foreground text-background hover:bg-foreground/90',
-  'disabled:bg-foreground/30 disabled:text-background disabled:opacity-100'
+  'tk-btn-primary size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full p-0 text-white',
+  'active:scale-95 disabled:opacity-35 disabled:shadow-none'
 )
 
 interface ConversationProps {
@@ -58,6 +57,7 @@ export function ComposerControls({
   }
 
   const showVoicePrimary = !busy && !hasComposerPayload
+  const isStop = busy && busyAction === 'stop'
 
   return (
     <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
