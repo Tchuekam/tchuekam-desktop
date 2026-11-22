@@ -842,12 +842,12 @@ const SystemMessage: FC = () => {
   if (slashStatus?.groups) {
     return (
       <MessagePrimitive.Root
-        className="max-w-[min(86%,44rem)] self-center px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/60"
+        className="tk-glass-subtle max-w-[min(86%,44rem)] self-center rounded-full px-3.5 py-1 text-center text-[0.6875rem] leading-5 text-(--ui-text-secondary)"
         data-role="system"
         data-slot="aui_system-message-root"
       >
-        <span className="font-mono text-muted-foreground/55">{slashStatus.groups.command}</span>
-        <span className="mx-1.5 text-muted-foreground/35">·</span>
+        <span className="font-mono font-medium text-(--tk-indigo-text)">{slashStatus.groups.command}</span>
+        <span className="mx-1.5 text-muted-foreground/45">·</span>
         <span className="whitespace-pre-wrap">{slashStatus.groups.output.trim()}</span>
       </MessagePrimitive.Root>
     )
