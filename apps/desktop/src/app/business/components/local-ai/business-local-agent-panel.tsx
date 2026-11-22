@@ -363,3 +363,369 @@ export function BusinessLocalAiModal() {
                             4GB+ RAM recommended
                           </span>
                         )}
+                      </div>
+                      <p className="text-[0.6875rem] text-muted-foreground">{model.summary}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {!model.installed ? (
+                        <button
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+                          disabled={isInstalling || busyAction !== null}
+                          onClick={() => void handleInstall(model.id)}
+                          type="button"
+                        >
+                          <Codicon name="cloud-download" size="0.8rem" />
+                          Install
+                        </button>
+                      ) : model.active ? (
+                        <span className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          <Codicon name="check" size="0.8rem" />
+                          Active
+                        </span>
+                      ) : (
+                        <button
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold hover:border-primary/50"
+                          disabled={busyAction !== null}
+                          onClick={() => void handleSwitchModel(model.id)}
+                          type="button"
+                        >
+                          Use Model
+                        </button>
+                      )}
+
+                      {model.installed && (
+                        <button
+                          aria-label={`Remove ${model.name}`}
+                          className="inline-flex h-8 items-center rounded-lg border border-border/70 px-2 text-xs text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+                          disabled={busyAction !== null || isInstalling}
+                          onClick={() => void handleDeleteModel(model.id)}
+                          title="Delete model file"
+                          type="button"
+                        >
+                          <Codicon name="trash" size="0.8rem" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 2GB RAM Performance Tuning */}
+          {status && (
+            <div className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                2 GB RAM Memory & Speed Tuning
+              </h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                  <span className="font-medium">Use Local AI for Business Hub actions</span>
+                  <input
+                    checked={status.config.enabled}
+                    className="size-4 accent-primary"
+                    onChange={event => void updateBusinessLocalAiConfig({ enabled: event.target.checked })}
+                    type="checkbox"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                  <span className="font-medium">Q8 KV cache (saves ~50% cache RAM)</span>
+                  <input
+                    checked={status.config.useKvQuant}
+                    className="size-4 accent-primary"
+                    onChange={event => void updateBusinessLocalAiConfig({ useKvQuant: event.target.checked })}
+                    type="checkbox"
+                  />
+                </label>
+
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                  <span className="font-medium">Context window</span>
+                  <select
+                    aria-label="Local AI Context Window"
+                    className="rounded border border-border bg-background px-2 py-1 text-xs"
+                    onChange={event => void updateBusinessLocalAiConfig({ ctxSize: Number(event.target.value) })}
+                    value={status.config.ctxSize}
+                  >
+                    <option value={512}>512 (Max Speed / Min RAM)</option>
+                    <option value={1024}>1024 (2 GB Balanced)</option>
+                    <option value={1536}>1536 (4 GB+ Extended)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                  <span className="font-medium">Auto-unload idle RAM</span>
+                  <select
+                    aria-label="Idle Unload Timer"
+                    className="rounded border border-border bg-background px-2 py-1 text-xs"
+                    onChange={event =>
+                      void updateBusinessLocalAiConfig({ idleUnloadMs: Number(event.target.value) })
+                    }
+                    value={status.config.idleUnloadMs}
+                  >
+                    <option value={60000}>1 min (Strict 2 GB)</option>
+                    <option value={180000}>3 min (Recommended)</option>
+                    <option value={300000}>5 min</option>
+                    <option value={0}>Keep loaded</option>
+                  </select>
+                </div>
+              </div>
+              <p className="text-[0.6875rem] text-muted-foreground">
+                Isolated from your main TchuekaM chat model. Scan-to-text images also run offline via local RapidOCR when available.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function BusinessLocalAiInlineCard() {
+  const messages = useStore($businessLocalAiMessages)
+  const busy = useStore($businessLocalAiChatBusy)
+  const status = useStore($businessLocalAiStatus)
+
+  if (!IS_DESKTOP || (messages.length === 0 && !busy)) {
+    return null
+  }
+
+  return (
+    <div className="mt-3 rounded-2xl border border-primary/25 bg-card/90 p-3.5 shadow-xs backdrop-blur-sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Codicon className="text-primary" name="chip" size="0.9rem" />
+          <span className="text-xs font-bold">
+            Business Hub Local AI {status?.activeModelName ? `· ${status.activeModelName}` : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {!status?.installed && (
+            <button
+              className="text-[0.6875rem] font-semibold text-primary hover:underline"
+              onClick={() => $businessLocalAiModalOpen.set(true)}
+              type="button"
+            >
+              Install 2GB Local AI
+            </button>
+          )}
+          <button
+            className="text-[0.6875rem] text-muted-foreground hover:text-foreground"
+            onClick={() => clearBusinessLocalAiMessages()}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+        {messages.map(msg => (
+          <div
+            className={cn(
+              'rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap',
+              msg.role === 'user' ? 'bg-muted/70 font-medium text-foreground' : 'bg-primary/5 text-foreground'
+            )}
+            key={msg.id}
+          >
+            <div>{msg.content}</div>
+            {msg.role === 'assistant' && (msg.durationMs || msg.tokensPerSec) && (
+              <div className="mt-1 text-[0.625rem] text-muted-foreground">
+                {(msg.durationMs ? `${(msg.durationMs / 1000).toFixed(1)}s` : '') +
+                  (msg.tokensPerSec ? ` · ${msg.tokensPerSec} tok/s` : '')}
+              </div>
+            )}
+          </div>
+        ))}
+        {busy && <div className="px-1 text-xs text-muted-foreground">Thinking locally...</div>}
+      </div>
+    </div>
+  )
+}
+
+export interface BusinessLocalAiWorkspaceDrawerProps {
+  document: BusinessDocument
+  onApplyText?: (text: string) => void
+}
+
+export function BusinessLocalAiWorkspaceDrawer({
+  document: doc,
+  onApplyText
+}: BusinessLocalAiWorkspaceDrawerProps) {
+  const open = useStore($businessLocalAiDrawerOpen)
+  const messages = useStore($businessLocalAiMessages)
+  const busy = useStore($businessLocalAiChatBusy)
+  const status = useStore($businessLocalAiStatus)
+  const [input, setInput] = useState('')
+
+  if (!IS_DESKTOP || !open) {
+    return null
+  }
+
+  const handleSend = async (promptText: string) => {
+    const trimmed = promptText.trim()
+
+    if (!trimmed || busy) {
+      return
+    }
+
+    setInput('')
+    await askBusinessLocalAgent(trimmed, doc)
+  }
+
+  const handleInstantAudit = () => {
+    const deterministicAudit = buildDeterministicDocumentAudit(doc)
+
+    if (deterministicAudit) {
+      $businessLocalAiMessages.set([
+        ...$businessLocalAiMessages.get(),
+        {
+          content: deterministicAudit,
+          createdAt: Date.now(),
+          id: `biz-audit-${Date.now()}`,
+          role: 'assistant'
+        }
+      ])
+    }
+
+    if (status?.installed) {
+      void askBusinessLocalAgent(
+        doc.language === 'fr'
+          ? 'Donne 3 améliorations concrètes et courtes pour ce document.'
+          : 'Give 3 concise, practical improvements for this document.',
+        doc
+      )
+    }
+  }
+
+  return (
+    <div className="border-b border-border/70 bg-muted/25 px-3 py-3 sm:px-6">
+      <div className="mx-auto max-w-5xl space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Codicon className="text-primary" name="chip" size="0.95rem" />
+            <span className="text-xs font-bold">Business Hub Local Agent</span>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.625rem] font-semibold text-primary">
+              {status?.installed ? status.activeModelName : 'Not Installed'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              className="rounded-lg border border-border/70 bg-card px-2.5 py-1 text-[0.6875rem] font-semibold hover:border-primary/40"
+              onClick={handleInstantAudit}
+              type="button"
+            >
+              Audit & [to confirm]
+            </button>
+            <button
+              className="rounded-lg border border-border/70 bg-card px-2.5 py-1 text-[0.6875rem] font-semibold hover:border-primary/40 disabled:opacity-50"
+              disabled={busy}
+              onClick={() =>
+                void handleSend(
+                  doc.language === 'fr'
+                    ? 'Rédige une version concise et professionnelle de la section principale de ce document.'
+                    : 'Draft a concise, professional version of the main section of this document.'
+                )
+              }
+              type="button"
+            >
+              Draft / Improve
+            </button>
+            <button
+              className="rounded-lg border border-border/70 bg-card px-2.5 py-1 text-[0.6875rem] font-semibold hover:border-primary/40"
+              onClick={() => $businessLocalAiModalOpen.set(true)}
+              type="button"
+            >
+              Model & RAM
+            </button>
+            <button
+              aria-label="Close Local Agent drawer"
+              className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => $businessLocalAiDrawerOpen.set(false)}
+              type="button"
+            >
+              <Codicon name="close" size="0.85rem" />
+            </button>
+          </div>
+        </div>
+
+        {messages.length > 0 && (
+          <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-border/60 bg-card/80 p-2.5">
+            {messages.map(msg => (
+              <div
+                className={cn(
+                  'rounded-lg px-2.5 py-2 text-xs leading-relaxed whitespace-pre-wrap',
+                  msg.role === 'user' ? 'bg-muted/70 font-medium' : 'bg-primary/5'
+                )}
+                key={msg.id}
+              >
+                <div>{msg.content}</div>
+                {msg.role === 'assistant' && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[0.625rem] text-muted-foreground">
+                    {(msg.durationMs || msg.tokensPerSec) && (
+                      <span>
+                        {msg.durationMs ? `${(msg.durationMs / 1000).toFixed(1)}s` : ''}
+                        {msg.tokensPerSec ? ` · ${msg.tokensPerSec} tok/s` : ''}
+                      </span>
+                    )}
+                    {onApplyText && (
+                      <button
+                        className="rounded bg-primary/10 px-2 py-0.5 font-semibold text-primary hover:bg-primary/20"
+                        onClick={() => onApplyText(msg.content)}
+                        type="button"
+                      >
+                        Apply to Document
+                      </button>
+                    )}
+                    <button
+                      className="rounded border border-border/70 px-2 py-0.5 font-medium hover:text-foreground"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText?.(msg.content)
+                        notify({ kind: 'info', message: 'Copied to clipboard.', title: 'Copied' })
+                      }}
+                      type="button"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {busy && <div className="px-1 text-xs text-muted-foreground">Generating locally...</div>}
+          </div>
+        )}
+
+        <form
+          className="flex items-center gap-2"
+          onSubmit={event => {
+            event.preventDefault()
+            void handleSend(input)
+          }}
+        >
+          <input
+            aria-label="Ask Business Hub Local Agent"
+            className="h-8 flex-1 rounded-xl border border-border/70 bg-background/90 px-3 text-xs focus:border-primary focus:outline-none"
+            disabled={busy}
+            onChange={event => setInput(event.target.value)}
+            placeholder={
+              doc.language === 'fr'
+                ? 'Demandez à l’agent local (résumé, clause, reformulation, devis)...'
+                : 'Ask the local agent (summary, clause, rewrite, quote notes)...'
+            }
+            value={input}
+          />
+          <button
+            className="inline-flex h-8 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+            disabled={busy || !input.trim()}
+            type="submit"
+          >
+            <Codicon name="send" size="0.8rem" />
+            Ask
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
