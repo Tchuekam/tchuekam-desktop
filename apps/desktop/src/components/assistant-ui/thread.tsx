@@ -385,7 +385,14 @@ const ThinkingDisclosure: FC<{
       ref={enterRef}
     >
       <DisclosureRow onToggle={() => setUserOpen(!open)} open={open}>
-        <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              pending ? 'tk-thinking-dot' : 'bg-(--ui-text-quaternary)'
+            )}
+          />
           <span
             className={cn(
               'text-[length:var(--conversation-tool-font-size)] font-medium leading-(--conversation-line-height) text-(--ui-text-secondary)',
