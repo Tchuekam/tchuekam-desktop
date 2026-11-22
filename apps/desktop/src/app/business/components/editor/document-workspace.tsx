@@ -469,7 +469,7 @@ export function DocumentWorkspace({
             <span className="h-3.5 w-px bg-(--tk-glass-border)" />
             <button
               aria-label="Redo"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
+              className="rounded-lg p-1.5 text-(--ui-text-secondary) transition hover:bg-muted hover:text-foreground disabled:opacity-30"
               disabled={!canRedoDocument(doc.id)}
               onClick={() => void redoDocumentChange(doc.id)}
               title="Redo (⌘⇧Z / Ctrl+Y)"
@@ -481,7 +481,7 @@ export function DocumentWorkspace({
 
           <button
             aria-label="Duplicate Document"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-(--ui-text-secondary) transition hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground"
             onClick={handleDuplicate}
             type="button"
           >
@@ -495,8 +495,8 @@ export function DocumentWorkspace({
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition',
                 drawerOpen
-                  ? 'border-primary/50 bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background/80 text-foreground hover:border-primary/40 hover:bg-muted'
+                  ? 'border-(--tk-indigo-border) bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
+                  : 'border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) text-foreground hover:border-(--tk-indigo-border) hover:bg-muted/70'
               )}
               disabled={!canUseAi}
               onClick={() => $businessLocalAiDrawerOpen.set(!drawerOpen)}
@@ -508,7 +508,7 @@ export function DocumentWorkspace({
           ) : null}
 
           <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-(--ui-text-secondary) transition hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
             disabled={!canUseAi}
             onClick={handleAskInChat}
             type="button"
@@ -520,9 +520,9 @@ export function DocumentWorkspace({
           {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
         </div>
 
-        {/* Right Controls: Apple Export Buttons */}
+        {/* Right Controls: Export Buttons */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {supportedFormats.map(fmt => (
+          {supportedFormats.map((fmt, index) => (
             <button
               className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 active:scale-[0.98]"
               key={fmt}
