@@ -104,7 +104,7 @@ function statusGlyph(status: ToolStatus): ReactNode {
     return (
       <BrailleSpinner
         ariaLabel="Running"
-        className="size-3.5 shrink-0 text-[0.95rem] text-(--ui-text-tertiary)"
+        className="size-3.5 shrink-0 text-[0.95rem] text-(--tk-cyan)"
         spinner="breathe"
       />
     )
@@ -118,7 +118,7 @@ function statusGlyph(status: ToolStatus): ReactNode {
     return <AlertCircle aria-label="Recovered" className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
   }
 
-  return <CheckCircle2 aria-label="Done" className="size-3.5 shrink-0 text-emerald-600/85 dark:text-emerald-400/85" />
+  return <CheckCircle2 aria-label="Done" className="size-3.5 shrink-0 text-emerald-600/90 dark:text-emerald-400/90" />
 }
 
 // Leading glyph for any tool-row header. Status (running/error/warning)
@@ -278,13 +278,21 @@ function ToolEntry({ part }: ToolEntryProps) {
   return (
     <div
       className={cn(
-        'min-w-0 max-w-full overflow-hidden text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)',
-        open && 'rounded-[0.625rem] border border-(--ui-stroke-tertiary)'
+        'min-w-0 max-w-full overflow-hidden text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary) transition-[background-color,border-color,box-shadow] duration-150',
+        open &&
+          cn(
+            'tk-glass-subtle rounded-xl shadow-xs',
+            view.status === 'error'
+              ? 'border-destructive/35'
+              : isPending
+                ? 'border-(--tk-cyan-border)'
+                : 'border-(--tk-glass-border)'
+          )
       )}
       data-slot="tool-block"
       ref={enterRef}
     >
-      <div className={cn(open && 'border-b border-(--ui-stroke-tertiary) px-2 py-1.5')}>
+      <div className={cn(open && 'border-b border-(--tk-glass-border) bg-(--ui-bg-tertiary)/45 px-3 py-2')}>
         <DisclosureRow
           onToggle={hasExpandableContent ? () => setToolDisclosureOpen(disclosureId, !open) : undefined}
           open={open}
@@ -295,13 +303,28 @@ function ToolEntry({ part }: ToolEntryProps) {
             <FadeText
               className={cn(
                 TOOL_HEADER_TITLE_CLASS,
-                isPending && 'shimmer text-(--ui-text-tertiary)',
+                isPending && 'shimmer text-foreground/75',
                 view.status === 'error' && 'text-destructive',
                 view.status === 'warning' && 'text-amber-700 dark:text-amber-300'
               )}
             >
               {view.title}
             </FadeText>
+            {isPending && (
+              <span className="shrink-0 rounded-full bg-(--tk-cyan-soft) px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-(--tk-cyan-text)">
+                Running
+              </span>
+            )}
+            {!isPending && view.status === 'error' && (
+              <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-destructive">
+                Failed
+              </span>
+            )}
+            {!isPending && view.status === 'warning' && (
+              <span className="shrink-0 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-amber-700 dark:text-amber-300">
+                Recovered
+              </span>
+            )}
             {!isPending && view.countLabel && <span className={TOOL_HEADER_DURATION_CLASS}>{view.countLabel}</span>}
             {!isPending && view.durationLabel && (
               <span className={TOOL_HEADER_DURATION_CLASS}>{view.durationLabel}</span>
@@ -310,7 +333,7 @@ function ToolEntry({ part }: ToolEntryProps) {
         </DisclosureRow>
       </div>
       {open && (
-        <div className="grid w-full min-w-0 max-w-full gap-1.5 overflow-hidden p-1.5">
+        <div className="grid w-full min-w-0 max-w-full gap-2 overflow-hidden p-2.5">
           {!embedded && view.previewTarget && isPreviewableTarget(view.previewTarget) && (
             <PreviewAttachment source="tool-result" target={view.previewTarget} />
           )}
@@ -497,19 +520,28 @@ export const ToolGroupSlot: FC<PropsWithChildren<{ endIndex: number; startIndex:
               <FadeText
                 className={cn(
                   TOOL_HEADER_TITLE_CLASS,
+                  isRunning && 'shimmer text-foreground/75',
                   displayStatus === 'error' && 'text-destructive',
                   displayStatus === 'warning' && 'text-amber-700 dark:text-amber-300'
                 )}
               >
                 {groupTitle(visibleParts)}
               </FadeText>
+              {isRunning && (
+                <span className="shrink-0 rounded-full bg-(--tk-cyan-soft) px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-(--tk-cyan-text)">
+                  Running
+                </span>
+              )}
               {totalDurationLabel && <span className={TOOL_HEADER_DURATION_CLASS}>{totalDurationLabel}</span>}
             </span>
             {statusSummary && (
               <FadeText
                 className={cn(
                   TOOL_HEADER_SUBTITLE_CLASS,
-                  displayStatus === 'warning' ? 'text-amber-700/80 dark:text-amber-300/85' : 'text-destructive/85'
+                  'inline-flex w-fit items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium',
+                  displayStatus === 'warning'
+                    ? 'bg-amber-500/12 text-amber-700 dark:text-amber-300'
+                    : 'bg-destructive/10 text-destructive'
                 )}
               >
                 {statusSummary}
@@ -527,7 +559,13 @@ export const ToolGroupSlot: FC<PropsWithChildren<{ endIndex: number; startIndex:
         {/* Body is always rendered so children stay mounted across collapse/
             expand and across the 1→2 group transition. `hidden` removes it
             from a11y/visual flow without unmounting React subtree. */}
-        <div className={cn(isGroup && 'mt-0.5 w-full overflow-hidden pr-2 pl-3')} hidden={isGroup && !open} key="body">
+        <div
+          className={cn(
+            isGroup && 'mt-1.5 ml-1.5 w-[calc(100%-0.375rem)] overflow-hidden border-l border-(--tk-glass-border) pl-3 pr-1'
+          )}
+          hidden={isGroup && !open}
+          key="body"
+        >
           {children}
         </div>
       </div>

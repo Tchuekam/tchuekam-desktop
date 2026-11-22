@@ -23,8 +23,8 @@ import {
   mediaPathFromMarkdownHref,
   mediaStreamUrl
 } from '@/lib/media'
-import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { IS_DESKTOP } from '@/lib/platform'
+import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { cn } from '@/lib/utils'
 
 // Math rendering plugin (KaTeX). Configured once at module scope — the
@@ -119,7 +119,7 @@ function MediaAttachment({ path }: { path: string }) {
 
   if (kind === 'audio' && src) {
     return (
-      <span className="my-3 block max-w-md rounded-xl border border-border bg-muted/35 p-3">
+      <span className="tk-glass-subtle my-3 block max-w-md rounded-xl p-3">
         <span className="mb-2 block truncate text-xs font-medium text-muted-foreground">{name}</span>
         <audio className="block w-full" controls onError={() => setFailed(true)} preload="metadata" src={src} />
         {failed && <OpenMediaButton kind="audio" path={path} />}
@@ -129,7 +129,7 @@ function MediaAttachment({ path }: { path: string }) {
 
   if (kind === 'video' && src) {
     return (
-      <span className="my-3 block max-w-2xl rounded-xl border border-border bg-muted/35 p-3">
+      <span className="tk-glass-subtle my-3 block max-w-2xl rounded-xl p-3">
         <span className="mb-2 block truncate text-xs font-medium text-muted-foreground">{name}</span>
         <video
           className="block max-h-112 w-full rounded-lg bg-black"
@@ -262,10 +262,10 @@ function DeferStreamingText({ children }: { children: ReactNode }) {
 // Headings shrink to chat scale rather than the prose default (h1≈xl). Kept
 // table-driven so adding/tweaking levels is one row.
 const HEADING_SIZES: Record<'h1' | 'h2' | 'h3' | 'h4', string> = {
-  h1: 'text-[1rem] tracking-tight',
-  h2: 'text-[0.9375rem] tracking-tight',
-  h3: 'text-[0.875rem]',
-  h4: 'text-[0.8125rem]'
+  h1: 'text-[1.1875rem] tracking-[-0.02em] mt-4 mb-1.5',
+  h2: 'text-[1.03125rem] tracking-[-0.015em] mt-3.5 mb-1',
+  h3: 'text-[0.9375rem] tracking-[-0.01em] mt-2.5 mb-0.5',
+  h4: 'text-[0.875rem] mt-2 mb-0.5'
 }
 
 const MarkdownTextImpl = () => {
@@ -282,44 +282,47 @@ const MarkdownTextImpl = () => {
     () =>
       ({
         h1: ({ className, ...props }: ComponentProps<'h1'>) => (
-          <h1 className={cn('my-1 font-semibold', HEADING_SIZES.h1, className)} {...props} />
+          <h1 className={cn('font-semibold text-foreground', HEADING_SIZES.h1, className)} {...props} />
         ),
         h2: ({ className, ...props }: ComponentProps<'h2'>) => (
-          <h2 className={cn('my-1 font-semibold', HEADING_SIZES.h2, className)} {...props} />
+          <h2 className={cn('font-semibold text-foreground', HEADING_SIZES.h2, className)} {...props} />
         ),
         h3: ({ className, ...props }: ComponentProps<'h3'>) => (
-          <h3 className={cn('my-1 font-semibold', HEADING_SIZES.h3, className)} {...props} />
+          <h3 className={cn('font-semibold text-foreground', HEADING_SIZES.h3, className)} {...props} />
         ),
         h4: ({ className, ...props }: ComponentProps<'h4'>) => (
-          <h4 className={cn('my-1 font-semibold', HEADING_SIZES.h4, className)} {...props} />
+          <h4 className={cn('font-semibold text-foreground', HEADING_SIZES.h4, className)} {...props} />
         ),
         p: ({ className, ...props }: ComponentProps<'p'>) => (
-          <p className={cn('my-1 wrap-anywhere leading-(--dt-line-height)', className)} {...props} />
+          <p className={cn('my-1.5 wrap-anywhere leading-(--dt-line-height)', className)} {...props} />
         ),
         a: MarkdownLink,
         hr: ({ className, ...props }: ComponentProps<'hr'>) => (
-          <hr className={cn('border-border', className)} {...props} />
+          <hr className={cn('my-4 border-(--tk-glass-border)', className)} {...props} />
         ),
         blockquote: ({ className, ...props }: ComponentProps<'blockquote'>) => (
           <blockquote
-            className={cn('border-l-2 border-border pl-3 text-muted-foreground italic', className)}
+            className={cn(
+              'my-2.5 rounded-r-lg border-l-2 border-(--tk-indigo-border) bg-[color-mix(in_srgb,var(--tk-indigo-soft)_42%,transparent)] py-1.5 pl-3.5 pr-3 text-(--ui-text-secondary) not-italic',
+              className
+            )}
             {...props}
           />
         ),
         ul: ({ className, ...props }: ComponentProps<'ul'>) => (
-          <ul className={cn('my-1 gap-0', className)} {...props} />
+          <ul className={cn('my-1.5 gap-0', className)} {...props} />
         ),
         ol: ({ className, ...props }: ComponentProps<'ol'>) => (
-          <ol className={cn('my-1 gap-0', className)} {...props} />
+          <ol className={cn('my-1.5 gap-0', className)} {...props} />
         ),
         li: ({ className, ...props }: ComponentProps<'li'>) => (
           <li className={cn('leading-(--dt-line-height)', className)} {...props} />
         ),
         table: ({ className, ...props }: ComponentProps<'table'>) => (
-          <div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-border">
+          <div className="aui-md-table tk-glass-subtle my-3 max-w-full overflow-x-auto rounded-xl border-(--tk-glass-border) shadow-xs">
             <table
               className={cn(
-                'm-0 w-full border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0',
+                'm-0 w-full border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-(--tk-glass-border) last:[&_tr]:border-0 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-(--ui-row-hover-background)',
                 className
               )}
               {...props}
@@ -327,19 +330,19 @@ const MarkdownTextImpl = () => {
           </div>
         ),
         thead: ({ className, ...props }: ComponentProps<'thead'>) => (
-          <thead className={cn('m-0 bg-muted/35 text-muted-foreground', className)} {...props} />
+          <thead className={cn('m-0 bg-(--ui-bg-tertiary)/70 text-(--ui-text-secondary)', className)} {...props} />
         ),
         th: ({ className, ...props }: ComponentProps<'th'>) => (
           <th
             className={cn(
-              'px-2.5 py-1.5 text-left align-middle text-[0.75rem] font-medium text-muted-foreground',
+              'px-3 py-2 text-left align-middle text-[0.72rem] font-semibold uppercase tracking-[0.04em] text-(--ui-text-secondary)',
               className
             )}
             {...props}
           />
         ),
         td: ({ className, ...props }: ComponentProps<'td'>) => (
-          <td className={cn('px-2.5 py-1.5 align-top text-[0.8125rem] leading-snug', className)} {...props} />
+          <td className={cn('px-3 py-2 align-top text-[0.8125rem] leading-relaxed tabular-nums', className)} {...props} />
         ),
         img: MarkdownImage,
         SyntaxHighlighter: (props: SyntaxHighlighterProps) => <SyntaxHighlighter {...props} defer={isStreaming} />

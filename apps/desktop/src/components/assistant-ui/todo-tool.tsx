@@ -44,9 +44,9 @@ const Checkmark: FC<{ status: TodoStatus; label: string }> = ({ status, label })
     return (
       <span
         aria-label={`In progress: ${label}`}
-        className="grid size-[1.1rem] shrink-0 place-items-center rounded-full border border-ring/65 bg-[color-mix(in_srgb,var(--dt-ring)_14%,transparent)]"
+        className="grid size-[1.1rem] shrink-0 place-items-center rounded-full border border-(--tk-cyan-border) bg-(--tk-cyan-soft)"
       >
-        <Loader2Icon className="size-3 animate-spin text-ring" />
+        <Loader2Icon className="size-3 animate-spin text-(--tk-cyan)" />
       </span>
     )
   }
@@ -60,7 +60,7 @@ const Checkmark: FC<{ status: TodoStatus; label: string }> = ({ status, label })
       className={cn(
         'size-[1.1rem] shrink-0 rounded-full border-border/80 pointer-events-none disabled:cursor-default disabled:opacity-100',
         checked &&
-          'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground [&_[data-slot=checkbox-indicator]_svg]:size-3',
+          'data-[state=checked]:border-(--tk-indigo) data-[state=checked]:bg-(--tk-indigo) data-[state=checked]:text-white [&_[data-slot=checkbox-indicator]_svg]:size-3',
         status === 'cancelled' && 'border-muted-foreground/40'
       )}
       disabled
@@ -74,33 +74,39 @@ export const HoistedTodoPanel: FC<{ todos: TodoItem[] }> = ({ todos }) => {
   }
 
   const label = headerLabel(todos)
+  const completedCount = todos.filter(t => t.status === 'completed').length
 
   return (
     <section
-      className="mt-1 mb-3 inline-block w-fit max-w-full overflow-hidden rounded-2xl border border-border/70 bg-card align-top shadow-[0_1px_2px_0_hsl(var(--foreground)/0.04),0_1px_4px_-1px_hsl(var(--foreground)/0.06)]"
+      className="tk-glass mt-1.5 mb-3 inline-block w-fit max-w-full overflow-hidden rounded-xl align-top"
       data-slot="aui_todo-hoisted"
     >
-      <header className="px-3 pt-3 pb-2">
+      <header className="flex items-center justify-between gap-3 border-b border-(--tk-glass-border) px-3.5 py-2.5">
         <span
-          className="block max-w-full truncate text-[0.85rem] font-semibold leading-tight tracking-tight text-foreground"
+          className="block min-w-0 truncate text-[0.8125rem] font-semibold leading-tight tracking-tight text-foreground"
           title={label}
         >
           {label}
         </span>
+        <span className="shrink-0 rounded-full bg-(--tk-indigo-soft) px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-(--tk-indigo-text)">
+          {completedCount}/{todos.length}
+        </span>
       </header>
-      <ul className="grid min-w-0 gap-0.5 px-3 pb-3">
+      <ul className="grid min-w-0 gap-0.5 px-3.5 py-2.5">
         {todos.map(todo => (
           <li
             // Active row at full presence; everything else fades. Opacity on
             // the row so the checkbox glyph dims with the text.
             className={cn(
-              'flex min-w-0 items-center gap-3 py-1.5 transition-opacity',
-              todo.status === 'in_progress' ? 'opacity-100' : 'opacity-45'
+              'flex min-w-0 items-center gap-3 py-1 transition-opacity',
+              todo.status === 'in_progress' ? 'opacity-100' : 'opacity-55'
             )}
             key={todo.id}
           >
             <Checkmark label={todo.content} status={todo.status} />
-            <span className="min-w-0 wrap-anywhere text-[0.8rem] leading-[1.2rem] text-foreground">{todo.content}</span>
+            <span className="min-w-0 wrap-anywhere text-[0.8125rem] leading-[1.25rem] text-foreground">
+              {todo.content}
+            </span>
           </li>
         ))}
       </ul>

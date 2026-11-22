@@ -102,16 +102,22 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
   }
 
   return (
-    <div className="flex w-full max-w-160 flex-wrap items-center gap-2.5 rounded-lg border border-border/55 bg-card/55 px-2.5 py-1.5 text-sm">
-      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted/55 text-muted-foreground/85">
-        <MonitorPlay className="size-3.5" />
+    <div className="tk-glass-subtle tk-surface-hover flex w-full max-w-160 flex-wrap items-center gap-3 rounded-xl px-3 py-2 text-sm hover:border-(--tk-indigo-border)">
+      <span
+        className={
+          isActive
+            ? 'grid size-8 shrink-0 place-items-center rounded-lg bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
+            : 'grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-bg-tertiary) text-muted-foreground'
+        }
+      >
+        <MonitorPlay className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[0.78rem] font-medium leading-[1.15rem] text-foreground/90">{name}</div>
-        <div className="truncate font-mono text-[0.66rem] leading-4 text-muted-foreground/70">{target}</div>
+        <div className="truncate text-[0.8125rem] font-medium leading-[1.2rem] text-foreground/92">{name}</div>
+        <div className="truncate font-mono text-[0.6875rem] leading-4 text-muted-foreground/75">{target}</div>
       </div>
       <button
-        className="ml-auto shrink-0 rounded-md border border-border/55 bg-background/40 px-2 py-1 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-accent/55 hover:text-foreground disabled:opacity-50 max-[28rem]:ml-9 max-[28rem]:w-[calc(100%-2.25rem)]"
+        className="ml-auto shrink-0 rounded-lg border border-(--tk-glass-border) bg-background/60 px-2.5 py-1 text-[0.7rem] font-semibold text-(--ui-text-secondary) transition-colors hover:border-(--tk-indigo-border) hover:bg-(--tk-indigo-soft) hover:text-(--tk-indigo-text) disabled:opacity-50 max-[28rem]:ml-10 max-[28rem]:w-[calc(100%-2.5rem)]"
         disabled={opening}
         onClick={() => void togglePreview()}
         type="button"
