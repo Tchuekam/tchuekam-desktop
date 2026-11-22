@@ -44,8 +44,12 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
         if (!isMounted.current) return;
         setStart(resp);
         setSecondsLeft(resp.expires_in);
-        setPhase(resp.flow === "device_code" ? "polling" : "awaiting_user");
-        if (resp.flow === "pkce") {
+        setPhase(
+          resp.flow === "device_code" || resp.flow === "loopback"
+            ? "polling"
+            : "awaiting_user",
+        );
+        if (resp.flow === "pkce" || resp.flow === "loopback") {
           window.open(resp.auth_url, "_blank", "noopener,noreferrer");
         } else {
           window.open(resp.verification_url, "_blank", "noopener,noreferrer");
@@ -81,9 +85,15 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
     return () => window.clearInterval(tick);
   }, [secondsLeft, phase, t]);
 
-  // Device-code: poll backend every 2s
+  // Device-code & loopback: poll backend every 2s
   useEffect(() => {
-    if (!start || start.flow !== "device_code" || phase !== "polling") return;
+    if (
+      !start ||
+      (start.flow !== "device_code" && start.flow !== "loopback") ||
+      phase !== "polling"
+    ) {
+      return;
+    }
     const sid = start.session_id;
     pollTimer.current = window.setInterval(async () => {
       try {
@@ -305,6 +315,30 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
             </>
           )}
 
+          {start?.flow === "loopback" && phase === "polling" && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {t.oauth.pkceStep1}
+              </p>
+              <a
+                href={
+                  (start as Extract<OAuthStartResponse, { flow: "loopback" }>)
+                    .auth_url
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+                {t.oauth.reOpenAuth}
+              </a>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground border-t border-border pt-3">
+                <Spinner className="text-xs" />
+                {t.oauth.waitingAuth}
+              </div>
+            </>
+          )}
+
           {phase === "approved" && (
             <div className="flex items-center gap-3 py-6 text-sm text-success">
               <Check className="h-5 w-5" />
@@ -337,11 +371,12 @@ export function OAuthLoginModal({ provider, onClose, onSuccess }: Props) {
                         setStart(resp);
                         setSecondsLeft(resp.expires_in);
                         setPhase(
-                          resp.flow === "device_code"
+                          resp.flow === "device_code" ||
+                            resp.flow === "loopback"
                             ? "polling"
                             : "awaiting_user",
                         );
-                        if (resp.flow === "pkce") {
+                        if (resp.flow === "pkce" || resp.flow === "loopback") {
                           window.open(
                             resp.auth_url,
                             "_blank",
