@@ -50,13 +50,13 @@ function VoiceLevelBars({ level, active }: { active: boolean; level: number }) {
   return (
     <div aria-hidden="true" className="flex h-4 items-center gap-[0.1875rem] text-(--tk-cyan)">
       {bars.map((weight, index) => {
-        const height = active ? 0.25 + Math.min(0.68, normalized * weight) : 0.25
+        const height = active ? 0.24 + Math.min(0.76, normalized * weight) : 0.24
 
         return (
           <span
             className={cn(
-              'w-0.5 rounded-full bg-current transition-[height,opacity] duration-100 ease-out',
-              active ? 'opacity-80' : 'animate-pulse opacity-45'
+              'w-[0.125rem] rounded-full bg-current transition-[height,opacity] duration-75 ease-out',
+              active ? 'opacity-90' : 'animate-pulse opacity-45'
             )}
             key={index}
             style={{ height: `${height * 100}%` }}
@@ -133,7 +133,19 @@ function PlaybackWaveform({ audioElement }: { audioElement: HTMLAudioElement | n
     canvas.style.height = `${WAVE_H}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.imageSmoothingEnabled = false
-    ctx.fillStyle = getComputedStyle(canvas).color
+    const style = getComputedStyle(canvas)
+
+    if (typeof ctx.createLinearGradient === 'function') {
+      const rootStyle = getComputedStyle(document.documentElement)
+      const indigo = rootStyle.getPropertyValue('--tk-indigo').trim() || style.color
+      const cyan = rootStyle.getPropertyValue('--tk-cyan').trim() || style.color
+      const grad = ctx.createLinearGradient(0, 0, WAVE_W, 0)
+      grad.addColorStop(0, indigo)
+      grad.addColorStop(1, cyan)
+      ctx.fillStyle = grad
+    } else {
+      ctx.fillStyle = style.color
+    }
 
     let raf = 0
 
