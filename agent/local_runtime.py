@@ -282,14 +282,15 @@ class LocalRuntimeManager:
         except Exception:
             pass
 
-        localappdata = os.getenv("LOCALAPPDATA")
-        if localappdata:
-            _add(Path(localappdata) / "hermes" / "local-ai")
-            _add(Path(localappdata) / "hermes" / "business-agent")
-            _add(Path(localappdata) / "hermes")
+        if not os.getenv("HERMES_HOME"):
+            localappdata = os.getenv("LOCALAPPDATA")
+            if localappdata:
+                _add(Path(localappdata) / "hermes" / "local-ai")
+                _add(Path(localappdata) / "hermes" / "business-agent")
+                _add(Path(localappdata) / "hermes")
 
-        _add(Path.home() / ".hermes" / "local-ai")
-        _add(Path.home() / ".hermes")
+            _add(Path.home() / ".hermes" / "local-ai")
+            _add(Path.home() / ".hermes")
         return dirs
 
     def get_writable_models_dir(self) -> Path:

@@ -2940,7 +2940,10 @@ def run_conversation(
                     )
 
                 if is_payload_too_large:
-                    if not getattr(agent, "_compact_payload_for_low_tpm", False):
+                    _p_lower = (getattr(agent, "provider", "") or "").strip().lower()
+                    _b_lower = (getattr(agent, "base_url", "") or "").strip().lower()
+                    _is_low_tpm_groq = _p_lower == "groq" or "groq.com" in _b_lower
+                    if _is_low_tpm_groq and not getattr(agent, "_compact_payload_for_low_tpm", False):
                         agent._compact_payload_for_low_tpm = True
                         logger.info(
                             "%s413 payload too large on %s/%s — enabling compact low-TPM payload mode and retrying immediately",
@@ -4382,7 +4385,10 @@ def run_conversation(
                         interim_msg = agent._build_assistant_message(
                             assistant_message, "incomplete"
                         )
-                        interim_msg["_thinking_prefill"] = True
+                        # Preserve durable encrypted Codex reasoning turns; only tag
+                        # non-Codex prefill turns as temporary retry scaffolding.
+                        if not interim_msg.get("codex_reasoning_items"):
+                            interim_msg["_thinking_prefill"] = True
                         messages.append(interim_msg)
                         agent._session_messages = messages
                         continue

@@ -734,6 +734,16 @@ def fetch_endpoint_model_metadata(
     if not normalized or _is_openrouter_base_url(normalized):
         return {}
 
+    if (os.getenv("HERMES_OFFLINE") or "").strip().lower() in ("1", "true", "yes"):
+        return {}
+    if not is_local_endpoint(normalized):
+        try:
+            from agent.connectivity import get_connectivity_monitor
+            if get_connectivity_monitor().is_offline():
+                return {}
+        except Exception:
+            pass
+
     if is_local_endpoint(normalized) and not _is_local_server_listening(normalized):
         return {}
 
