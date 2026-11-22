@@ -813,6 +813,26 @@ canvas {
       background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
       box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1);
   }
+
+  .tk-ambient-halo {
+    background:
+      radial-gradient(52% 95% at 50% -10%, var(--tk-indigo-glow), transparent 72%),
+      radial-gradient(38% 70% at 80% 0%, var(--tk-cyan-glow), transparent 68%);
+  }
+
+  @keyframes tk-breathe {
+    0%,
+    100% {
+      opacity: 0.72;
+      transform: scale(0.92);
+      box-shadow: 0 0 0 0 var(--tk-cyan-glow);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.08);
+      box-shadow: 0 0 0 4px var(--tk-cyan-soft);
+    }
+  }
 }
 
 /* Bottom clearance lives on [data-slot='aui_composer-clearance'] —
