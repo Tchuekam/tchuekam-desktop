@@ -532,15 +532,15 @@ export function BusinessView() {
                     <span className="mt-0.5 block text-[0.6875rem] text-muted-foreground">{b.sub}</span>
                   </span>
                   <Codicon
-                    className="mt-1 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary"
+                    className="mt-1 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-(--tk-indigo-text)"
                     name="chevron-right"
                     size="0.85rem"
                   />
                 </div>
               </button>
-              <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2">
+              <div className="flex items-center justify-between border-t border-(--tk-glass-border) bg-(--ui-bg-tertiary)/40 px-3.5 py-2">
                 <button
-                  className="text-[0.6875rem] font-semibold text-primary transition hover:underline disabled:opacity-40"
+                  className="text-[0.6875rem] font-semibold text-(--tk-indigo-text) transition hover:underline disabled:opacity-40"
                   disabled={!canStartChat}
                   onClick={() => handleOpenBuilder(b.id)}
                   type="button"
@@ -563,10 +563,10 @@ export function BusinessView() {
 
         {/* Recent Documents Section */}
         <section className="mt-10">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-bold tracking-tight">Recent Documents</h2>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+              <h2 className="text-lg font-semibold tracking-tight">Recent Documents</h2>
+              <span className="rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-0.5 text-xs font-semibold tabular-nums text-(--ui-text-secondary)">
                 {documents.length}
               </span>
             </div>
@@ -575,7 +575,7 @@ export function BusinessView() {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <input
-                    className="h-7 w-36 rounded-lg border border-border/70 bg-card/80 px-2 pl-6 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:w-48 transition-all"
+                    className="h-8 w-40 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 pl-7 text-xs text-foreground placeholder:text-muted-foreground/60 transition-all focus:w-52 focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
                     onChange={e => setDocSearch(e.target.value)}
                     placeholder="Search docs..."
                     value={docSearch}
