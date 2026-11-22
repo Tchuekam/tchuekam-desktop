@@ -375,18 +375,55 @@
 
   :root.dark {
     /* Per-mode mix knobs — overridden inline by `applyTheme()` per skin. */
-    --theme-mix-chrome: 74%;
-    --theme-mix-card: 38%;
-    --theme-mix-elevated: 46%;
-    --theme-mix-bubble: 46%;
-    --theme-neutral-chrome: #0d0d0e;
-    --theme-neutral-sidebar: #0a0a0b;
-    --theme-neutral-card: #161618;
+    --theme-mix-chrome: 78%;
+    --theme-mix-card: 44%;
+    --theme-mix-elevated: 52%;
+    --theme-mix-bubble: 48%;
+    --theme-neutral-chrome: #0b0e17;
+    --theme-neutral-sidebar: #080b13;
+    --theme-neutral-card: #111626;
+
+    /* Scoped TchuekaM Three-Color + Glass Material Tokens (Dark Mode) */
+    --tk-indigo: #6366f1;
+    --tk-indigo-hover: #7577f8;
+    --tk-indigo-text: #a5b4fc;
+    --tk-indigo-soft: rgba(99, 102, 241, 0.14);
+    --tk-indigo-border: rgba(129, 140, 248, 0.3);
+    --tk-indigo-glow: rgba(99, 102, 241, 0.24);
+    --tk-cyan: #38bdf8;
+    --tk-cyan-text: #7dd3fc;
+    --tk-cyan-soft: rgba(56, 189, 248, 0.12);
+    --tk-cyan-border: rgba(56, 189, 248, 0.28);
+    --tk-cyan-glow: rgba(56, 189, 248, 0.22);
+    --tk-cta-top: #6b6af2;
+    --tk-cta-bottom: #4f46e5;
+    --tk-cta-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 8px 20px -6px rgba(99, 102, 241, 0.48),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --tk-glass-bg: rgba(18, 24, 41, 0.72);
+    --tk-glass-elevated-bg: rgba(21, 28, 48, 0.84);
+    --tk-glass-subtle-bg: rgba(15, 20, 35, 0.64);
+    --tk-glass-border: rgba(148, 163, 210, 0.13);
+    --tk-specular-edge: rgba(255, 255, 255, 0.08);
+    --tk-glass-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.28),
+      0 10px 28px -12px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-glass-elevated-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.34),
+      0 18px 42px -12px rgba(0, 0, 0, 0.68),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-stage-bg: #080b14;
+    --tk-voice-surface: rgba(15, 26, 46, 0.86);
+    --tk-voice-shadow:
+      0 6px 24px -6px rgba(56, 189, 248, 0.28),
+      inset 0 1px 0 rgba(125, 211, 252, 0.16);
 
     /* Dark-only accent palette overrides. */
-    --ui-red: #e75e78;
-    --ui-green: #55a583;
-    --ui-cyan: #6f9ba6;
+    --ui-red: #f0526e;
+    --ui-green: #4ade80;
+    --ui-cyan: #38bdf8;
 
     --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 12%, transparent);
     --composer-ring-strength: 1.3;
