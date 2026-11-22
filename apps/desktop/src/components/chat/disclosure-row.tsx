@@ -30,9 +30,9 @@ export function DisclosureRow({
       <button
         aria-expanded={onToggle ? open : undefined}
         className={cn(
-          // max-w-fit so the click target hugs the title text width — no
-          // background fill, just the cursor + the affordance caret.
-          'flex min-w-0 max-w-fit items-start gap-1.5 text-left transition-colors',
+          // max-w-fit so the click target hugs the title text width with a
+          // subtle frosted pill target on hover/focus.
+          '-mx-1.5 flex min-w-0 max-w-fit items-start gap-1.5 rounded-lg px-1.5 py-0.5 text-left transition-all duration-150',
           onToggle
             ? 'cursor-pointer hover:text-foreground focus-visible:text-foreground focus-visible:outline-none'
             : 'cursor-default'
