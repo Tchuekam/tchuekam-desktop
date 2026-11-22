@@ -1180,9 +1180,9 @@ export function ChatBar({
               className={cn(
                 'relative z-4 isolate rounded-[inherit] border border-(--tk-glass-border) shadow-composer transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]',
                 COMPOSER_DROP_FADE_CLASS,
-                'group-focus-within/composer:border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(45%*var(--composer-ring-strength)),transparent)] group-focus-within/composer:shadow-composer-focus',
+                'group-focus-within/composer:border-(--tk-indigo-border) group-focus-within/composer:shadow-composer-focus',
                 'group-has-data-[state=open]/composer:border-t-transparent',
-                'group-has-data-[state=open]/composer:shadow-[0_0.0625rem_0_0.0625rem_color-mix(in_srgb,var(--dt-composer-ring)_calc(35%*var(--composer-ring-strength)),transparent),0_0.5rem_1.5rem_color-mix(in_srgb,var(--shadow-ink)_6%,transparent)]',
+                'group-has-data-[state=open]/composer:shadow-[0_0_0_1px_var(--tk-indigo-border),0_12px_32px_-10px_var(--tk-indigo-glow)]',
                 dragActive && COMPOSER_DROP_ACTIVE_CLASS
               )}
               data-slot="composer-surface"
