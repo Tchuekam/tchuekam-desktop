@@ -311,7 +311,7 @@ export function BusinessLocalAiModal() {
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-primary transition-all duration-200"
+                  className="h-full rounded-full bg-linear-to-r from-(--tk-indigo) to-(--tk-cyan) transition-all duration-200"
                   style={{ width: `${Math.max(4, progress.percent ?? 12)}%` }}
                 />
               </div>
@@ -340,26 +340,28 @@ export function BusinessLocalAiModal() {
                   <div
                     className={cn(
                       'flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5 transition',
-                      model.active ? 'border-primary/50 bg-primary/5' : 'border-border/70 bg-background/60'
+                      model.active
+                        ? 'border-(--tk-indigo-border) bg-(--tk-indigo-soft)'
+                        : 'border-(--tk-glass-border) bg-(--tk-glass-subtle-bg)'
                     )}
                     key={model.id}
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-xs font-bold">{model.name}</span>
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-semibold text-muted-foreground">
+                        <span className="rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-semibold tabular-nums text-muted-foreground">
                           {model.sizeMb} MB disk · ~{model.estimatedRamMb} MB RAM
                         </span>
-                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[0.625rem] font-semibold text-primary">
+                        <span className="rounded-md bg-(--tk-indigo-soft) px-1.5 py-0.5 text-[0.625rem] font-semibold text-(--tk-indigo-text)">
                           {model.languages}
                         </span>
                         {model.recommendedForLowRam && (
-                          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[0.625rem] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[0.625rem] font-semibold text-emerald-700 dark:text-emerald-400">
                             Recommended 2GB PC
                           </span>
                         )}
                         {tooHeavy && (
-                          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[0.625rem] font-semibold text-amber-600 dark:text-amber-400">
+                          <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[0.625rem] font-semibold text-amber-700 dark:text-amber-400">
                             4GB+ RAM recommended
                           </span>
                         )}
