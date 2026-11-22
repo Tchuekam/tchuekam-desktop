@@ -699,7 +699,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Duplicate ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-(--tk-indigo-border) hover:bg-muted hover:text-foreground"
                       onClick={() => duplicateBusinessDocument(doc.id)}
                       type="button"
                     >
@@ -707,7 +707,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Rename ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-(--tk-indigo-border) hover:bg-muted hover:text-foreground"
                       onClick={() => {
                         setRenamingId(doc.id)
                         setRenameDraft(doc.title)
@@ -718,7 +718,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Export ${doc.title} PDF`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold text-primary transition hover:border-primary/40 hover:bg-primary/10"
+                      className="rounded-xl border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-2.5 py-1 text-xs font-semibold text-(--tk-indigo-text) transition hover:brightness-105"
                       onClick={() => handleExportRecent(doc)}
                       type="button"
                     >
@@ -726,7 +726,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Delete ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
                       onClick={() => handleDeleteRecent(doc.id, doc.title)}
                       type="button"
                     >
@@ -743,13 +743,13 @@ export function BusinessView() {
         <section className="mt-10">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold tracking-tight">Template Gallery</h2>
+              <h2 className="text-lg font-semibold tracking-tight">Template Gallery</h2>
               <p className="text-xs text-muted-foreground">
                 8 specialized CV layouts plus OHADA invoices, contracts, investor plans, and 16:9 pitch decks.
               </p>
             </div>
-            {/* Apple Segmented Filter */}
-            <div className="inline-flex max-w-full flex-wrap rounded-xl border border-border/40 bg-muted/60 p-1 backdrop-blur-sm">
+            {/* Segmented Filter */}
+            <div className="tk-glass-subtle inline-flex max-w-full flex-wrap rounded-xl p-1">
               {(
                 [
                   ['all', 'All Templates'],
@@ -763,7 +763,7 @@ export function BusinessView() {
                   className={cn(
                     'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150',
                     templateFilter === id
-                      ? 'bg-card text-foreground shadow-2xs'
+                      ? 'bg-card text-foreground shadow-xs'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   key={id}
