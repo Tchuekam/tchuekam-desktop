@@ -36,7 +36,7 @@ export function getSupabaseConfig() {
 
     if (host && host !== 'localhost' && host !== '127.0.0.1') {
       defaultPortalUrl =
-        host.endsWith('.up.railway.app') || host.endsWith('.vercel.app')
+        host.endsWith('.up.railway.app') || host.endsWith('.vercel.app') || host.endsWith('.netlify.app')
           ? RAILWAY_AUTH_PORTAL_URL
           : 'https://auth.tchuekam.com'
     }
@@ -82,8 +82,12 @@ export function captureSupabaseHashSession(): StoredSupabaseSession | null {
     // Ignore storage failures in strict privacy mode
   }
 
+  const returnHashRaw = params.get('return_hash')
+  const safeReturnHash =
+    returnHashRaw && returnHashRaw.startsWith('#/') && !/[\\\r\n\t]/.test(returnHashRaw) ? returnHashRaw : ''
+
   try {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + safeReturnHash)
   } catch {
     // Best effort cleanup before HashRouter mounts
   }
@@ -127,6 +131,18 @@ export function getStoredSupabaseAccessToken(): string | null {
   }
 
   return sess.access_token
+}
+
+export async function getFreshSupabaseAccessToken(): Promise<string | null> {
+  const sess = getStoredSupabaseSession()
+
+  if (!sess) {
+    return null
+  }
+
+  const active = await refreshSupabaseSessionIfNeeded(sess)
+
+  return active?.access_token ?? null
 }
 
 export function clearSupabaseSession(): void {
