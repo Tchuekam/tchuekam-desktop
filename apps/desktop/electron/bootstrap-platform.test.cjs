@@ -82,14 +82,23 @@ test('detectRemoteDisplay honors the HERMES_DESKTOP_DISABLE_GPU override both wa
 
 test('packaged electron entrypoints do not require unpackaged npm modules', () => {
   const electronDir = __dirname
-  const entrypoints = ['main.cjs', 'preload.cjs', 'bootstrap-platform.cjs']
+  const entrypoints = fs
+    .readdirSync(electronDir)
+    .filter(name => name.endsWith('.cjs') && !name.endsWith('.test.cjs'))
+    .sort()
+  assert.ok(entrypoints.includes('auto-updater.cjs'))
+  assert.ok(entrypoints.includes('main.cjs'))
+
   // - electron: provided by the electron runtime, always resolvable in packaged builds.
   // - node-pty: hoisted by workspace dedup AND shipped via extraResources to
   //   resources/native-deps/node-pty (see scripts/stage-native-deps.cjs). main.cjs
-  //   has a try/catch fallback at line ~38 that resolves the staged copy when the
-  //   bare require fails in the packaged asar, so the bare require itself is by
-  //   design rather than an oversight.
-  const allowedBareRequires = new Set(['electron', 'node-pty'])
+  //   has a try/catch fallback that resolves the staged copy when the bare require
+  //   fails in the packaged asar.
+  // - electron-updater: hoisted to root node_modules/ AND staged with its full
+  //   runtime dependency closure to resources/native-deps/node_modules/electron-updater
+  //   (see scripts/stage-native-deps.cjs). auto-updater.cjs has a fallback that loads
+  //   from process.resourcesPath/native-deps/node_modules/electron-updater.
+  const allowedBareRequires = new Set(['electron', 'node-pty', 'electron-updater'])
   const requirePattern = /require\(['"]([^'"]+)['"]\)/g
 
   for (const entrypoint of entrypoints) {
@@ -102,4 +111,15 @@ test('packaged electron entrypoints do not require unpackaged npm modules', () =
 
     assert.deepEqual(bareRequires, [], `${entrypoint} has unpackaged runtime requires`)
   }
+})
+
+test('auto-updater has staged native-deps fallback and stage-native-deps stages electron-updater', () => {
+  const autoUpdaterSource = fs.readFileSync(path.join(__dirname, 'auto-updater.cjs'), 'utf8')
+  const stageScriptSource = fs.readFileSync(
+    path.resolve(__dirname, '..', 'scripts', 'stage-native-deps.cjs'),
+    'utf8'
+  )
+  assert.match(autoUpdaterSource, /process\.resourcesPath/)
+  assert.match(autoUpdaterSource, /native-deps[\s\S]*electron-updater/)
+  assert.match(stageScriptSource, /stageRuntimePackages\(\['electron-updater'\]\)/)
 })
