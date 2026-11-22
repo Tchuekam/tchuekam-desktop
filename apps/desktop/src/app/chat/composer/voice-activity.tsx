@@ -207,10 +207,10 @@ export function VoiceActivity({ state }: { state: VoiceActivityState }) {
       <div
         className={cn(
           'flex size-5 shrink-0 items-center justify-center rounded-full',
-          recording ? 'bg-primary/15 text-primary' : 'bg-primary/10 text-primary'
+          recording ? 'bg-(--tk-cyan) text-white shadow-xs' : 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
         )}
       >
-        {recording ? <Mic size={12} /> : <Loader2 className="animate-spin" size={12} />}
+        {recording ? <Mic size={11} /> : <Loader2 className="animate-spin" size={11} />}
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
