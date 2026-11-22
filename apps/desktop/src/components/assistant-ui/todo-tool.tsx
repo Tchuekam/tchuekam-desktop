@@ -92,7 +92,7 @@ export const HoistedTodoPanel: FC<{ todos: TodoItem[] }> = ({ todos }) => {
           {completedCount}/{todos.length}
         </span>
       </header>
-      <ul className="grid min-w-0 gap-0.5 px-3 pb-3">
+      <ul className="grid min-w-0 gap-0.5 px-3.5 py-2.5">
         {todos.map(todo => (
           <li
             // Active row at full presence; everything else fades. Opacity on
