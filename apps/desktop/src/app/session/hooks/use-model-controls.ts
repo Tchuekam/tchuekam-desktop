@@ -2,6 +2,7 @@ import { type QueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
 import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
+import { IS_LOCKED_DEMO, IS_WEB } from '@/lib/platform'
 import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
@@ -66,12 +67,20 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
 
       try {
         if (activeSessionId) {
-          await requestGateway('slash.exec', {
-            session_id: activeSessionId,
-            command: `/model ${selection.model} --provider ${selection.provider}${selection.persistGlobal ? ' --global' : ''}`
-          })
+          if (IS_WEB) {
+            await requestGateway('model.switch', {
+              session_id: activeSessionId,
+              provider: selection.provider,
+              model: selection.model
+            })
+          } else {
+            await requestGateway('slash.exec', {
+              session_id: activeSessionId,
+              command: `/model ${selection.model} --provider ${selection.provider}${selection.persistGlobal ? ' --global' : ''}`
+            })
+          }
 
-          if (selection.persistGlobal) {
+          if (selection.persistGlobal && !IS_LOCKED_DEMO) {
             void refreshCurrentModel()
           }
 
@@ -79,6 +88,10 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
             queryKey: selection.persistGlobal ? ['model-options'] : ['model-options', activeSessionId]
           })
 
+          return true
+        }
+
+        if (IS_LOCKED_DEMO) {
           return true
         }
 
