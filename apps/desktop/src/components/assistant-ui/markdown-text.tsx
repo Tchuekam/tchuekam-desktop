@@ -291,14 +291,14 @@ const MarkdownTextImpl = () => {
           <h3 className={cn('font-semibold text-foreground', HEADING_SIZES.h3, className)} {...props} />
         ),
         h4: ({ className, ...props }: ComponentProps<'h4'>) => (
-          <h4 className={cn('my-1 font-semibold', HEADING_SIZES.h4, className)} {...props} />
+          <h4 className={cn('font-semibold text-foreground', HEADING_SIZES.h4, className)} {...props} />
         ),
         p: ({ className, ...props }: ComponentProps<'p'>) => (
-          <p className={cn('my-1 wrap-anywhere leading-(--dt-line-height)', className)} {...props} />
+          <p className={cn('my-1.5 wrap-anywhere leading-(--dt-line-height)', className)} {...props} />
         ),
         a: MarkdownLink,
         hr: ({ className, ...props }: ComponentProps<'hr'>) => (
-          <hr className={cn('border-border', className)} {...props} />
+          <hr className={cn('my-4 border-(--tk-glass-border)', className)} {...props} />
         ),
         blockquote: ({ className, ...props }: ComponentProps<'blockquote'>) => (
           <blockquote
