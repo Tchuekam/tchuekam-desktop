@@ -476,15 +476,15 @@ export function BusinessView() {
         </section>
 
         {/* Quick Creation / Interactive Builders */}
-        <div className="mb-4 mt-9 flex items-center justify-between gap-3">
+        <div className="mb-4 mt-10 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold tracking-tight">Interactive builders</h2>
-            <span className="rounded-full bg-[#1F8A65]/12 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-[#17694D] dark:text-emerald-400">
+            <h2 className="text-lg font-semibold tracking-tight">Interactive builders</h2>
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-emerald-700 dark:text-emerald-400">
               Live Editor + Export
             </span>
           </div>
           <button
-            className="text-xs font-semibold text-primary transition hover:underline disabled:opacity-40"
+            className="text-xs font-semibold text-(--tk-indigo-text) transition-colors hover:underline disabled:opacity-40"
             disabled={!canStartChat}
             onClick={() => startChat(NEW_DOCUMENT_PROMPT)}
             type="button"
@@ -496,7 +496,7 @@ export function BusinessView() {
         <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
           {BUILDERS.map(b => (
             <div
-              className="group flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-2xs transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg"
+              className="tk-glass tk-surface-hover group flex flex-col overflow-hidden rounded-2xl hover:-translate-y-0.5 hover:border-(--tk-indigo-border) hover:shadow-(--tk-glass-elevated-shadow)"
               key={b.id}
             >
               <button
@@ -506,16 +506,23 @@ export function BusinessView() {
                 onClick={() => handleOpenBuilder(b.id)}
                 type="button"
               >
-                <div className="relative h-[135px] w-full overflow-hidden bg-gradient-to-br from-primary/[0.08] to-transparent">
+                <div
+                  className={cn(
+                    'relative h-[135px] w-full overflow-hidden bg-gradient-to-br to-transparent',
+                    b.accent === 'gold'
+                      ? 'from-[color-mix(in_srgb,var(--tk-cyan)_11%,transparent)]'
+                      : 'from-[color-mix(in_srgb,var(--tk-indigo)_11%,transparent)]'
+                  )}
+                >
                   <DocLines variant={b.id === 'invoice' ? 'invoice' : b.id === 'deck' ? 'deck' : 'cv'} />
                 </div>
                 <div className="flex items-start gap-2.5 p-3.5">
                   <span
                     className={cn(
-                      'grid size-8 shrink-0 place-items-center rounded-xl shadow-2xs',
+                      'grid size-8 shrink-0 place-items-center rounded-xl',
                       b.accent === 'gold'
-                        ? 'bg-[#C98A2B]/12 text-[#B57E23]'
-                        : 'bg-primary/10 text-primary'
+                        ? 'bg-(--tk-cyan-soft) text-(--tk-cyan-text)'
+                        : 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
                     )}
                   >
                     <Codicon name={b.icon} size="1rem" />
