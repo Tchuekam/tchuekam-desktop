@@ -83,10 +83,13 @@ export const HoistedTodoPanel: FC<{ todos: TodoItem[] }> = ({ todos }) => {
     >
       <header className="flex items-center justify-between gap-3 border-b border-(--tk-glass-border) px-3.5 py-2.5">
         <span
-          className="block max-w-full truncate text-[0.85rem] font-semibold leading-tight tracking-tight text-foreground"
+          className="block min-w-0 truncate text-[0.8125rem] font-semibold leading-tight tracking-tight text-foreground"
           title={label}
         >
           {label}
+        </span>
+        <span className="shrink-0 rounded-full bg-(--tk-indigo-soft) px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-(--tk-indigo-text)">
+          {completedCount}/{todos.length}
         </span>
       </header>
       <ul className="grid min-w-0 gap-0.5 px-3 pb-3">
