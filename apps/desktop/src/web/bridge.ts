@@ -413,8 +413,8 @@ const bridge: DesktopBridge = {
 
     const w = window as unknown as { __webSecrets?: Record<string, string> }
     w.__webSecrets = w.__webSecrets || {}
-    if (!value) delete w.__webSecrets[key]
-    else w.__webSecrets[key] = value
+    if (!value) {delete w.__webSecrets[key]}
+    else {w.__webSecrets[key] = value}
     return { ok: true }
   },
 
@@ -426,7 +426,7 @@ const bridge: DesktopBridge = {
     }
 
     const w = window as unknown as { __webSecrets?: Record<string, string> }
-    if (w.__webSecrets) delete w.__webSecrets[key]
+    if (w.__webSecrets) {delete w.__webSecrets[key]}
     return { ok: true }
   },
 

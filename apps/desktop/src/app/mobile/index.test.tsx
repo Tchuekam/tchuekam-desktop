@@ -2,11 +2,11 @@
 import '../business/test-dom-setup'
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MobileView } from './mobile-view'
 import { MobilePromoBanner } from './mobile-banner'
+import { MobileView } from './mobile-view'
 
 // Mock haptics
 vi.mock('@/lib/haptics', () => ({

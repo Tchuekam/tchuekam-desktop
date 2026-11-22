@@ -1,5 +1,6 @@
-import { setEnvVar, deleteEnvVar, revealEnvVar } from '@/hermes'
+import { deleteEnvVar, revealEnvVar, setEnvVar } from '@/hermes'
 import { IS_LOCKED_DEMO } from '@/lib/platform'
+
 // @ts-expect-error JS/JSX module without TypeScript declaration file
 import { getUserBalance } from './open-generative-ai/packages/studio/src/muapi.js'
 
@@ -51,7 +52,7 @@ export type ValidationResult =
  * Migration & cleanup helper to ensure no plaintext keys remain in localStorage or cookies.
  */
 function cleanupLegacyStorage(): string | null {
-  if (typeof window === 'undefined') return null
+  if (typeof window === 'undefined') {return null}
 
   let migratedKey: string | null = null
   try {

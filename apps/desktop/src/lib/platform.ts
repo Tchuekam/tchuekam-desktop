@@ -59,10 +59,10 @@ export function resolveBackendOrigin(): string {
   }
 
   if (
-    IS_WEB &&
     !injected().__HERMES_SESSION_TOKEN__ &&
     !injected().__HERMES_AUTH_REQUIRED__ &&
-    typeof window !== 'undefined'
+    typeof window !== 'undefined' &&
+    window.location.protocol !== 'file:'
   ) {
     const host = window.location.hostname
     const isBackendServed = typeof injected().__HERMES_AUTH_REQUIRED__ === 'boolean'

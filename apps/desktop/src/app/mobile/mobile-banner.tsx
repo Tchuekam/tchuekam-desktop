@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { triggerHaptic } from '@/lib/haptics'
 import { resolveBackendOrigin, webConfig } from '@/lib/platform'
+
 import { MOBILE_ROUTE } from '../routes'
 
 const DISMISSED_KEY = 'tchuekam_mobile_banner_dismissed_v1'
@@ -39,7 +40,7 @@ export function MobilePromoBanner() {
     setVisible(isMobileDevice)
   }, [location.pathname])
 
-  if (!visible) return null
+  if (!visible) {return null}
 
   const handleDismiss = () => {
     triggerHaptic('tap')
@@ -84,29 +85,29 @@ export function MobilePromoBanner() {
 
       <div className="flex items-center gap-2 shrink-0">
         <button
-          type="button"
-          onClick={handleDownload}
           className="flex cursor-pointer items-center gap-1.5 rounded-md bg-cyan-400 px-2.5 py-1 text-[0.7rem] font-bold text-slate-950 shadow-sm transition hover:bg-cyan-300 active:scale-95"
+          onClick={handleDownload}
+          type="button"
         >
           <IconDownload className="size-3" />
           <span>Download APK</span>
         </button>
 
         <Button
-          variant="outline"
-          size="sm"
-          onClick={handleOpenMobile}
           className="h-6 gap-1 border-white/20 bg-white/5 px-2 text-[0.7rem] text-white hover:bg-white/10"
+          onClick={handleOpenMobile}
+          size="sm"
+          variant="outline"
         >
           <IconSparkles className="size-3 text-cyan-400" />
           <span className="hidden xs:inline">Try App</span>
         </Button>
 
         <button
-          type="button"
           aria-label="Dismiss banner"
-          onClick={handleDismiss}
           className="grid size-5 cursor-pointer place-items-center rounded-sm text-neutral-400 hover:bg-white/10 hover:text-white"
+          onClick={handleDismiss}
+          type="button"
         >
           <IconX className="size-3.5" />
         </button>
