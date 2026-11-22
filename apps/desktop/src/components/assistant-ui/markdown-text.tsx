@@ -313,13 +313,13 @@ const MarkdownTextImpl = () => {
           <ul className={cn('my-1.5 gap-0', className)} {...props} />
         ),
         ol: ({ className, ...props }: ComponentProps<'ol'>) => (
-          <ol className={cn('my-1 gap-0', className)} {...props} />
+          <ol className={cn('my-1.5 gap-0', className)} {...props} />
         ),
         li: ({ className, ...props }: ComponentProps<'li'>) => (
           <li className={cn('leading-(--dt-line-height)', className)} {...props} />
         ),
         table: ({ className, ...props }: ComponentProps<'table'>) => (
-          <div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-border">
+          <div className="aui-md-table tk-glass-subtle my-3 max-w-full overflow-x-auto rounded-xl border-(--tk-glass-border) shadow-xs">
             <table
               className={cn(
                 'm-0 w-full border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0',
