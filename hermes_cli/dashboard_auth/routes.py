@@ -243,3 +243,249 @@ async def auth_callback(
     # given a next= query). All keys live in the same flat namespace;
     # ``next`` carries a URL-encoded path so it never contains ``;``.
     parts = dict(
+        seg.split("=", 1) for seg in pkce_raw.split(";") if "=" in seg
+    )
+    provider_name = parts.get("provider", "")
+    expected_state = parts.get("state", "")
+    verifier = parts.get("verifier", "")
+    # Read next= from the cookie ONLY. The IDP doesn't echo next= back
+    # on the callback URL (it only carries ``code`` + ``state``), so any
+    # next= query parameter on the callback URL is attacker-controlled
+    # and MUST be ignored.
+    next_from_cookie = parts.get("next", "")
+
+    p = get_provider(provider_name)
+    if p is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider in cookie: {provider_name!r}",
+        )
+
+    if error:
+        audit_log(
+            AuditEvent.LOGIN_FAILURE,
+            provider=provider_name,
+            reason="idp_error",
+            error=error,
+            ip=_client_ip(request),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"OAuth error from provider: {error} ({error_description})",
+        )
+
+    if not state or state != expected_state:
+        audit_log(
+            AuditEvent.LOGIN_FAILURE,
+            provider=provider_name,
+            reason="state_mismatch",
+            ip=_client_ip(request),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth state mismatch (CSRF check failed)",
+        )
+
+    try:
+        session = p.complete_login(
+            code=code,
+            state=state,
+            code_verifier=verifier,
+            redirect_uri=_redirect_uri(request),
+        )
+    except InvalidCodeError as e:
+        audit_log(
+            AuditEvent.LOGIN_FAILURE,
+            provider=provider_name,
+            reason="invalid_code",
+            ip=_client_ip(request),
+        )
+        raise HTTPException(status_code=400, detail=f"Invalid code: {e}")
+    except ProviderError as e:
+        audit_log(
+            AuditEvent.LOGIN_FAILURE,
+            provider=provider_name,
+            reason="provider_unreachable",
+            ip=_client_ip(request),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provider unreachable: {e}",
+        )
+
+    audit_log(
+        AuditEvent.LOGIN_SUCCESS,
+        provider=provider_name,
+        user_id=session.user_id,
+        email=session.email,
+        org_id=session.org_id,
+        ip=_client_ip(request),
+    )
+
+    expires_in = max(60, session.expires_at - int(time.time()))
+    # Honour the ``next=`` value the gate's _unauth_response set in the
+    # /login redirect URL and that /auth/login persisted into the PKCE
+    # cookie. We re-validate against the same-origin rules here — the
+    # cookie is server-set so this is defence in depth, but a regression
+    # that lets attacker-controlled bytes into the cookie would otherwise
+    # produce an open redirect.
+    landing = _validate_post_login_target(next_from_cookie) or "/"
+    resp = RedirectResponse(url=landing, status_code=302)
+    set_session_cookies(
+        resp,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        access_token_expires_in=expires_in,
+        use_https=detect_https(request),
+        prefix=_prefix(request),
+    )
+    clear_pkce_cookie(resp, prefix=_prefix(request))
+    return resp
+
+
+def _validate_post_login_target(raw: str) -> str:
+    """Return ``raw`` if it's a safe same-origin path, else empty string.
+
+    The ``next`` query param survives a full OAuth round trip — the gate
+    encodes it into the /login redirect, the login page emits it back into
+    /auth/login, and the IDP preserves it across /authorize/callback. We
+    have to re-validate here because the value came back in via the
+    URL (an attacker could craft a /auth/callback URL with their own
+    ``next=https://evil.example``).
+    """
+    if not raw:
+        return ""
+    from urllib.parse import unquote
+    decoded = unquote(raw)
+    if not decoded.startswith("/") or decoded.startswith("//"):
+        return ""
+    # Don't loop back to login pages or auth flow.
+    if any(
+        decoded == p or decoded.startswith(p)
+        for p in ("/login", "/auth/", "/api/auth/")
+    ):
+        return ""
+    # Reject any ``/api/*`` target. The gate's ``_safe_next_target``
+    # already filters these out before they reach the cookie, but a
+    # malicious or stale ``next=`` value that re-enters via the
+    # callback URL must not be honoured: a successful redirect to an
+    # API endpoint renders raw JSON in the browser address bar — never
+    # a useful post-login destination, and indistinguishable from an
+    # attacker trying to weaponise the redirect.
+    if decoded == "/api" or decoded.startswith("/api/"):
+        return ""
+    return decoded
+
+
+@router.post("/auth/logout", name="auth_logout")
+async def auth_logout(request: Request):
+    # Basic CSRF defense on POST /auth/logout: if Origin or Referer is sent by
+    # a browser, verify its host matches this dashboard Host (or allowed origins).
+    req_host = (request.headers.get("host") or "").split(":", 1)[0].lower()
+    src_url = request.headers.get("origin") or request.headers.get("referer") or ""
+    if src_url and req_host:
+        import urllib.parse as _up
+
+        src_host = (_up.urlparse(src_url).hostname or "").lower()
+        if src_host and src_host != req_host:
+            try:
+                from hermes_cli.web_server import _is_allowed_dashboard_origin
+
+                src_origin = f"{_up.urlparse(src_url).scheme}://{_up.urlparse(src_url).netloc}"
+                if not _is_allowed_dashboard_origin(src_origin):
+                    return JSONResponse({"detail": "Cross-site logout rejected"}, status_code=403)
+            except Exception:
+                return JSONResponse({"detail": "Cross-site logout rejected"}, status_code=403)
+
+    _at, rt = read_session_cookies(request)
+    sess = getattr(request.state, "session", None)
+    if sess is None and _at:
+        for provider in list_providers():
+            try:
+                sess = provider.verify_session(access_token=_at)
+                if sess is not None:
+                    break
+            except Exception:
+                pass
+    if rt:
+        # Best-effort revoke. Try every provider so a session minted by
+        # any registered provider is revoked correctly. Failures are
+        # logged but never raised.
+        for provider in list_providers():
+            try:
+                provider.revoke_session(refresh_token=rt)
+            except Exception as e:  # noqa: BLE001 — best-effort
+                _log.warning(
+                    "dashboard-auth: revoke on %r failed: %s",
+                    provider.name, e,
+                )
+
+    audit_log(
+        AuditEvent.LOGOUT,
+        provider=(sess.provider if sess else "unknown"),
+        user_id=(sess.user_id if sess else ""),
+        ip=_client_ip(request),
+    )
+
+    prefix = _prefix(request)
+    resp = RedirectResponse(url=f"{prefix}/login", status_code=302)
+    clear_session_cookies(resp, prefix=prefix)
+    clear_pkce_cookie(resp, prefix=prefix)
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Auth-required: identity probe for the SPA
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/auth/me", name="auth_me")
+async def api_auth_me(request: Request):
+    """Return the verified session as JSON. Auth-required (gate enforces)."""
+    sess = getattr(request.state, "session", None)
+    if sess is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {
+        "user_id": sess.user_id,
+        "email": sess.email,
+        "display_name": sess.display_name,
+        "org_id": sess.org_id,
+        "provider": sess.provider,
+        "expires_at": sess.expires_at,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auth-required: WS upgrade ticket (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/auth/ws-ticket", name="auth_ws_ticket")
+async def api_auth_ws_ticket(request: Request):
+    """Mint a short-lived single-use ticket for the authenticated session.
+
+    Browsers cannot set ``Authorization`` on a WebSocket upgrade, so in
+    gated mode the SPA POSTs this endpoint to get a ``?ticket=`` value to
+    append to ``/api/pty``, ``/api/ws``, ``/api/pub``, or ``/api/events``.
+
+    The ticket has a 30-second TTL and is single-use. Calling this endpoint
+    multiple times in quick succession (e.g. one ticket per WS) is the
+    expected pattern.
+    """
+    sess = getattr(request.state, "session", None)
+    if sess is None:
+        # Middleware should already have rejected, but check defensively.
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Import here so the routes module stays usable in test contexts that
+    # don't load the ticket store.
+    from hermes_cli.dashboard_auth.ws_tickets import TTL_SECONDS, mint_ticket
+
+    ticket = mint_ticket(user_id=sess.user_id, provider=sess.provider)
+    audit_log(
+        AuditEvent.WS_TICKET_MINTED,
+        provider=sess.provider,
+        user_id=sess.user_id,
+        ip=_client_ip(request),
+    )
+    return {"ticket": ticket, "ttl_seconds": TTL_SECONDS}
