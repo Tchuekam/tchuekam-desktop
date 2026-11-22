@@ -322,7 +322,7 @@ const MarkdownTextImpl = () => {
           <div className="aui-md-table tk-glass-subtle my-3 max-w-full overflow-x-auto rounded-xl border-(--tk-glass-border) shadow-xs">
             <table
               className={cn(
-                'm-0 w-full border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0',
+                'm-0 w-full border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-(--tk-glass-border) last:[&_tr]:border-0 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-(--ui-row-hover-background)',
                 className
               )}
               {...props}
@@ -330,7 +330,7 @@ const MarkdownTextImpl = () => {
           </div>
         ),
         thead: ({ className, ...props }: ComponentProps<'thead'>) => (
-          <thead className={cn('m-0 bg-muted/35 text-muted-foreground', className)} {...props} />
+          <thead className={cn('m-0 bg-(--ui-bg-tertiary)/70 text-(--ui-text-secondary)', className)} {...props} />
         ),
         th: ({ className, ...props }: ComponentProps<'th'>) => (
           <th
