@@ -78,7 +78,7 @@ export function exportBusinessDocument(
 
   const mimeType = MIME_TYPES[format]
   const filename = sanitizeExportFilename(doc.title, format)
-  const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mimeType })
+  const blob = new Blob([bytes as BlobPart], { type: mimeType })
 
   if (options?.triggerDownload !== false && typeof document !== 'undefined') {
     try {
