@@ -56,10 +56,16 @@ def download_file(
     """Télécharge le fichier de manière sécurisée."""
     file_service = FileService(db)
     record = file_service.get_file(file_id, requester_id=current_user.id)
+    safe_path = file_service.ensure_safe_storage_path(record)
+    safe_name = os.path.basename(record.original_filename or "download").replace('"', "_")
     return FileResponse(
-        path=record.storage_path,
+        path=safe_path,
         media_type=record.mime_type,
-        filename=record.original_filename,
+        filename=safe_name,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
