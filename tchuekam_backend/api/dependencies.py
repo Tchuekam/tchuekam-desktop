@@ -2,6 +2,7 @@
 Dépendances FastAPI pour l'authentification et l'autorisation RBAC.
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Tuple
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 import jwt
 
 from tchuekam_backend.core.database import get_db
-from tchuekam_backend.core.security import decode_jwt_token
+from tchuekam_backend.core.security import decode_jwt_token, is_jti_revoked
 from tchuekam_backend.domain.models import User
 from tchuekam_backend.repositories.user_repository import UserRepository
 from tchuekam_backend.repositories.session_repository import SessionRepository
@@ -49,14 +50,31 @@ def get_current_user_with_token(
         session_id = payload.get("session_id")
         jti = payload.get("jti")
 
+        if jti and is_jti_revoked(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Ce jeton a été révoqué.",
+            )
+
         # Vérification de la session en DB
         session_repo = SessionRepository(db)
-        user_session = session_repo.get_by_id(session_id)
-        if not user_session or user_session.is_revoked:
+        user_session = session_repo.get_by_id(session_id) if session_id else None
+        if not user_session or user_session.is_revoked or user_session.user_id != user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="La session associée à ce jeton a été révoquée.",
             )
+
+        now = datetime.now(timezone.utc)
+        expires_at = user_session.expires_at
+        if expires_at is not None:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="La session associée à ce jeton a expiré.",
+                )
 
         user_repo = UserRepository(db)
         user = user_repo.get_by_id(user_id)
@@ -66,7 +84,11 @@ def get_current_user_with_token(
                 detail="Compte utilisateur inactif ou inexistant.",
             )
 
-        session_repo.update_last_active(user_session.id)
+        last_active = user_session.last_active_at
+        if last_active is not None and last_active.tzinfo is None:
+            last_active = last_active.replace(tzinfo=timezone.utc)
+        if last_active is None or (now - last_active) >= timedelta(seconds=60):
+            session_repo.update_last_active(user_session.id)
         return user, jti, session_id
 
     except jwt.ExpiredSignatureError:
@@ -74,7 +96,7 @@ def get_current_user_with_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Le jeton d'accès a expiré.",
         )
-    except jwt.InvalidTokenError as e:
+    except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Jeton invalide : {str(e)}",
