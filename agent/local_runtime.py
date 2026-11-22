@@ -378,3 +378,384 @@ class LocalRuntimeManager:
             match = installed.get(preferred.lower())
             if match is not None:
                 return match
+
+        # Cybertrunk fallback prefers coder models if any GGUF has "coder" in name
+        if role == "mbowagpt-cybertrunk":
+            for fname, path in installed.items():
+                if "coder" in fname:
+                    return path
+
+        # Ultimate fallback: any larger Qwen/Llama/Smol GGUF on disk
+        if installed:
+            return max(installed.values(), key=lambda p: p.stat().st_size)
+        return None
+
+    def probe_ollama(self, timeout: float = 0.4) -> List[str]:
+        base = (os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
+        if not base.startswith(("http://", "https://")):
+            base = f"http://{base}"
+        try:
+            req = urllib.request.Request(f"{base}/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                models = data.get("models") or []
+                return [str(m.get("name")) for m in models if isinstance(m, dict) and m.get("name")]
+        except Exception:
+            return []
+
+    def is_local_available(self) -> bool:
+        if self.discover_binary() is not None and bool(self.discover_installed_ggufs()):
+            return True
+        if self.probe_ollama(timeout=0.35):
+            return True
+        return False
+
+    def _get_log_path(self) -> Path:
+        try:
+            from hermes_constants import get_hermes_home
+
+            return Path(get_hermes_home()) / "logs" / "llama-server.log"
+        except Exception:
+            return Path.home() / ".hermes" / "logs" / "llama-server.log"
+
+    def _is_proc_alive_locked(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def _check_llama_health(self, port: int, timeout: float = 1.0) -> bool:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=timeout) as resp:
+                return 200 <= resp.status < 300
+        except Exception:
+            return False
+
+    def _probe_supports_reasoning_flag(self, binary: Path) -> bool:
+        if self._supports_reasoning_flag is not None:
+            return self._supports_reasoning_flag
+        try:
+            kwargs: Dict[str, Any] = {
+                "capture_output": True,
+                "text": True,
+                "timeout": 4,
+            }
+            if os.name == "nt":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            res = subprocess.run([str(binary), "--help"], **kwargs)
+            help_text = (res.stdout or "") + (res.stderr or "")
+            self._supports_reasoning_flag = "--reasoning" in help_text
+        except Exception:
+            self._supports_reasoning_flag = False
+        return self._supports_reasoning_flag
+
+    def _terminate_proc_locked(self) -> None:
+        proc = self._proc
+        self._proc = None
+        self._port = None
+        self._active_weights = None
+        self._active_role = None
+        self._active_served_model = None
+        if proc is None:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=3)
+        except Exception as exc:
+            logger.debug("Ignoring llama-server shutdown error: %s", exc)
+
+    def unload(self) -> None:
+        """Stop the active llama-server process cleanly."""
+        with self._lock:
+            self._terminate_proc_locked()
+
+    def ensure_started(self, role_id: str = "mbowagpt", *, timeout: float = 45.0) -> LocalRuntimeEndpoint:
+        """Ensure the local model for *role_id* is ready and return its OpenAI endpoint."""
+        role = canonicalize_mbowagpt_model(role_id)
+        if role == MBOWAGPT_AUTO_MODEL_ID:
+            role = "mbowagpt"
+
+        binary = self.discover_binary()
+        weights = self.resolve_model_weights(role)
+
+        if binary is not None and weights is not None:
+            weights_resolved = str(weights.resolve())
+            with self._lock:
+                if (
+                    self._is_proc_alive_locked()
+                    and self._active_weights == weights_resolved
+                    and self._port is not None
+                    and self._check_llama_health(self._port, timeout=1.0)
+                ):
+                    self._active_role = role
+                    return LocalRuntimeEndpoint(
+                        base_url=f"http://127.0.0.1:{self._port}/v1",
+                        api_key="local-mbowagpt",
+                        model_id=role,
+                        served_model=self._active_served_model or weights.stem,
+                        weights_path=weights_resolved,
+                        backend="llama-server",
+                        ctx_size=self._active_ctx_size,
+                    )
+
+                # Hot-swap cleanly to avoid exceeding host RAM
+                self._terminate_proc_locked()
+
+                port = _find_free_port(18080)
+                hw = self.hardware
+                ctx_size = int(os.getenv("MBOWAGPT_CTX_SIZE") or hw["recommended_ctx_size"])
+                threads = int(os.getenv("MBOWAGPT_THREADS") or hw["recommended_threads"])
+                alias = weights.stem
+
+                cmd = [
+                    str(binary),
+                    "-m",
+                    weights_resolved,
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--ctx-size",
+                    str(ctx_size),
+                    "--threads",
+                    str(threads),
+                    "--n-gpu-layers",
+                    "0",
+                    "--cache-type-k",
+                    "q8_0",
+                    "--cache-type-v",
+                    "q8_0",
+                    "--jinja",
+                    "--alias",
+                    alias,
+                ]
+                if self._probe_supports_reasoning_flag(binary):
+                    cmd.extend(["--reasoning", "off", "--reasoning-budget", "0"])
+
+                log_path = self._get_log_path()
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                stderr_handle = open(log_path, "wb")
+                popen_kwargs: Dict[str, Any] = {
+                    "stdout": subprocess.DEVNULL,
+                    "stderr": stderr_handle,
+                    "stdin": subprocess.DEVNULL,
+                }
+                if os.name == "nt":
+                    popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                else:
+                    popen_kwargs["start_new_session"] = True
+
+                logger.info(
+                    "Starting MbowaGPT (%s) via llama-server on 127.0.0.1:%d using %s (ctx=%d, threads=%d)",
+                    role,
+                    port,
+                    weights.name,
+                    ctx_size,
+                    threads,
+                )
+                try:
+                    proc = subprocess.Popen(cmd, **popen_kwargs)
+                finally:
+                    try:
+                        stderr_handle.close()
+                    except OSError:
+                        pass
+                self._proc = proc
+                self._port = port
+                self._active_weights = weights_resolved
+                self._active_role = role
+                self._active_served_model = alias
+                self._active_ctx_size = ctx_size
+                self._stderr_log_path = log_path
+
+            # Poll health outside lock (or re-verify process is alive)
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    stderr_tail = ""
+                    try:
+                        if log_path.is_file():
+                            stderr_tail = log_path.read_text(encoding="utf-8", errors="ignore")[-400:]
+                    except Exception:
+                        pass
+                    self.unload()
+                    raise RuntimeError(
+                        f"llama-server exited early (code {proc.returncode}): {stderr_tail}"
+                    )
+                if self._check_llama_health(port, timeout=0.8):
+                    return LocalRuntimeEndpoint(
+                        base_url=f"http://127.0.0.1:{port}/v1",
+                        api_key="local-mbowagpt",
+                        model_id=role,
+                        served_model=alias,
+                        weights_path=weights_resolved,
+                        backend="llama-server",
+                        ctx_size=ctx_size,
+                    )
+                time.sleep(0.25)
+
+            self.unload()
+            raise TimeoutError(f"llama-server did not become healthy within {timeout:.0f}s")
+
+        # Secondary local fallback: Ollama on loopback if installed
+        ollama_models = self.probe_ollama(timeout=0.5)
+        if ollama_models:
+            chosen = ollama_models[0]
+            if role == "mbowagpt-cybertrunk":
+                for m in ollama_models:
+                    if any(k in m.lower() for k in ("coder", "deepseek", "qwen")):
+                        chosen = m
+                        break
+            base = (os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
+            if not base.startswith(("http://", "https://")):
+                base = f"http://{base}"
+            if not base.endswith("/v1"):
+                base = f"{base}/v1"
+            return LocalRuntimeEndpoint(
+                base_url=base,
+                api_key="ollama",
+                model_id=role,
+                served_model=chosen,
+                weights_path=f"ollama://{chosen}",
+                backend="ollama",
+                ctx_size=4096,
+            )
+
+        raise RuntimeError(
+            "No local MbowaGPT runtime or GGUF model found. Install a local model or configure llama-server."
+        )
+
+    def install_model(
+        self,
+        role_id: str,
+        *,
+        progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        """Download the recommended GGUF weights for *role_id* into local storage."""
+        role = canonicalize_mbowagpt_model(role_id)
+        if role == MBOWAGPT_AUTO_MODEL_ID:
+            role = "mbowagpt"
+        spec = MBOWAGPT_MODELS.get(role)
+        if spec is None:
+            raise ValueError(f"Unknown MbowaGPT model: {role_id}")
+
+        target_dir = self.get_writable_models_dir()
+        dest_path = target_dir / spec.recommended_filename
+        if dest_path.is_file() and dest_path.stat().st_size > 10_000_000:
+            return {"ok": True, "model_id": role, "path": str(dest_path), "already_installed": True}
+
+        part_path = target_dir / f"{spec.recommended_filename}.part"
+        req = urllib.request.Request(
+            spec.recommended_url,
+            headers={"User-Agent": "TchuekaM-Agent/1.0"},
+        )
+        downloaded = 0
+        total = 0
+        with self._lock:
+            self._download_state = {
+                "model_id": role,
+                "status": "downloading",
+                "downloaded_bytes": 0,
+                "total_bytes": 0,
+                "percent": 0,
+            }
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                total = int(resp.headers.get("Content-Length") or 0)
+                with open(part_path, "wb") as out:
+                    while True:
+                        chunk = resp.read(1024 * 256)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        downloaded += len(chunk)
+                        pct = int((downloaded * 100) / total) if total > 0 else 0
+                        state = {
+                            "model_id": role,
+                            "status": "downloading",
+                            "downloaded_bytes": downloaded,
+                            "total_bytes": total,
+                            "percent": pct,
+                        }
+                        with self._lock:
+                            self._download_state = dict(state)
+                        if progress_cb is not None:
+                            progress_cb(state)
+            os.replace(part_path, dest_path)
+            done_state = {
+                "ok": True,
+                "model_id": role,
+                "path": str(dest_path),
+                "downloaded_bytes": downloaded,
+                "total_bytes": total or downloaded,
+                "status": "installed",
+                "percent": 100,
+            }
+            with self._lock:
+                self._download_state = dict(done_state)
+            return done_state
+        except Exception as exc:
+            try:
+                if part_path.exists():
+                    part_path.unlink()
+            except OSError:
+                pass
+            with self._lock:
+                self._download_state = {"model_id": role, "status": "error", "error": str(exc)}
+            raise
+
+    def get_status(self) -> Dict[str, Any]:
+        binary = self.discover_binary()
+        installed = self.discover_installed_ggufs()
+        ollama_models = self.probe_ollama(timeout=0.25)
+
+        models_info: List[Dict[str, Any]] = []
+        for role_id, spec in MBOWAGPT_MODELS.items():
+            resolved = self.resolve_model_weights(role_id)
+            rec_installed = spec.recommended_filename.lower() in installed
+            models_info.append({
+                "id": spec.id,
+                "display_name": spec.display_name,
+                "role_title": spec.role_title,
+                "description": spec.description,
+                "recommended_filename": spec.recommended_filename,
+                "recommended_size_mb": spec.recommended_size_mb,
+                "recommended_installed": rec_installed,
+                "resolved_weights": resolved.name if resolved else None,
+                "resolved_path": str(resolved) if resolved else None,
+                "ready": bool(resolved and binary) or bool(ollama_models),
+            })
+
+        with self._lock:
+            running = self._is_proc_alive_locked()
+            return {
+                "ready": bool((binary and installed) or ollama_models),
+                "binary_path": str(binary) if binary else None,
+                "running": running,
+                "active_role": self._active_role if running else None,
+                "active_port": self._port if running else None,
+                "active_served_model": self._active_served_model if running else None,
+                "active_weights": Path(self._active_weights).name if running and self._active_weights else None,
+                "hardware": self.hardware,
+                "installed_ggufs": sorted(p.name for p in installed.values()),
+                "ollama_models": ollama_models,
+                "models": models_info,
+                "download": dict(self._download_state) if self._download_state else None,
+            }
+
+
+_RUNTIME_SINGLETON: Optional[LocalRuntimeManager] = None
+_RUNTIME_LOCK = threading.Lock()
+
+
+def get_local_runtime_manager() -> LocalRuntimeManager:
+    global _RUNTIME_SINGLETON
+    if _RUNTIME_SINGLETON is None:
+        with _RUNTIME_LOCK:
+            if _RUNTIME_SINGLETON is None:
+                _RUNTIME_SINGLETON = LocalRuntimeManager()
+                atexit.register(_RUNTIME_SINGLETON.unload)
+    return _RUNTIME_SINGLETON
