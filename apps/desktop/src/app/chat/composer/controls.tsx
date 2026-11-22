@@ -231,7 +231,13 @@ function ConversationIndicator({
       {bars.map((weight, index) => {
         const height = listening ? 0.28 + Math.min(0.72, normalized * weight) : 0.28
 
-        return <span className="w-0.5 rounded-full bg-current" key={index} style={{ height: `${height * 100}%` }} />
+        return (
+          <span
+            className="w-[0.125rem] rounded-full bg-current transition-[height] duration-75 ease-out"
+            key={index}
+            style={{ height: `${height * 100}%` }}
+          />
+        )
       })}
     </span>
   )
@@ -260,9 +266,9 @@ function DictationButton({
       className={cn(
         GHOST_ICON_BTN,
         'p-0',
-        'data-[active=true]:bg-accent data-[active=true]:text-foreground',
-        status === 'recording' && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-        status === 'transcribing' && 'bg-primary/10 text-primary'
+        'data-[active=true]:bg-(--tk-cyan-soft) data-[active=true]:text-(--tk-cyan-text)',
+        status === 'recording' && 'border border-(--tk-cyan-border) bg-(--tk-cyan-soft) text-(--tk-cyan-text) hover:brightness-110',
+        status === 'transcribing' && 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
       )}
       data-active={active}
       disabled={disabled || !state.enabled || status === 'transcribing'}
