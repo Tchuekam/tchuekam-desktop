@@ -432,21 +432,21 @@ export function BusinessLocalAiModal() {
                   />
                 </label>
 
-                <label className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                <label className="flex items-center justify-between gap-2 rounded-xl border border-(--tk-glass-border) bg-card/70 px-3 py-2 text-xs">
                   <span className="font-medium">Q8 KV cache (saves ~50% cache RAM)</span>
                   <input
                     checked={status.config.useKvQuant}
-                    className="size-4 accent-primary"
+                    className="size-4 accent-(--tk-indigo)"
                     onChange={event => void updateBusinessLocalAiConfig({ useKvQuant: event.target.checked })}
                     type="checkbox"
                   />
                 </label>
 
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-(--tk-glass-border) bg-card/70 px-3 py-2 text-xs">
                   <span className="font-medium">Context window</span>
                   <select
                     aria-label="Local AI Context Window"
-                    className="rounded border border-border bg-background px-2 py-1 text-xs"
+                    className="rounded-lg border border-(--tk-glass-border) bg-background px-2 py-1 text-xs focus:border-(--tk-indigo) focus:outline-none"
                     onChange={event => void updateBusinessLocalAiConfig({ ctxSize: Number(event.target.value) })}
                     value={status.config.ctxSize}
                   >
@@ -456,11 +456,11 @@ export function BusinessLocalAiModal() {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-(--tk-glass-border) bg-card/70 px-3 py-2 text-xs">
                   <span className="font-medium">Auto-unload idle RAM</span>
                   <select
                     aria-label="Idle Unload Timer"
-                    className="rounded border border-border bg-background px-2 py-1 text-xs"
+                    className="rounded-lg border border-(--tk-glass-border) bg-background px-2 py-1 text-xs focus:border-(--tk-indigo) focus:outline-none"
                     onChange={event =>
                       void updateBusinessLocalAiConfig({ idleUnloadMs: Number(event.target.value) })
                     }
