@@ -67,8 +67,139 @@ declare global {
         setBranch: (name: string) => Promise<{ branch: string }>
         onProgress: (callback: (payload: DesktopUpdateProgress) => void) => () => void
       }
+      businessAi?: BusinessLocalAiBridge
     }
   }
+}
+
+export interface BusinessLocalAiModelSpec {
+  id: string
+  name: string
+  filename: string
+  downloadUrl: string
+  sizeMb: number
+  estimatedRamMb: number
+  minRamGb: number
+  languages: string
+  recommendedForLowRam: boolean
+  reasoningModel: boolean
+  defaultCtxSize: number
+  summary: string
+  installed: boolean
+  active: boolean
+}
+
+export interface BusinessLocalAiInstallProgress {
+  stage: 'runtime' | 'extract' | 'model' | 'complete' | 'error'
+  percent: number | null
+  downloadedBytes: number
+  totalBytes: number
+  speedBps: number
+  message: string
+}
+
+export interface BusinessLocalAiConfig {
+  enabled: boolean
+  modelId: string
+  idleUnloadMs: number
+  ctxSize: number
+  threads: number
+  useKvQuant: boolean
+}
+
+export interface BusinessLocalAiStatus {
+  supported: boolean
+  baseDir: string
+  runtimeInstalled: boolean
+  installed: boolean
+  installedModels: string[]
+  enabled: boolean
+  activeModelId: string
+  activeModelName: string
+  running: boolean
+  installing: boolean
+  installProgress: BusinessLocalAiInstallProgress | null
+  lastError: string | null
+  config: BusinessLocalAiConfig
+  hardware: {
+    totalRamMb: number
+    freeRamMb: number
+    cpuCount: number
+    isLowRamPc: boolean
+    recommendedModelId: string
+  }
+  server: {
+    port: number | null
+    pid: number | null
+    modelId: string | null
+    memoryMb: number | null
+    uptimeMs: number
+  }
+  models: BusinessLocalAiModelSpec[]
+}
+
+export interface BusinessLocalAiOperationResult {
+  ok: boolean
+  output: string
+  suggestions?: string[]
+  modelId?: string
+  durationMs?: number
+  tokensPerSec?: number | null
+  disabled?: boolean
+  notInstalled?: boolean
+}
+
+export interface BusinessLocalAiAssistantRequest {
+  message: string
+  language?: 'fr' | 'en'
+  documentSummary?: string
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  maxTokens?: number
+}
+
+export interface BusinessLocalAiAssistantResult {
+  ok: boolean
+  output?: string
+  error?: string
+  notInstalled?: boolean
+  modelId?: string
+  modelName?: string
+  durationMs?: number
+  tokensPerSec?: number | null
+}
+
+export interface BusinessLocalAiOcrRequest {
+  dataUrl: string
+  fileName: string
+  mimeType: string
+}
+
+export interface BusinessLocalAiOcrResult {
+  ok: boolean
+  text?: string
+  engine?: string
+  unavailable?: boolean
+  error?: string
+}
+
+export interface BusinessLocalAiBridge {
+  getStatus: () => Promise<BusinessLocalAiStatus>
+  install: (options?: { modelId?: string }) => Promise<BusinessLocalAiStatus>
+  cancelInstall: () => Promise<{ ok: boolean; cancelled: boolean }>
+  start: () => Promise<{ port: number; modelId: string }>
+  unload: () => Promise<BusinessLocalAiStatus>
+  setConfig: (patch: Partial<BusinessLocalAiConfig>) => Promise<BusinessLocalAiStatus>
+  deleteModel: (modelId: string) => Promise<BusinessLocalAiStatus>
+  runOperation: (req: {
+    context?: string
+    input: string
+    language: 'fr' | 'en'
+    operation: string
+    targetLanguage?: 'fr' | 'en'
+  }) => Promise<BusinessLocalAiOperationResult>
+  askAssistant: (req: BusinessLocalAiAssistantRequest) => Promise<BusinessLocalAiAssistantResult>
+  runOcr: (req: BusinessLocalAiOcrRequest) => Promise<BusinessLocalAiOcrResult>
+  onStatus: (callback: (status: BusinessLocalAiStatus) => void) => () => void
 }
 
 export interface HermesTerminalSession {
