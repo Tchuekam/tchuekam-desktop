@@ -5,8 +5,9 @@ Service métier des Équipes et Hiérarchies (Création, Attribution des Membres
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from tchuekam_backend.domain.models import Team, TeamMember
+from tchuekam_backend.domain.models import Team, TeamMember, Workspace
 from tchuekam_backend.repositories.team_repository import TeamRepository
+from tchuekam_backend.repositories.membership_repository import MembershipRepository
 from tchuekam_backend.repositories.audit_repository import AuditRepository
 
 
@@ -14,6 +15,7 @@ class TeamService:
     def __init__(self, db: Session):
         self.db = db
         self.team_repo = TeamRepository(db)
+        self.membership_repo = MembershipRepository(db)
         self.audit_repo = AuditRepository(db)
 
     def create_team(
@@ -26,11 +28,20 @@ class TeamService:
         parent_team_id: Optional[str] = None,
         leader_id: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Team]]:
-        # Vérification parent_team_id s'il est fourni
+        if workspace_id:
+            ws = self.db.query(Workspace).filter(Workspace.id == workspace_id).first()
+            if not ws or ws.org_id != org_id:
+                return False, "Le workspace est introuvable dans cette organisation.", None
+
         if parent_team_id:
             parent = self.team_repo.get_by_id(parent_team_id)
             if not parent or parent.org_id != org_id:
                 return False, "L'équipe parente est introuvable dans cette organisation.", None
+
+        if leader_id:
+            leader_mem = self.membership_repo.get_org_membership(org_id, leader_id)
+            if not leader_mem or leader_mem.status != "ACTIVE":
+                return False, "Le responsable désigné n'est pas membre actif de cette organisation.", None
 
         team = self.team_repo.create(
             org_id=org_id,
@@ -50,6 +61,9 @@ class TeamService:
     def add_team_member(self, team_id: str, actor_id: str, target_user_id: str, role: str = "MEMBER") -> bool:
         team = self.team_repo.get_by_id(team_id)
         if not team:
+            return False
+        target_mem = self.membership_repo.get_org_membership(team.org_id, target_user_id)
+        if not target_mem or target_mem.status != "ACTIVE":
             return False
         self.team_repo.add_member(team_id, target_user_id, role=role)
         self.audit_repo.log("TEAM_MEMBER_ADDED", user_id=actor_id, org_id=team.org_id, resource=f"user:{target_user_id}")
