@@ -458,8 +458,8 @@ const ReasoningTextPart: FC<{ text: string; status?: { type: string } }> = ({ te
   return (
     <div
       className={cn(
-        'whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground/85',
-        status?.type === 'running' && 'shimmer text-muted-foreground/55'
+        'whitespace-pre-wrap text-[0.78125rem] leading-[1.6] text-(--ui-text-secondary)',
+        status?.type === 'running' && 'shimmer text-(--ui-text-secondary)/70'
       )}
       data-slot="aui_reasoning-text"
     >
@@ -646,7 +646,7 @@ function messageAttachmentRefs(value: unknown): string[] {
 function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
   return (
     <div
-      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-2"
+      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-[color-mix(in_srgb,var(--ui-chat-surface-background)_84%,transparent)] px-4 pb-(--conversation-turn-gap) pt-2 backdrop-blur-md"
       data-role="user"
       data-slot="aui_user-message-root"
     >
