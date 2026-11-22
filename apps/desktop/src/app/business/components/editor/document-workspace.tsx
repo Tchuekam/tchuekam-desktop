@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { $terminalTakeover } from '@/app/right-sidebar/store'
 import { Codicon } from '@/components/ui/codicon'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify } from '@/store/notifications'
 
@@ -25,14 +26,31 @@ import {
   undoDocumentChange,
   updateBusinessDocument
 } from '../../store'
+import {
+  $businessLocalAiDrawerOpen,
+  subscribeBusinessLocalAiStatus
+} from '../../store/local-ai'
 import type {
+  AttestationData,
   BusinessDocument,
+  BusinessPlanData,
+  ContractData,
+  CoverLetterData,
   CVData,
   DocumentDataMap,
   DocumentLanguage,
   DocumentType,
-  ExportFormat
+  ExportFormat,
+  InvoiceData,
+  PitchDeckData,
+  QuoteData,
+  ScanDocumentData
 } from '../../types'
+import {
+  BusinessLocalAiModal,
+  BusinessLocalAiStatusBadge,
+  BusinessLocalAiWorkspaceDrawer
+} from '../local-ai/business-local-agent-panel'
 import { DocumentPreview } from '../preview/document-preview'
 
 import { DocumentForms } from './document-forms'
@@ -240,251 +258,56 @@ export function DocumentWorkspace({
     }
   }
 
-  const handleAskInChat = () => {
-    const basePrompt =
-      doc.type === 'scan'
-        ? `Review this extracted text from "${doc.title}":\n\n`
-        : BUILDER_PROMPTS[doc.type]
+  const drawerOpen = useStore($businessLocalAiDrawerOpen)
 
-    onOpenChat(`${basePrompt}\n\nDocument title: ${doc.title}`)
-  }
+  useEffect(() => {
+    if (!IS_DESKTOP) {
+      return
+    }
 
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground pt-(--titlebar-height)">
-      {/* Apple-style Studio Navigation & Command Bar */}
-      <header className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/70 bg-card/85 px-3 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
-        <div className="flex items-center gap-3">
-          <button
-            aria-label="Back to Business Hub"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
-            onClick={onBack}
-            type="button"
-          >
-            <Codicon name="arrow-left" size="0.85rem" />
-            <span>Hub</span>
-          </button>
+    return subscribeBusinessLocalAiStatus()
+  }, [])
 
-          <div className="relative flex items-center">
-            <input
-              aria-label="Document Title"
-              className="h-8 min-w-0 flex-1 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-foreground transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 sm:min-w-[14rem] sm:flex-initial"
-              onChange={e =>
-                updateBusinessDocument(doc.id, current => ({
-                  ...current,
-                  title: e.target.value
-                }))
-              }
-              value={doc.title}
-            />
-          </div>
+  const handleApplyLocalAiText = (text: string) => {
+    const cleaned = text.trim()
 
-          {/* Apple-style Autosave Pill Indicator */}
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/60 px-2.5 py-1 text-[0.6875rem] font-medium">
-            <span
-              className={cn(
-                'size-1.5 rounded-full transition-colors',
-                autosave === 'saving'
-                  ? 'bg-amber-500 animate-pulse'
-                  : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
-              )}
-            />
-            <span className="text-muted-foreground">
-              {autosave === 'saving' ? 'Saving changes...' : 'Saved'}
-            </span>
-          </div>
-        </div>
+    if (!cleaned) {
+      return
+    }
 
-        {/* Center Controls: Template, Language, Undo/Redo */}
-        <div className="flex flex-wrap items-center gap-2">
-          {availableTemplates.length > 0 && (
-            <select
-              aria-label="Template"
-              className="h-8 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              onChange={e =>
-                updateBusinessDocument(doc.id, current => ({
-                  ...current,
-                  templateId: e.target.value
-                }))
-              }
-              value={doc.templateId}
-            >
-              {availableTemplates.map(tpl => (
-                <option key={tpl.id} value={tpl.id}>
-                  Template: {tpl.name}
-                </option>
-              ))}
-            </select>
-          )}
+    switch (doc.type) {
+      case 'cv':
+        handleUpdateData<'cv'>(c => ({ ...(c as CVData), summary: cleaned }))
 
-          <select
-            aria-label="Document Language"
-            className="h-8 rounded-xl border border-border/70 bg-background/80 px-2.5 text-xs font-medium text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            onChange={e =>
-              updateBusinessDocument(doc.id, current => ({
-                ...current,
-                language: e.target.value as DocumentLanguage
-              }))
-            }
-            value={doc.language}
-          >
-            <option value="fr">Français (FR)</option>
-            <option value="en">English (EN)</option>
-          </select>
+        break
 
-          <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
-            disabled={!canUseAi || aiBusy !== null}
-            onClick={handleTranslateDocument}
-            title="Switch language and translate summary"
-            type="button"
-          >
-            <Codicon name="globe" size="0.85rem" />
-            <span>AI Translate</span>
-          </button>
+      case 'letter':
+        handleUpdateData<'letter'>(c => ({
+          ...(c as CoverLetterData),
+          bodyParagraphs: cleaned.split(/\n\n+/).filter(Boolean)
+        }))
 
-          {/* Apple-style Unified Undo/Redo Segment */}
-          <div className="inline-flex items-center rounded-xl border border-border/70 bg-background/80 p-0.5">
-            <button
-              aria-label="Undo"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
-              disabled={!canUndoDocument(doc.id)}
-              onClick={() => void undoDocumentChange(doc.id)}
-              title="Undo (⌘Z / Ctrl+Z)"
-              type="button"
-            >
-              <Codicon name="discard" size="0.85rem" />
-            </button>
-            <span className="h-3.5 w-px bg-border/80" />
-            <button
-              aria-label="Redo"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
-              disabled={!canRedoDocument(doc.id)}
-              onClick={() => void redoDocumentChange(doc.id)}
-              title="Redo (⌘⇧Z / Ctrl+Y)"
-              type="button"
-            >
-              <Codicon name="redo" size="0.85rem" />
-            </button>
-          </div>
+        break
 
-          <button
-            aria-label="Duplicate Document"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
-            onClick={handleDuplicate}
-            type="button"
-          >
-            <Codicon name="copy" size="0.85rem" />
-            <span>Duplicate</span>
-          </button>
+      case 'attestation':
+        handleUpdateData<'attestation'>(c => ({ ...(c as AttestationData), bodyText: cleaned }))
 
-          <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
-            disabled={!canUseAi}
-            onClick={handleAskInChat}
-            type="button"
-          >
-            <Codicon name="comment-discussion" size="0.85rem" />
-            <span>Ask in Chat</span>
-          </button>
-        </div>
+        break
 
-        {/* Right Controls: Apple Export Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {supportedFormats.map(fmt => (
-            <button
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 active:scale-[0.98]"
-              key={fmt}
-              onClick={() => handleExport(fmt)}
-              type="button"
-            >
-              <Codicon name="export" size="0.85rem" />
-              Export {fmt.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </header>
+      case 'contract':
+        handleUpdateData<'contract'>(c => ({ ...(c as ContractData), scope: cleaned }))
 
-      {/* Export & Validation Status Strip */}
-      {(lastExportInfo || validation.warnings.length > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs backdrop-blur-xs sm:px-6">
-          {lastExportInfo ? (
-            <span className="flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400" role="status">
-              <Codicon name="check" size="0.85rem" />
-              {lastExportInfo}
-            </span>
-          ) : (
-            <span />
-          )}
-          {validation.warnings.length > 0 && (
-            <span className="flex items-center gap-1 text-[0.6875rem] text-amber-600 dark:text-amber-400">
-              <Codicon name="warning" size="0.75rem" />
-              Note: {validation.warnings[0]}
-            </span>
-          )}
-        </div>
-      )}
+        break
 
-      {/* Mobile Editor / Preview Switcher (<1024px) */}
-      <div className="flex items-center gap-1 border-b border-border/60 bg-muted/30 px-3 py-1.5 lg:hidden">
-        <button
-          className={cn(
-            'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-            mobilePane === 'editor'
-              ? 'bg-card text-foreground shadow-2xs'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-          onClick={() => setMobilePane('editor')}
-          type="button"
-        >
-          Edit Content
-        </button>
-        <button
-          className={cn(
-            'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-            mobilePane === 'preview'
-              ? 'bg-card text-foreground shadow-2xs'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-          onClick={() => setMobilePane('preview')}
-          type="button"
-        >
-          Live Preview
-        </button>
-      </div>
+      case 'invoice':
+        handleUpdateData<'invoice'>(c => ({ ...(c as InvoiceData), notes: cleaned }))
 
-      {/* Split-Screen Editor + Live Preview */}
-      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-2">
-        <div
-          className={cn(
-            'overflow-y-auto p-3 scroll-smooth sm:p-6',
-            mobilePane !== 'editor' && 'max-lg:hidden'
-          )}
-        >
-          <DocumentForms
-            activeSlideIndex={activeSlideIndex}
-            aiBusy={aiBusy}
-            canUseAi={canUseAi}
-            document={doc}
-            onConvertQuoteToInvoice={handleConvertQuote}
-            onReplaceScanFile={handleReplaceScanFile}
-            onRunAi={handleRunAi}
-            onSelectSlide={setActiveSlideIndex}
-            onUpdateData={handleUpdateData}
-          />
-        </div>
-        <div
-          className={cn(
-            'min-h-0 overflow-hidden border-t border-border/70 lg:border-l lg:border-t-0',
-            mobilePane !== 'preview' && 'max-lg:hidden'
-          )}
-        >
-          <DocumentPreview
-            activeSlideIndex={activeSlideIndex}
-            document={doc}
-            onSelectSlide={setActiveSlideIndex}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
+        break
+
+      case 'quote':
+        handleUpdateData<'quote'>(c => ({ ...(c as QuoteData), notes: cleaned }))
+
+        break
+
+      case 'plan':
+        handleUpdateData<'plan'>(c => {
