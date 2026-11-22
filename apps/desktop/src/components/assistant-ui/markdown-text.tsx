@@ -24,6 +24,7 @@ import {
   mediaStreamUrl
 } from '@/lib/media'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 
 // Math rendering plugin (KaTeX). Configured once at module scope — the
@@ -45,13 +46,12 @@ async function mediaSrc(path: string): Promise<string> {
     return path
   }
 
-  // Stream audio/video through the custom protocol: data URLs are capped and
-  // load the whole file into memory, which broke playback for larger videos.
-  if (window.hermesDesktop && ['audio', 'video'].includes(mediaKind(path))) {
+  // Stream audio/video through the custom protocol on Electron only.
+  if (IS_DESKTOP && ['audio', 'video'].includes(mediaKind(path))) {
     return mediaStreamUrl(path)
   }
 
-  if (!window.hermesDesktop?.readFileDataUrl) {
+  if (!IS_DESKTOP || !window.hermesDesktop?.readFileDataUrl) {
     return mediaExternalUrl(path)
   }
 
