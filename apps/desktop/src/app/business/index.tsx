@@ -580,11 +580,11 @@ export function BusinessView() {
                     placeholder="Search docs..."
                     value={docSearch}
                   />
-                  <Codicon className="absolute left-1.5 top-1.5 text-muted-foreground" name="search" size="0.75rem" />
+                  <Codicon className="absolute left-2 top-2 text-muted-foreground" name="search" size="0.75rem" />
                 </div>
                 <select
                   aria-label="Filter documents by type"
-                  className="h-7 rounded-lg border border-border/70 bg-card/80 px-2 text-xs font-medium text-muted-foreground focus:outline-none"
+                  className="h-8 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 text-xs font-medium text-(--ui-text-secondary) focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
                   onChange={e => setDocTypeFilter(e.target.value)}
                   value={docTypeFilter}
                 >
@@ -604,18 +604,23 @@ export function BusinessView() {
           </div>
 
           {documents.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground backdrop-blur-xs">
-              No saved documents yet. Choose a builder above or select a template below to create your first document.
+            <div className="tk-glass-subtle flex flex-col items-center gap-3 rounded-2xl border-dashed p-10 text-center">
+              <span className="grid size-11 place-items-center rounded-xl bg-(--tk-indigo-soft) text-(--tk-indigo-text)">
+                <Codicon name="file-text" size="1.25rem" />
+              </span>
+              <p className="max-w-md text-xs leading-relaxed text-(--ui-text-secondary)">
+                No saved documents yet. Choose a builder above or select a template below to create your first document.
+              </p>
             </div>
           ) : filteredDocuments.length === 0 ? (
-            <div className="rounded-2xl border border-border/60 bg-card/40 p-6 text-center text-xs text-muted-foreground">
+            <div className="tk-glass-subtle rounded-2xl p-6 text-center text-xs text-muted-foreground">
               No documents matched your search filter.
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {filteredDocuments.map(doc => (
                 <div
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card/90 px-4 py-3 shadow-2xs backdrop-blur-sm transition-all hover:border-primary/30"
+                  className="tk-glass-subtle tk-surface-hover flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5 hover:border-(--tk-indigo-border)"
                   key={doc.id}
                 >
                   <div className="min-w-0 flex-1">
@@ -624,7 +629,7 @@ export function BusinessView() {
                         <input
                           aria-label={`Rename input for ${doc.title}`}
                           autoFocus
-                          className="h-7 rounded-lg border border-primary bg-background px-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          className="h-8 rounded-xl border border-(--tk-indigo) bg-background px-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
                           onChange={e => setRenameDraft(e.target.value)}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
