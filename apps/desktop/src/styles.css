@@ -791,6 +791,28 @@ canvas {
     backdrop-filter: blur(12px) saturate(1.22);
     -webkit-backdrop-filter: blur(12px) saturate(1.22);
   }
+
+  .tk-btn-primary {
+    border: 1px solid color-mix(in srgb, var(--tk-indigo) 65%, transparent);
+    background: linear-gradient(180deg, var(--tk-cta-top), var(--tk-cta-bottom));
+    box-shadow: var(--tk-cta-shadow);
+    transition:
+      filter 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .tk-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.07);
+  }
+
+  .tk-surface-hover {
+    transition:
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
 }
 
 /* Bottom clearance lives on [data-slot='aui_composer-clearance'] —
