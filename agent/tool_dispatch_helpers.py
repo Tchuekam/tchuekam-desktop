@@ -45,9 +45,12 @@ _PARALLEL_SAFE_TOOLS = frozenset({
     "ha_get_state",
     "ha_list_entities",
     "ha_list_services",
+    "read_document",
     "read_file",
     "search_files",
+    "self_inspect",
     "session_search",
+    "skill_discover",
     "skill_view",
     "skills_list",
     "vision_analyze",
@@ -56,7 +59,7 @@ _PARALLEL_SAFE_TOOLS = frozenset({
 })
 
 # File tools can run concurrently when they target independent paths.
-_PATH_SCOPED_TOOLS = frozenset({"read_file", "write_file", "patch"})
+_PATH_SCOPED_TOOLS = frozenset({"read_file", "read_document", "write_file", "patch"})
 
 # Patterns that indicate a terminal command may modify/delete files.
 _DESTRUCTIVE_PATTERNS = re.compile(
