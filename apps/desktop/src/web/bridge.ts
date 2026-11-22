@@ -28,10 +28,50 @@ import type {
   HermesSelectPathsOptions
 } from '@/global'
 import { webConfig } from '@/lib/platform'
-import { getStoredSupabaseAccessToken } from '@/lib/supabase-auth'
+import { getFreshSupabaseAccessToken } from '@/lib/supabase-auth'
 
 const DEFAULT_FETCH_TIMEOUT_MS = 30_000
 const SESSION_HEADER = 'X-Hermes-Session-Token'
+const SECRET_STORAGE_PREFIX = 'tchuekam:secret:'
+const uploadedImageDataUrls = new Map<string, string>()
+
+function uint8ToDataUrl(data: ArrayBuffer | Uint8Array, mimeType: string): string {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+  let binary = ''
+  const chunkSize = 0x8000
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+
+  return `data:${mimeType};base64,${btoa(binary)}`
+}
+
+async function uploadWebImageBytes(data: ArrayBuffer | Uint8Array, ext: string): Promise<string> {
+  const cleanExt = ext.replace(/^\./, '').toLowerCase() || 'png'
+  const mime =
+    cleanExt === 'jpg' || cleanExt === 'jpeg'
+      ? 'image/jpeg'
+      : cleanExt === 'webp'
+        ? 'image/webp'
+        : cleanExt === 'gif'
+          ? 'image/gif'
+          : 'image/png'
+  const dataUrl = uint8ToDataUrl(data, mime)
+  const uploaded = await apiFetch<{ ok: boolean; path: string }>({
+    path: '/api/uploads/image',
+    method: 'POST',
+    body: { data_url: dataUrl, filename: `upload-${Date.now()}.${cleanExt}` }
+  })
+
+  if (!uploaded?.path) {
+    throw new Error('Backend did not return a path for the uploaded image.')
+  }
+
+  uploadedImageDataUrls.set(uploaded.path, dataUrl)
+
+  return uploaded.path
+}
 
 /** Shape of the preload bridge, derived from the ambient Window declaration. */
 type DesktopBridge = Window['hermesDesktop']
@@ -106,10 +146,11 @@ async function apiFetch<T>(request: HermesApiRequest): Promise<T> {
 
   let response: Response
 
-  const supabaseToken = request.path.startsWith('/api/v1/') ? getStoredSupabaseAccessToken() : null
+  const supabaseToken = request.path.startsWith('/api/v1/') ? await getFreshSupabaseAccessToken() : null
 
   try {
     response = await fetch(url, {
+      credentials: webConfig.authRequired ? 'include' : 'same-origin',
       method: request.method || 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -148,7 +189,11 @@ async function apiFetch<T>(request: HermesApiRequest): Promise<T> {
     )
   }
 
-  return JSON.parse(text) as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(`Invalid JSON response from ${url}`)
+  }
 }
 
 /** The web build is always "booted" — there is no local backend to start. */
@@ -256,7 +301,19 @@ const bridge: DesktopBridge = {
   },
 
   // --- Filesystem: no browser equivalent -----------------------------------
-  readFileDataUrl: async (): Promise<string> => unsupported('Reading local files'),
+  readFileDataUrl: async (filePath: string): Promise<string> => {
+    const cached = uploadedImageDataUrls.get(filePath)
+
+    if (cached) {
+      return cached
+    }
+
+    if (filePath.startsWith('data:')) {
+      return filePath
+    }
+
+    return unsupported('Reading local files')
+  },
   readFileText: async (): Promise<HermesReadFileTextResult> => unsupported('Reading local files'),
   readDir: async (): Promise<HermesReadDirResult> => ({ entries: [], error: 'Not available in the web app.' }),
   gitRoot: async () => null,
@@ -279,20 +336,30 @@ const bridge: DesktopBridge = {
     return true
   },
 
-  saveImageBuffer: async (data: ArrayBuffer | Uint8Array, ext: string) => {
-    const blob = new Blob([data as BlobPart], { type: `image/${ext.replace(/^\./, '') || 'png'}` })
-    const url = URL.createObjectURL(blob)
-    const filename = `tchuekam-${Date.now()}.${ext.replace(/^\./, '') || 'png'}`
+  saveImageBuffer: async (data: ArrayBuffer | Uint8Array, ext: string) => uploadWebImageBytes(data, ext),
 
-    download(url, filename)
-    // Revoke on the next tick: revoking synchronously races the download the
-    // click above just queued.
-    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  saveClipboardImage: async (): Promise<string> => {
+    if (!navigator.clipboard?.read) {
+      unsupported('Reading images from the clipboard')
+    }
 
-    return filename
+    const items = await navigator.clipboard.read()
+
+    for (const item of items) {
+      const imageType = item.types.find(type => type.startsWith('image/'))
+
+      if (!imageType) {
+        continue
+      }
+
+      const blob = await item.getType(imageType)
+      const ext = imageType.split('/')[1]?.split(';')[0] || 'png'
+
+      return uploadWebImageBytes(await blob.arrayBuffer(), ext)
+    }
+
+    throw new Error('No image found in the clipboard.')
   },
-
-  saveClipboardImage: async (): Promise<string> => unsupported('Saving the clipboard image'),
 
   // --- Preview rail --------------------------------------------------------
   // The desktop rail previews local files and localhost dev servers. In a
@@ -320,10 +387,30 @@ const bridge: DesktopBridge = {
   },
 
   getSecureSecret: async (key: string) => {
+    try {
+      const stored = window.sessionStorage.getItem(`${SECRET_STORAGE_PREFIX}${key}`)
+
+      if (stored !== null) {
+        return stored
+      }
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+
     return (window as unknown as { __webSecrets?: Record<string, string> }).__webSecrets?.[key] || ''
   },
 
   setSecureSecret: async (key: string, value: string) => {
+    try {
+      if (!value) {
+        window.sessionStorage.removeItem(`${SECRET_STORAGE_PREFIX}${key}`)
+      } else {
+        window.sessionStorage.setItem(`${SECRET_STORAGE_PREFIX}${key}`, value)
+      }
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+
     const w = window as unknown as { __webSecrets?: Record<string, string> }
     w.__webSecrets = w.__webSecrets || {}
     if (!value) delete w.__webSecrets[key]
@@ -332,6 +419,12 @@ const bridge: DesktopBridge = {
   },
 
   deleteSecureSecret: async (key: string) => {
+    try {
+      window.sessionStorage.removeItem(`${SECRET_STORAGE_PREFIX}${key}`)
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+
     const w = window as unknown as { __webSecrets?: Record<string, string> }
     if (w.__webSecrets) delete w.__webSecrets[key]
     return { ok: true }

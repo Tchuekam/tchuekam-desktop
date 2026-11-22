@@ -380,7 +380,7 @@ RUN mkdir -p /opt/data
 # like `--version` would be intercepted by /init's POSIX shell.
 # Healthcheck to detect deadlocked gateway service
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD curl -f http://localhost:${HERMES_PORT:-3333}/health || exit 1
+  CMD curl -f http://localhost:${PORT:-${HERMES_DASHBOARD_PORT:-9119}}/health || exit 1
 
 ENTRYPOINT [ "/init", "/opt/hermes/docker/main-wrapper.sh" ]
 CMD [ ]

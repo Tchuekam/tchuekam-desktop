@@ -17,6 +17,25 @@ function AuthCallbackInner() {
 
   useEffect(() => {
     let active = true
+    let redirectTimer: ReturnType<typeof setTimeout> | null = null
+
+    const ALLOWED_OTP_TYPES = new Set<EmailOtpType>([
+      'signup',
+      'invite',
+      'magiclink',
+      'recovery',
+      'email_change',
+      'email',
+    ])
+
+    const safeDecodeError = (raw: string): string => {
+      const normalized = raw.replace(/\+/g, ' ')
+      try {
+        return decodeURIComponent(normalized)
+      } catch {
+        return normalized
+      }
+    }
 
     const completeAuth = async () => {
       try {
@@ -34,7 +53,7 @@ function AuthCallbackInner() {
         if (errorParam) {
           if (!active) return
           setStatus('error')
-          setMessage(decodeURIComponent(errorParam.replace(/\+/g, ' ')))
+          setMessage(safeDecodeError(errorParam))
           return
         }
 
@@ -65,6 +84,9 @@ function AuthCallbackInner() {
             activeSession = data.session
           }
         } else if (!activeSession && tokenHash && typeParam) {
+          if (!ALLOWED_OTP_TYPES.has(typeParam as EmailOtpType)) {
+            throw new Error('Invalid or unsupported verification link type.')
+          }
           const { data, error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type: typeParam as EmailOtpType,
@@ -102,14 +124,14 @@ function AuthCallbackInner() {
         if (isRecovery) {
           setStatus('success')
           setMessage('Identity verified. Redirecting to password reset...')
-          setTimeout(() => router.replace('/reset-password'), 600)
+          redirectTimer = setTimeout(() => router.replace('/reset-password'), 600)
           return
         }
 
         if (!activeSession) {
           setStatus('success')
           setMessage('Email verification confirmed! Redirecting you to sign in...')
-          setTimeout(() => router.replace('/login?verified=true'), 1200)
+          redirectTimer = setTimeout(() => router.replace('/login?verified=true'), 1200)
           return
         }
 
@@ -121,7 +143,7 @@ function AuthCallbackInner() {
             : 'Identity verified. Redirecting to your control plane...'
         )
 
-        setTimeout(() => {
+        redirectTimer = setTimeout(() => {
           if (external) {
             window.location.assign(url)
           } else {
@@ -142,6 +164,7 @@ function AuthCallbackInner() {
     completeAuth()
     return () => {
       active = false
+      if (redirectTimer) clearTimeout(redirectTimer)
     }
   }, [router, searchParams])
 

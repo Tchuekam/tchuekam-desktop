@@ -4,13 +4,15 @@ import { useMemo } from 'react'
 
 import type { CommandCenterSection } from '@/app/command-center'
 import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
-import { Activity, AlertCircle, ChevronDown, Clock, Command, Hash, Loader2, Sparkles } from '@/lib/icons'
+import { IntelligenceMenuPanel } from '@/app/shell/intelligence-menu-panel'
+import { Activity, AlertCircle, Brain, ChevronDown, Clock, Command, Hash, Loader2, Sparkles } from '@/lib/icons'
 import { formatModelStatusLabel } from '@/lib/model-status-label'
-import { IS_LOCKED_DEMO } from '@/lib/platform'
+import { IS_LOCKED_DEMO, IS_WEB } from '@/lib/platform'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { $desktopActionTasks } from '@/store/activity'
+import { $activeMbowaRoute, $intelligenceStatus } from '@/store/intelligence'
 import { $previewServerRestartStatus } from '@/store/preview'
 import {
   $busy,
@@ -67,6 +69,8 @@ export function useStatusbarItems({
   const currentReasoningEffort = useStore($currentReasoningEffort)
   const currentUsage = useStore($currentUsage)
   const desktopActionTasks = useStore($desktopActionTasks)
+  const intelligenceStatus = useStore($intelligenceStatus)
+  const activeMbowaRoute = useStore($activeMbowaRoute)
   const previewServerRestartStatus = useStore($previewServerRestartStatus)
   const sessionStartedAt = useStore($sessionStartedAt)
   const turnStartedAt = useStore($turnStartedAt)
@@ -163,9 +167,9 @@ export function useStatusbarItems({
       icon: applying ? <Loader2 className="size-3 animate-spin" /> : <Hash className="size-3" />,
       id: 'version',
       label,
-      onSelect: () => setUpdateOverlayOpen(true),
+      onSelect: IS_WEB ? undefined : () => setUpdateOverlayOpen(true),
       title: tooltip || undefined,
-      variant: 'action'
+      variant: IS_WEB ? 'text' : 'action'
     }
   }, [
     desktopVersion?.appVersion,
@@ -284,6 +288,44 @@ export function useStatusbarItems({
         variant: 'text'
       },
       {
+        icon: (
+          <Brain
+            className={cn(
+              'size-3',
+              intelligenceStatus?.offline
+                ? 'text-amber-400'
+                : intelligenceStatus?.active_tier === 'local'
+                  ? 'text-sky-400'
+                  : 'text-emerald-400'
+            )}
+          />
+        ),
+        id: 'intelligence-mode',
+        label: (
+          <span className="inline-flex min-w-0 items-center gap-0.5">
+            <span className="truncate">
+              {intelligenceStatus?.offline
+                ? `Offline · ${activeMbowaRoute?.display_name || 'MbowaGPT'}`
+                : intelligenceStatus?.mode === 'local'
+                  ? activeMbowaRoute?.display_name || 'MbowaGPT Local'
+                  : intelligenceStatus?.active_tier === 'local' && activeMbowaRoute?.display_name
+                    ? activeMbowaRoute.display_name
+                    : intelligenceStatus?.mode === 'online'
+                      ? 'Online'
+                      : 'Hybrid'}
+            </span>
+            <ChevronDown className="size-2.5 shrink-0 opacity-50" />
+          </span>
+        ),
+        menuAlign: 'end',
+        menuClassName: 'w-80',
+        menuContent: <IntelligenceMenuPanel />,
+        title: intelligenceStatus
+          ? `Intelligence: ${intelligenceStatus.mode} (${intelligenceStatus.connectivity})`
+          : 'Intelligence mode & MbowaGPT local models',
+        variant: 'menu'
+      },
+      {
         id: 'model-summary',
         label: (
           <span className="inline-flex min-w-0 items-center gap-0.5">
@@ -317,6 +359,7 @@ export function useStatusbarItems({
       versionItem
     ],
     [
+      activeMbowaRoute?.display_name,
       busy,
       contextBar,
       contextUsage,
@@ -324,6 +367,7 @@ export function useStatusbarItems({
       currentModel,
       currentProvider,
       currentReasoningEffort,
+      intelligenceStatus,
       modelMenuContent,
       sessionStartedAt,
       turnStartedAt,

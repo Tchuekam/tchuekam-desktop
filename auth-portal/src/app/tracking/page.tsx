@@ -189,7 +189,7 @@ export default function TrackingPage() {
     a.href = url
     a.download = `tchuekam-agent-users-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   if (loading || !user) {

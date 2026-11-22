@@ -1,9 +1,11 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 
+import { isStandaloneWebRoute } from '@/app/routes'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, FileText, Loader2, RefreshCw, Wrench } from '@/lib/icons'
-import { IS_DESKTOP } from '@/lib/platform'
+import { IS_DESKTOP, IS_WEB } from '@/lib/platform'
 import { $desktopBoot } from '@/store/boot'
 import { $desktopOnboarding } from '@/store/onboarding'
 
@@ -14,13 +16,14 @@ type BusyAction = 'local' | 'repair' | 'retry' | null
 // renders dead — "gateway offline", no composer, only a toast — with no way
 // to retry, repair the install, switch the gateway, or find the logs.
 export function BootFailureOverlay() {
+  const location = useLocation()
   const boot = useStore($desktopBoot)
   const onboarding = useStore($desktopOnboarding)
   const [busy, setBusy] = useState<BusyAction>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [showLogs, setShowLogs] = useState(false)
 
-  const visible = Boolean(boot.error) && !boot.running
+  const visible = Boolean(boot.error) && !boot.running && !(IS_WEB && isStandaloneWebRoute(location.pathname))
   // While first-run onboarding owns the picker/flow we let it surface its own
   // progress; the recovery overlay is for hard failures, which it covers via a
   // higher z-index regardless of onboarding state.

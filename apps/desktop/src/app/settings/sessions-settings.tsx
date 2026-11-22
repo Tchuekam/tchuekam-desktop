@@ -5,6 +5,7 @@ import { deleteSession, listSessions, setSessionArchived } from '@/hermes'
 import { sessionTitle } from '@/lib/chat-runtime'
 import { triggerHaptic } from '@/lib/haptics'
 import { Archive, ArchiveOff, FolderOpen, Loader2, Trash2 } from '@/lib/icons'
+import { HAS_NATIVE_FS } from '@/lib/platform'
 import { notify, notifyError } from '@/store/notifications'
 import { setSessions } from '@/store/session'
 import type { SessionInfo } from '@/types/hermes'
@@ -105,7 +106,7 @@ export function SessionsSettings({ query }: SearchProps) {
 
   return (
     <SettingsContent>
-      <DefaultProjectDirSetting />
+      {HAS_NATIVE_FS && <DefaultProjectDirSetting />}
 
       <SectionHeading
         icon={Archive}

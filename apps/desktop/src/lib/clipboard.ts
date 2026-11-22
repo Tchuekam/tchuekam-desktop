@@ -2,8 +2,13 @@
 // renderer's clipboard API throws "Write permission denied" whenever the
 // document loses focus (e.g. clicking a portaled Radix dropdown). The IPC
 // path runs in the main process and is unconditional.
+import { IS_WEB } from '@/lib/platform'
 
 export function installClipboardShim() {
+  if (IS_WEB) {
+    return
+  }
+
   const ipc = window.hermesDesktop?.writeClipboard
 
   if (!ipc || !navigator.clipboard) {

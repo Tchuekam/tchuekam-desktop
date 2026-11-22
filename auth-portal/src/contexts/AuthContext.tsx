@@ -7,7 +7,6 @@ import React, {
   useEffect,
   ReactNode,
   useCallback,
-  useMemo,
 } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -83,26 +82,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const ADMIN_EMAILS = new Set(
-  (
-    process.env.NEXT_PUBLIC_ADMIN_EMAILS ||
-    'founder@tchuekam.com,tchuekrostand@gmail.com,rebornedbetalpha@gmail.com'
-  )
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean)
-)
-
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fzoiiusuqvjhwivstbyb.supabase.co'
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6b2lpdXN1cXZqaHdpdnN0YnliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNDgxNjUsImV4cCI6MjA5OTgyNDE2NX0.CH6Z7CxPaRxND2fivpcGu42RFmo8uxyBeeoeTuGEPCI'
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim()
+const SUPABASE_ANON_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim()
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [enabledProviders, setEnabledProviders] = useState<EnabledAuthProviders>({
@@ -115,11 +102,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setError(null)
   }, [])
 
-  const isAdmin = useMemo(() => {
-    if (profile?.role?.toLowerCase() === 'admin') return true
-    if (user?.email && ADMIN_EMAILS.has(user.email.trim().toLowerCase())) return true
-    return false
-  }, [profile, user])
+  const syncAdminStatus = useCallback(async (accessToken?: string | null) => {
+    if (!accessToken) {
+      setIsAdmin(false)
+      return
+    }
+    try {
+      const res = await fetch('/api/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        setIsAdmin(false)
+        return
+      }
+      const data = await res.json()
+      setIsAdmin(Boolean(data?.isAdmin))
+    } catch {
+      setIsAdmin(false)
+    }
+  }, [])
 
   const trackEvent = useCallback(
     async (
@@ -194,21 +196,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let mounted = true
 
     // Discover dynamically enabled auth providers so UI never exposes unconfigured SSO buttons
-    fetch(`${SUPABASE_URL}/auth/v1/settings`, {
-      headers: { apikey: SUPABASE_ANON_KEY },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((settingsData) => {
-        if (!mounted || !settingsData?.external) return
-        setEnabledProviders({
-          email: settingsData.external.email !== false,
-          google: Boolean(settingsData.external.google),
-          github: Boolean(settingsData.external.github),
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      fetch(`${SUPABASE_URL}/auth/v1/settings`, {
+        headers: { apikey: SUPABASE_ANON_KEY },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((settingsData) => {
+          if (!mounted || !settingsData?.external) return
+          setEnabledProviders({
+            email: settingsData.external.email !== false,
+            google: Boolean(settingsData.external.google),
+            github: Boolean(settingsData.external.github),
+          })
         })
-      })
-      .catch(() => {
-        // Keep conservative default (email enabled)
-      })
+        .catch(() => {
+          // Keep conservative default (email enabled)
+        })
+    }
 
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (!mounted) return
@@ -216,6 +220,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(initialSession?.user ?? null)
       if (initialSession?.user) {
         fetchProfile(initialSession.user.id)
+        void syncAdminStatus(initialSession.access_token)
+      } else {
+        setIsAdmin(false)
       }
       setLoading(false)
     })
@@ -227,9 +234,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(newSession)
       setUser(newSession?.user ?? null)
       if (newSession?.user) {
-        await fetchProfile(newSession.user.id)
+        await Promise.all([
+          fetchProfile(newSession.user.id),
+          syncAdminStatus(newSession.access_token),
+        ])
       } else {
         setProfile(null)
+        setIsAdmin(false)
       }
       setLoading(false)
     })
@@ -238,7 +249,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [fetchProfile])
+  }, [fetchProfile, syncAdminStatus])
 
   const buildCallbackUrl = (nextPath?: string) => {
     if (typeof window === 'undefined') return undefined
@@ -270,7 +281,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(data.user)
       setSession(data.session)
       if (data.user) {
-        await fetchProfile(data.user.id)
+        await Promise.all([
+          fetchProfile(data.user.id),
+          syncAdminStatus(data.session?.access_token),
+        ])
       }
       setLoading(false)
       return { success: true }
@@ -364,7 +378,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (createdUser && data.session) {
         setUser(createdUser)
         setSession(data.session)
-        await fetchProfile(createdUser.id)
+        await Promise.all([
+          fetchProfile(createdUser.id),
+          syncAdminStatus(data.session.access_token),
+        ])
       }
 
       setLoading(false)
@@ -470,6 +487,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(null)
       setSession(null)
       setProfile(null)
+      setIsAdmin(false)
     } catch (err) {
       console.error('Error logging out:', err)
     } finally {

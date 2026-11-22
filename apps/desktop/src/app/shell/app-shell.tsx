@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 
 import { PaneShell } from '@/components/pane-shell'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { HAS_NATIVE_FS, IS_LOCKED_DEMO, IS_WEB } from '@/lib/platform'
 import {
   $fileBrowserOpen,
   $sidebarOpen,
@@ -84,7 +85,8 @@ export function AppShell({
   // between the pane-tool cluster and the system cluster so they don't sit
   // flush against each other. Modeled as N gaps (N - 1 inner + 1 trailing)
   // to keep the formula generic for any pane-tool count.
-  const SYSTEM_TOOL_COUNT = 4
+  const SYSTEM_TOOL_COUNT =
+    1 + (IS_WEB ? 1 : 0) + (IS_LOCKED_DEMO ? 0 : 2) + (HAS_NATIVE_FS ? 1 : 0)
   const paneToolCount = titlebarTools?.filter(tool => !tool.hidden).length ?? 0
   const systemToolsWidth = `calc(${SYSTEM_TOOL_COUNT} * (var(--titlebar-control-size) + 0.25rem))`
 

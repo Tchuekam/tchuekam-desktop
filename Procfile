@@ -1,1 +1,1 @@
-web: python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --insecure --skip-build --no-open
+web: sh -c 'INSECURE=""; case "${HERMES_DASHBOARD_INSECURE:-}" in 1|true|TRUE|yes|YES) INSECURE="--insecure" ;; esac; exec python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --skip-build --no-open $INSECURE'

@@ -88,7 +88,7 @@ export function SupabaseAccountMenu() {
             <DropdownMenuItem
               onSelect={() => {
                 triggerHaptic('open')
-                window.location.assign(getAuthPortalUrl('/'))
+                window.open(getAuthPortalUrl('/'), '_blank', 'noopener,noreferrer')
               }}
             >
               <ExternalLink className="size-4" />
@@ -97,7 +97,7 @@ export function SupabaseAccountMenu() {
             <DropdownMenuItem
               onSelect={() => {
                 triggerHaptic('open')
-                window.location.assign(getAuthPortalUrl('/tracking'))
+                window.open(getAuthPortalUrl('/tracking'), '_blank', 'noopener,noreferrer')
               }}
             >
               <Activity className="size-4" />

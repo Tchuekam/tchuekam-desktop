@@ -13,15 +13,25 @@ node_modules
 .pip-cache/
 .uv-cache/
 
-# Built artifacts (included for cloud deployment)
-# ui-tui/dist/
-# ui-tui/packages/hermes-ink/dist/
+# Local test & scratch dirs
+tests/
+scratch/
+.plans/
+auth-portal/.next
+apps/desktop/release
+apps/desktop/dist
+!apps/desktop/dist-web
+!hermes_cli/web_dist
 
 # CI/CD
 .github
 
-# Environment files
+# Environment & local DB files
 .env
+.env.*
+*.db
+*.sqlite
+*.sqlite3
 
 *.md
 

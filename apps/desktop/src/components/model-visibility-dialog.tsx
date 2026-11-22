@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import type { HermesGateway } from '@/hermes'
 import { getGlobalModelOptions } from '@/hermes'
 import { displayModelName, modelDisplayParts } from '@/lib/model-status-label'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import {
   $visibleModels,
   collapseModelFamilies,
@@ -130,18 +131,20 @@ export function ModelVisibilityDialog({ gw, onOpenChange, onOpenProviders, open,
           )}
         </div>
 
-        <div className="px-3 py-2">
-          <button
-            className="text-xs text-(--ui-text-tertiary) transition-colors hover:text-foreground"
-            onClick={() => {
-              onOpenChange(false)
-              onOpenProviders()
-            }}
-            type="button"
-          >
-            Add provider…
-          </button>
-        </div>
+        {!IS_LOCKED_DEMO && (
+          <div className="px-3 py-2">
+            <button
+              className="text-xs text-(--ui-text-tertiary) transition-colors hover:text-foreground"
+              onClick={() => {
+                onOpenChange(false)
+                onOpenProviders()
+              }}
+              type="button"
+            >
+              Add provider…
+            </button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

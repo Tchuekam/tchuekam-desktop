@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getLogs, getStatus } from '@/hermes'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import type { StatusResponse } from '@/types/hermes'
 
@@ -21,7 +22,9 @@ export function useStatusSnapshot(gatewayState: string | undefined, requestGatew
       try {
         const [next, logs, inference] = await Promise.all([
           getStatus(),
-          getLogs({ file: 'gui', lines: LOG_TAIL }).catch(() => ({ lines: [] })),
+          IS_LOCKED_DEMO
+            ? Promise.resolve({ lines: [] as string[] })
+            : getLogs({ file: 'gui', lines: LOG_TAIL }).catch(() => ({ lines: [] })),
           gatewayState === 'open'
             ? evaluateRuntimeReadiness(requestGateway).catch(error => ({
                 checksDisagree: false,
