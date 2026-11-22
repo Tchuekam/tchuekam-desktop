@@ -17,6 +17,8 @@ const BACKEND = process.env.HERMES_DASHBOARD_URL ?? "http://127.0.0.1:9119";
  */
 function hermesDevToken(): Plugin {
   const TOKEN_RE = /window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/;
+  const AUTH_REQ_RE = /window\.__HERMES_AUTH_REQUIRED__\s*=\s*(true|false)/;
+  const BASE_PATH_RE = /window\.__HERMES_BASE_PATH__\s*=\s*"([^"]*)"/;
   const EMBEDDED_RE =
     /window\.__HERMES_DASHBOARD_EMBEDDED_CHAT__\s*=\s*(true|false)/;
   const LEGACY_TUI_RE =
@@ -30,7 +32,11 @@ function hermesDevToken(): Plugin {
         const res = await fetch(BACKEND, { headers: { accept: "text/html" } });
         const html = await res.text();
         const match = html.match(TOKEN_RE);
-        if (!match) {
+        const authMatch = html.match(AUTH_REQ_RE);
+        const authJs = authMatch ? authMatch[1] : "false";
+        const baseMatch = html.match(BASE_PATH_RE);
+        const basePath = baseMatch ? baseMatch[1] : "";
+        if (!match && authJs !== "true") {
           console.warn(
             `[hermes] Could not find session token in ${BACKEND} — ` +
               `is \`hermes dashboard\` running? /api calls will 401.`,
@@ -44,12 +50,15 @@ function hermesDevToken(): Plugin {
           : legacyMatch
             ? legacyMatch[1]
             : "false";
+        const tokenStmt = match ? `window.__HERMES_SESSION_TOKEN__=${JSON.stringify(match[1])};` : "";
         return [
           {
             tag: "script",
             injectTo: "head",
             children:
-              `window.__HERMES_SESSION_TOKEN__="${match[1]}";` +
+              tokenStmt +
+              `window.__HERMES_AUTH_REQUIRED__=${authJs};` +
+              `window.__HERMES_BASE_PATH__=${JSON.stringify(basePath)};` +
               `window.__HERMES_DASHBOARD_EMBEDDED_CHAT__=${embeddedJs};`,
           },
         ];
