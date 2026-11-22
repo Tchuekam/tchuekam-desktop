@@ -1,3 +1,4 @@
+import { IS_DESKTOP } from '@/lib/platform'
 import type { PreviewTarget } from '@/store/preview'
 
 const HTML_EXTENSIONS = new Set(['.htm', '.html'])
@@ -111,6 +112,27 @@ export async function normalizeOrLocalPreviewTarget(
   rawTarget: string,
   cwd?: string | null
 ): Promise<PreviewTarget | null> {
+  if (!IS_DESKTOP) {
+    const trimmed = rawTarget.trim()
+
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed)
+
+        return {
+          kind: 'url',
+          label: parsed.hostname || trimmed,
+          source: trimmed,
+          url: parsed.href
+        }
+      } catch {
+        return null
+      }
+    }
+
+    return null
+  }
+
   try {
     const normalized = await window.hermesDesktop?.normalizePreviewTarget?.(rawTarget, cwd || undefined)
 
