@@ -69,13 +69,11 @@
   --shadow-header:
     0 0.0625rem 0 color-mix(in srgb, var(--dt-foreground) 7%, transparent),
     0 0.625rem 1.5rem -1.25rem color-mix(in srgb, #000 16%, transparent);
-  --shadow-composer: 0 0.0625rem 0.125rem color-mix(in srgb, #000 4%, transparent);
-  /* Focus is a single quiet ring. The previous four-layer stack (two coloured
-   * rings + two drops) read as a glow; a neutral hairline is enough to say
-   * "this is where you type". */
+  --shadow-composer: var(--tk-glass-elevated-shadow);
   --shadow-composer-focus:
-    0 0 0 0.0625rem color-mix(in srgb, var(--dt-composer-ring) calc(40% * var(--composer-ring-strength)), transparent),
-    0 0.125rem 0.5rem color-mix(in srgb, #000 5%, transparent);
+    0 0 0 1px var(--tk-indigo-border),
+    0 0 0 4px var(--tk-indigo-glow),
+    var(--tk-glass-elevated-shadow);
 }
 
 @layer base {
@@ -86,25 +84,62 @@
   --safe-area-right: env(safe-area-inset-right, 0px);
     color-scheme: light;
 
-    --theme-foreground: #0d0d0d;
-    --theme-primary: #0d0d0d;
-    --theme-secondary: #f7f7f7;
-    --theme-accent-soft: #f0f0f0;
-    --theme-midground: #171717;
+    --theme-foreground: #0f1424;
+    --theme-primary: #4f46e5;
+    --theme-secondary: #eef1f8;
+    --theme-accent-soft: #eceffa;
+    --theme-midground: #4f46e5;
     --theme-warm: #cf806d;
-    --theme-background-seed: #ffffff;
-    --theme-sidebar-seed: #fcfcfc;
+    --theme-background-seed: #f8f9fc;
+    --theme-sidebar-seed: #f3f5fa;
     --theme-card-seed: #ffffff;
     --theme-elevated-seed: #ffffff;
-    --theme-bubble-seed: #f7f7f7;
-    --theme-neutral-chrome: #ffffff;
-    --theme-neutral-sidebar: #fcfcfc;
-    --theme-neutral-card: #fcfcfc;
+    --theme-bubble-seed: #f2f4fb;
+    --theme-neutral-chrome: #f8f9fc;
+    --theme-neutral-sidebar: #f3f5fa;
+    --theme-neutral-card: #ffffff;
     --theme-mix-chrome: 92%;
     --theme-mix-sidebar: 100%;
     --theme-mix-card: 22%;
     --theme-mix-elevated: 28%;
     --theme-mix-bubble: 0%;
+
+    /* Scoped TchuekaM Three-Color + Glass Material Tokens (Light Mode) */
+    --tk-indigo: #4f46e5;
+    --tk-indigo-hover: #4338ca;
+    --tk-indigo-text: #4338ca;
+    --tk-indigo-soft: rgba(79, 70, 229, 0.08);
+    --tk-indigo-border: rgba(79, 70, 229, 0.24);
+    --tk-indigo-glow: rgba(79, 70, 229, 0.16);
+    --tk-cyan: #0284c7;
+    --tk-cyan-text: #0369a1;
+    --tk-cyan-soft: rgba(2, 132, 199, 0.085);
+    --tk-cyan-border: rgba(2, 132, 199, 0.24);
+    --tk-cyan-glow: rgba(2, 132, 199, 0.16);
+    --tk-cta-top: #5b54ee;
+    --tk-cta-bottom: #4338ca;
+    --tk-cta-shadow:
+      0 1px 2px rgba(15, 20, 36, 0.14),
+      0 6px 16px -6px rgba(79, 70, 229, 0.42),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    --tk-glass-bg: rgba(255, 255, 255, 0.78);
+    --tk-glass-elevated-bg: rgba(255, 255, 255, 0.88);
+    --tk-glass-subtle-bg: rgba(248, 250, 254, 0.74);
+    --tk-glass-border: rgba(15, 23, 42, 0.085);
+    --tk-specular-edge: rgba(255, 255, 255, 0.85);
+    --tk-glass-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 8px 24px -12px rgba(15, 23, 42, 0.09),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-glass-elevated-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.05),
+      0 14px 36px -14px rgba(15, 23, 42, 0.14),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-stage-bg: #eef1f7;
+    --tk-voice-surface: rgba(240, 249, 255, 0.88);
+    --tk-voice-shadow:
+      0 4px 18px -6px rgba(2, 132, 199, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
     /* Accent tint per surface. All zero by design: colour is spent on the
      * primary action and destructive states only, never on chrome. Each fill
@@ -234,10 +269,10 @@
       var(--theme-neutral-card)
     );
     --ui-chat-bubble-opaque-background: var(--ui-bg-editor);
-    --ui-inline-code-background: color-mix(in srgb, #141414 5%, transparent);
-    --ui-inline-code-border: color-mix(in srgb, #141414 8%, transparent);
-    --ui-inline-code-foreground: color-mix(in srgb, #141414 88%, transparent);
-    --ui-selection-background: color-mix(in srgb, #ffd24a 55%, transparent);
+    --ui-inline-code-background: color-mix(in srgb, var(--tk-indigo) 6%, transparent);
+    --ui-inline-code-border: color-mix(in srgb, var(--tk-indigo) 14%, transparent);
+    --ui-inline-code-foreground: color-mix(in srgb, var(--ui-base) 92%, transparent);
+    --ui-selection-background: color-mix(in srgb, var(--tk-indigo) 22%, transparent);
 
     --dt-background: var(--ui-bg-chrome);
     --dt-foreground: var(--ui-text-primary);
@@ -257,7 +292,7 @@
     --dt-input: var(--ui-stroke-primary);
     --dt-ring: var(--ui-stroke-primary);
     --dt-midground: var(--theme-midground);
-    --dt-composer-ring: var(--ui-base);
+    --dt-composer-ring: var(--tk-indigo);
     --dt-destructive: #cf2d56;
     --dt-destructive-foreground: #ffffff;
     --dt-sidebar-bg: var(--ui-bg-sidebar);
@@ -268,39 +303,39 @@
     --dt-font-sans: 'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
     --dt-font-mono: 'Cascadia Code', 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
     --dt-base-size: 1rem;
-    --dt-line-height: 1.5;
+    --dt-line-height: 1.62;
     --dt-letter-spacing: 0;
     --dt-spacing-mul: 1;
 
     --radius: 0.75rem;
-    --radius-scalar: 0.6;
+    --radius-scalar: 0.85;
 
     /* Space under last message vs overlay composer — driven by the measured composer height (see composer/index.tsx). */
-    --thread-last-message-clearance: calc(var(--composer-measured-height) + 2rem);
+    --thread-last-message-clearance: calc(var(--composer-measured-height) + 2.25rem);
 
-    --composer-shell-pad-block-end: 0.625rem;
+    --composer-shell-pad-block-end: 0.75rem;
     --message-text-indent: 0.75rem;
-    --conversation-text-font-size: 0.8125rem;
-    --conversation-tool-font-size: var(--conversation-text-font-size);
+    --conversation-text-font-size: 0.875rem;
+    --conversation-tool-font-size: 0.8125rem;
     --conversation-caption-font-size: 0.75rem;
-    --conversation-line-height: 1.125rem;
-    --conversation-caption-line-height: 1rem;
-    --conversation-turn-gap: 0.375rem;
-    --sticky-human-top: 0.23rem;
+    --conversation-line-height: 1.25rem;
+    --conversation-caption-line-height: 1.0625rem;
+    --conversation-turn-gap: 0.5rem;
+    --sticky-human-top: 0.25rem;
     --file-tree-row-height: 1.375rem;
 
     --composer-width: 48.75rem;
-    --composer-control-size: 1.75rem;
-    --composer-control-primary-size: 1.875rem;
-    --composer-control-gap: 0.25rem;
-    --composer-row-gap: 0.25rem;
+    --composer-control-size: 2rem;
+    --composer-control-primary-size: 2.125rem;
+    --composer-control-gap: 0.3125rem;
+    --composer-row-gap: 0.375rem;
     --composer-ring-strength: 1;
-    --composer-surface-pad-x: 0.5rem;
-    --composer-surface-pad-y: 0.3125rem;
-    --composer-input-min-height: 1.625rem;
-    --composer-input-max-height: 9.375rem;
+    --composer-surface-pad-x: 0.6875rem;
+    --composer-surface-pad-y: 0.4375rem;
+    --composer-input-min-height: 1.875rem;
+    --composer-input-max-height: 10.5rem;
     --composer-input-inline-min-width: 8rem;
-    --composer-fallback-height: 2.75rem;
+    --composer-fallback-height: 3.125rem;
     --composer-measured-height: calc(0.5rem + var(--composer-shell-pad-block-end) + var(--composer-fallback-height));
     --composer-surface-measured-height: var(--composer-fallback-height);
     --thread-viewport-height: max(
@@ -340,27 +375,64 @@
 
   :root.dark {
     /* Per-mode mix knobs — overridden inline by `applyTheme()` per skin. */
-    --theme-mix-chrome: 74%;
-    --theme-mix-card: 38%;
-    --theme-mix-elevated: 46%;
-    --theme-mix-bubble: 46%;
-    --theme-neutral-chrome: #0d0d0e;
-    --theme-neutral-sidebar: #0a0a0b;
-    --theme-neutral-card: #161618;
+    --theme-mix-chrome: 78%;
+    --theme-mix-card: 44%;
+    --theme-mix-elevated: 52%;
+    --theme-mix-bubble: 48%;
+    --theme-neutral-chrome: #0b0e17;
+    --theme-neutral-sidebar: #080b13;
+    --theme-neutral-card: #111626;
+
+    /* Scoped TchuekaM Three-Color + Glass Material Tokens (Dark Mode) */
+    --tk-indigo: #6366f1;
+    --tk-indigo-hover: #7577f8;
+    --tk-indigo-text: #a5b4fc;
+    --tk-indigo-soft: rgba(99, 102, 241, 0.14);
+    --tk-indigo-border: rgba(129, 140, 248, 0.3);
+    --tk-indigo-glow: rgba(99, 102, 241, 0.24);
+    --tk-cyan: #38bdf8;
+    --tk-cyan-text: #7dd3fc;
+    --tk-cyan-soft: rgba(56, 189, 248, 0.12);
+    --tk-cyan-border: rgba(56, 189, 248, 0.28);
+    --tk-cyan-glow: rgba(56, 189, 248, 0.22);
+    --tk-cta-top: #6b6af2;
+    --tk-cta-bottom: #4f46e5;
+    --tk-cta-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 8px 20px -6px rgba(99, 102, 241, 0.48),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --tk-glass-bg: rgba(18, 24, 41, 0.72);
+    --tk-glass-elevated-bg: rgba(21, 28, 48, 0.84);
+    --tk-glass-subtle-bg: rgba(15, 20, 35, 0.64);
+    --tk-glass-border: rgba(148, 163, 210, 0.13);
+    --tk-specular-edge: rgba(255, 255, 255, 0.08);
+    --tk-glass-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.28),
+      0 10px 28px -12px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-glass-elevated-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.34),
+      0 18px 42px -12px rgba(0, 0, 0, 0.68),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-stage-bg: #080b14;
+    --tk-voice-surface: rgba(15, 26, 46, 0.86);
+    --tk-voice-shadow:
+      0 6px 24px -6px rgba(56, 189, 248, 0.28),
+      inset 0 1px 0 rgba(125, 211, 252, 0.16);
 
     /* Dark-only accent palette overrides. */
-    --ui-red: #e75e78;
-    --ui-green: #55a583;
-    --ui-cyan: #6f9ba6;
+    --ui-red: #f0526e;
+    --ui-green: #4ade80;
+    --ui-cyan: #38bdf8;
 
     --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 12%, transparent);
     --composer-ring-strength: 1.3;
     --backdrop-invert-mul: 0;
 
-    --ui-inline-code-background: color-mix(in srgb, #ffffff 7%, transparent);
-    --ui-inline-code-border: color-mix(in srgb, #ffffff 10%, transparent);
-    --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
-    --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
+    --ui-inline-code-background: color-mix(in srgb, var(--tk-indigo) 12%, transparent);
+    --ui-inline-code-border: color-mix(in srgb, var(--tk-indigo) 22%, transparent);
+    --ui-inline-code-foreground: #e0e7ff;
+    --ui-selection-background: color-mix(in srgb, var(--tk-indigo) 30%, transparent);
   }
 
   * {
@@ -434,7 +506,7 @@
 @layer utilities {
   [class*='rounded-full'],
   [class*=':rounded-full'] {
-    border-radius: calc(var(--radius-scalar) * 9999rem);
+    border-radius: 9999px;
   }
 }
 
@@ -694,6 +766,89 @@ canvas {
   .dt-portal-scrollbar::-webkit-scrollbar-button {
     display: none;
   }
+
+  /* TchuekaM Material & Motion Primitives (Main Chat + Business Hub) */
+  .tk-glass {
+    border: 1px solid var(--tk-glass-border);
+    background: var(--tk-glass-bg);
+    box-shadow: var(--tk-glass-shadow);
+    backdrop-filter: blur(18px) saturate(1.35);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  }
+
+  .tk-glass-elevated {
+    border: 1px solid var(--tk-glass-border);
+    background: var(--tk-glass-elevated-bg);
+    box-shadow: var(--tk-glass-elevated-shadow);
+    backdrop-filter: blur(22px) saturate(1.42);
+    -webkit-backdrop-filter: blur(22px) saturate(1.42);
+  }
+
+  .tk-glass-subtle {
+    border: 1px solid var(--tk-glass-border);
+    background: var(--tk-glass-subtle-bg);
+    box-shadow: inset 0 1px 0 var(--tk-specular-edge);
+    backdrop-filter: blur(12px) saturate(1.22);
+    -webkit-backdrop-filter: blur(12px) saturate(1.22);
+  }
+
+  .tk-btn-primary {
+    border: 1px solid color-mix(in srgb, var(--tk-indigo) 65%, transparent);
+    background: linear-gradient(180deg, var(--tk-cta-top), var(--tk-cta-bottom));
+    box-shadow: var(--tk-cta-shadow);
+    transition:
+      filter 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .tk-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.07);
+  }
+
+  .tk-surface-hover {
+    transition:
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .tk-ambient-halo {
+    background:
+      radial-gradient(52% 95% at 50% -10%, var(--tk-indigo-glow), transparent 72%),
+      radial-gradient(38% 70% at 80% 0%, var(--tk-cyan-glow), transparent 68%);
+  }
+
+  @keyframes tk-breathe {
+    0%,
+    100% {
+      opacity: 0.72;
+      transform: scale(0.92);
+      box-shadow: 0 0 0 0 var(--tk-cyan-glow);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.08);
+      box-shadow: 0 0 0 4px var(--tk-cyan-soft);
+    }
+  }
+
+  .tk-thinking-dot {
+    background: linear-gradient(135deg, var(--tk-indigo), var(--tk-cyan));
+    animation: tk-breathe 2.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tk-thinking-dot {
+      animation: none;
+    }
+
+    .tk-btn-primary,
+    .tk-surface-hover {
+      transition: none;
+    }
+  }
 }
 
 /* Bottom clearance lives on [data-slot='aui_composer-clearance'] —
@@ -702,7 +857,7 @@ canvas {
 [data-slot='aui_assistant-message-content'] {
   padding-left: var(--message-text-indent);
   font-size: var(--conversation-text-font-size);
-  line-height: 1.5;
+  line-height: var(--dt-line-height, 1.62);
 }
 
 [data-slot='aui_assistant-message-root'] {
@@ -858,25 +1013,26 @@ canvas {
 }
 
 [data-slot='composer-surface'] {
-  border-color: var(--ui-stroke-secondary) !important;
-  box-shadow: var(--shadow-composer) !important;
+  border-color: var(--tk-glass-border);
+  box-shadow: var(--shadow-composer);
+}
+
+[data-slot='composer-root']:focus-within [data-slot='composer-surface'] {
+  border-color: var(--tk-indigo-border);
+  box-shadow: var(--shadow-composer-focus);
 }
 
 [data-slot='composer-fade'] {
-  min-height: 2.375rem;
+  min-height: 2.5rem;
 }
 
 [data-slot='composer-rich-input'] {
   color: var(--ui-text-primary);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 
 [data-slot='composer-rich-input']:empty::before {
   color: var(--ui-text-tertiary) !important;
-}
-
-[data-slot='composer-root']:focus-within [data-slot='composer-surface'] > [aria-hidden='true'] {
-  background: var(--ui-chat-bubble-background) !important;
 }
 
 /* Tool/thinking blocks now live at message-text alignment (no leading
@@ -948,21 +1104,23 @@ canvas {
 }
 
 /* Tool / thinking blocks are scaffolding around the model's reply, so we
-   keep them transparent and fade them slightly. The reading column (prose)
-   stays at full strength; scaffolding lifts back to full opacity on
-   hover/focus so it stays legible when the user actually wants to read it. */
+   keep them subtly recessed until hovered, focused, or expanded. */
 [data-slot='tool-block'],
 [data-slot='aui_thinking-disclosure'] {
   background: transparent !important;
 }
 
 [data-slot='aui_assistant-message-content'] > :is([data-slot='tool-block'], [data-slot='aui_thinking-disclosure']) {
-  opacity: 0.67;
-  transition: opacity 120ms ease-out;
+  opacity: 0.86;
+  transition: opacity 150ms ease-out;
 }
 
 [data-slot='aui_assistant-message-content']
-  > :is([data-slot='tool-block'], [data-slot='aui_thinking-disclosure']):is(:hover, :focus-within) {
+  > :is([data-slot='tool-block'], [data-slot='aui_thinking-disclosure']):is(
+    :hover,
+    :focus-within,
+    :has([aria-expanded='true'])
+  ) {
   opacity: 1;
 }
 
@@ -971,11 +1129,11 @@ canvas {
    block and adjacent prose bumps up so the model's reply visually
    separates from its scaffolding. */
 [data-slot='tool-block'] + [data-slot='tool-block'] {
-  margin-top: 0.375rem;
+  margin-top: 0.4375rem;
 }
 
 [data-slot='tool-block']:has(> :nth-child(2)) + [data-slot='tool-block'] {
-  margin-top: 0.625rem;
+  margin-top: 0.6875rem;
 }
 
 [data-slot='aui_assistant-message-content']
@@ -996,13 +1154,13 @@ canvas {
   margin-top: 0;
 }
 
-/* Message action bars — flat icon hits with default dim; only the hovered/focused control is full-strength. */
+/* Message action bars — refined rounded icon hits with crisp hover surface. */
 [data-slot='aui_msg-actions'] button {
   border: 0;
-  border-radius: 0;
+  border-radius: 0.375rem;
   background: transparent;
   box-shadow: none;
-  padding: 0;
+  padding: 0.25rem;
   gap: 0;
   height: auto;
   width: auto;
@@ -1011,7 +1169,11 @@ canvas {
   flex-shrink: 0;
   cursor: pointer;
   color: var(--color-muted-foreground);
-  opacity: 0.5;
+  opacity: 0.58;
+  transition:
+    opacity 150ms ease-out,
+    background-color 150ms ease-out,
+    color 150ms ease-out;
 }
 
 [data-slot='aui_msg-actions'] button:disabled {
@@ -1019,7 +1181,7 @@ canvas {
 }
 
 [data-slot='aui_msg-actions'] button:hover {
-  background: transparent;
+  background: var(--ui-control-hover-background);
   color: var(--color-foreground);
   opacity: 1;
 }
