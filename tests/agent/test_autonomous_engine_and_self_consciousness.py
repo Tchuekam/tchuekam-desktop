@@ -215,3 +215,220 @@ def test_duplicate_write_file_mutation_prevented_in_same_turn(tmp_path: Path):
         {"path": str(target), "content": content},
         task_id="test_dedup_turn",
     )
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == content
+
+    # Second identical write in the same turn is intercepted and skipped cleanly
+    res2 = json.loads(
+        model_tools.handle_function_call(
+            "write_file",
+            {"path": str(target), "content": content},
+            task_id="test_dedup_turn",
+        )
+    )
+    assert res2.get("status") == "ok"
+    assert res2.get("dedup_skipped") is True
+    assert res2.get("verified_on_disk") is True
+
+
+def test_autonomous_plan_end_to_end_verification_and_deliverable_synthesis(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes_home"))
+    report_docx = tmp_path / "Executive_Business_Report.docx"
+    report_md = tmp_path / "Executive_Business_Report.md"
+
+    create_res = json.loads(
+        autonomous_plan_tool(
+            action="create",
+            objective="Produce a verified Executive Business Intelligence Report",
+            steps=[
+                {
+                    "id": "s1",
+                    "title": "Synthesize Word and Markdown executive deliverables",
+                    "tool": "autonomous_plan",
+                    "specialist": "mbowagpt-relentless",
+                    "expected_outputs": [str(report_docx), str(report_md)],
+                },
+                {
+                    "id": "s2",
+                    "title": "Final quality verification",
+                    "tool": "autonomous_plan",
+                    "specialist": "mbowagpt-relentless",
+                    "depends_on": ["s1"],
+                },
+            ],
+        )
+    )
+    assert create_res["success"] is True
+    plan_id = create_res["plan"]["plan_id"]
+
+    # Attempting to complete s2 before s1 fails dependency check
+    dep_fail = json.loads(
+        autonomous_plan_tool(
+            action="update_step",
+            plan_id=plan_id,
+            step_id="s2",
+            status="completed",
+        )
+    )
+    assert dep_fail["success"] is False
+    assert "s1" in dep_fail["unmet_dependencies"]
+
+    # Attempting to complete s1 BEFORE generating the output files is blocked by verification gate
+    gate_fail = json.loads(
+        autonomous_plan_tool(
+            action="update_step",
+            plan_id=plan_id,
+            step_id="s1",
+            status="completed",
+        )
+    )
+    assert gate_fail["success"] is False
+    assert gate_fail["verified"] is False
+    assert len(gate_fail["missing_or_empty_files"]) == 2
+
+    # Synthesize both deliverables on disk (.docx and .md)
+    sections = [
+        {
+            "heading": "1. Executive Summary",
+            "content": "TchuekaM operates as a self-conscious, offline-capable autonomous digital workforce.",
+        },
+        {
+            "heading": "2. Financial & Operational Outlook",
+            "content": "Unit economics demonstrate 78% gross margin with zero mandatory cloud dependency.",
+        },
+    ]
+    synth_docx = json.loads(
+        autonomous_plan_tool(
+            action="synthesize_deliverable",
+            plan_id=plan_id,
+            output_path=str(report_docx),
+            title="Giantech Empire — Executive Business Report",
+            sections=sections,
+        )
+    )
+    assert synth_docx["success"] is True
+    assert synth_docx["deliverable"]["exists"] is True
+    assert synth_docx["deliverable"]["non_empty"] is True
+
+    synth_md = json.loads(
+        autonomous_plan_tool(
+            action="synthesize_deliverable",
+            plan_id=plan_id,
+            output_path=str(report_md),
+            title="Giantech Empire — Executive Business Report",
+            sections=sections,
+        )
+    )
+    assert synth_md["success"] is True
+    assert report_md.exists()
+
+    # Verify that read_document can read back the synthesized .docx deliverable
+    read_back = json.loads(
+        model_tools.handle_function_call(
+            "read_document",
+            {"path": str(report_docx)},
+            task_id="verify_docx",
+        )
+    )
+    assert read_back["success"] is True
+    assert "78% gross margin" in read_back["content"]
+
+    # Now mark s1 and s2 completed and verify the entire plan
+    s1_ok = json.loads(
+        autonomous_plan_tool(
+            action="update_step",
+            plan_id=plan_id,
+            step_id="s1",
+            status="completed",
+            result_summary="Generated and verified DOCX and MD reports.",
+        )
+    )
+    assert s1_ok["success"] is True
+
+    s2_ok = json.loads(
+        autonomous_plan_tool(
+            action="update_step",
+            plan_id=plan_id,
+            step_id="s2",
+            status="completed",
+            result_summary="All deliverables audited.",
+        )
+    )
+    assert s2_ok["success"] is True
+    assert s2_ok["plan_status"] == "completed"
+    assert s2_ok["plan_verified"] is True
+
+    verify_res = json.loads(autonomous_plan_tool(action="verify", plan_id=plan_id))
+    assert verify_res["verified"] is True
+    assert verify_res["missing_or_empty_artifacts"] == []
+    assert len(verify_res["verified_artifacts"]) >= 2
+
+
+def test_autonomous_plan_execute_workflow_multi_tool_data_passing_and_resumption(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes_home"))
+    source_docx = tmp_path / "raw_market_notes.docx"
+    final_brief_md = tmp_path / "synthesized_market_brief.md"
+
+    write_minimal_docx(
+        source_docx,
+        "Central Africa AI Market Notes",
+        "Key insight: 92% of enterprises require offline-first sovereign AI execution.",
+    )
+
+    # Execute a 2-step multi-tool workflow where step_2 consumes {{step_1.content}} from step_1
+    wf_res = json.loads(
+        autonomous_plan_tool(
+            action="execute_workflow",
+            objective="Extract market notes from DOCX and compile a verified executive markdown brief",
+            steps=[
+                {
+                    "id": "step_1",
+                    "title": "Extract raw market notes from DOCX",
+                    "tool": "read_document",
+                    "args": {"path": str(source_docx)},
+                },
+                {
+                    "id": "step_2",
+                    "title": "Write synthesized brief passing step_1 output",
+                    "tool": "write_file",
+                    "depends_on": ["step_1"],
+                    "expected_outputs": [str(final_brief_md)],
+                    "args": {
+                        "path": str(final_brief_md),
+                        "content": "# Executive Market Brief\n\nExtracted Source:\n{{step_1.content}}\n",
+                    },
+                },
+            ],
+        )
+    )
+    assert wf_res["success"] is True
+    assert wf_res["verified"] is True
+    assert wf_res["executed_steps"] == ["step_1", "step_2"]
+    assert final_brief_md.exists()
+    brief_text = final_brief_md.read_text(encoding="utf-8")
+    assert "92% of enterprises require offline-first sovereign AI execution." in brief_text
+
+
+def test_skill_discover_evaluate_and_capability_catalog(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes_home"))
+
+    # Evaluate one of our flagship skills for relevance, security, and offline compatibility
+    eval_res = json.loads(
+        skill_discover_tool(
+            action="evaluate",
+            query="executive-strategy-and-reporting",
+            objective="Build a financial valuation and market strategy report",
+        )
+    )
+    assert eval_res["success"] is True
+    ev = eval_res["evaluation"]
+    assert ev["domain"] == "business_intelligence"
+    assert ev["security_verdict"] == "safe"
+    assert ev["offline_compatible"] is True
+    assert ev["compromises_offline_operation"] is False
+    assert ev["approved_for_integration"] is True
+
+    # Inspect capability catalog
+    cat_res = json.loads(skill_discover_tool(action="catalog"))
+    assert cat_res["success"] is True
+    assert "catalog" in cat_res
