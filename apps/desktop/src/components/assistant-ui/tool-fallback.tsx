@@ -104,7 +104,7 @@ function statusGlyph(status: ToolStatus): ReactNode {
     return (
       <BrailleSpinner
         ariaLabel="Running"
-        className="size-3.5 shrink-0 text-[0.95rem] text-(--ui-text-tertiary)"
+        className="size-3.5 shrink-0 text-[0.95rem] text-(--tk-cyan)"
         spinner="breathe"
       />
     )
@@ -118,7 +118,7 @@ function statusGlyph(status: ToolStatus): ReactNode {
     return <AlertCircle aria-label="Recovered" className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
   }
 
-  return <CheckCircle2 aria-label="Done" className="size-3.5 shrink-0 text-emerald-600/85 dark:text-emerald-400/85" />
+  return <CheckCircle2 aria-label="Done" className="size-3.5 shrink-0 text-emerald-600/90 dark:text-emerald-400/90" />
 }
 
 // Leading glyph for any tool-row header. Status (running/error/warning)
