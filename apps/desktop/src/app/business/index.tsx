@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { $terminalTakeover } from '@/app/right-sidebar/store'
 import { Codicon } from '@/components/ui/codicon'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { queueComposerSeed } from '@/store/composer'
 import { notify } from '@/store/notifications'
@@ -11,6 +12,11 @@ import { notify } from '@/store/notifications'
 import { NEW_CHAT_ROUTE } from '../routes'
 
 import { DocumentWorkspace } from './components/editor/document-workspace'
+import {
+  BusinessLocalAiInlineCard,
+  BusinessLocalAiModal,
+  BusinessLocalAiStatusBadge
+} from './components/local-ai/business-local-agent-panel'
 import { ProfileModal } from './components/profile/profile-modal'
 import { exportBusinessDocument } from './exporters'
 import {
@@ -30,6 +36,7 @@ import {
   openBusinessDocument,
   renameBusinessDocument
 } from './store'
+import { askBusinessLocalAgent } from './store/local-ai'
 import type { BusinessDocument, DocumentTemplate } from './types'
 
 interface Builder {
@@ -165,6 +172,7 @@ export function BusinessView() {
   const [docTypeFilter, setDocTypeFilter] = useState<string>('all')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [scanning, setScanning] = useState(false)
   const scanFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const canStartChat = !takeover
@@ -188,7 +196,7 @@ export function BusinessView() {
   }
 
   const handleScanButton = () => {
-    if (!canStartChat) {
+    if (!canStartChat || scanning) {
       return
     }
 
@@ -198,10 +206,11 @@ export function BusinessView() {
   const handleScanFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
 
-    if (!file) {
+    if (!file || scanning) {
       return
     }
 
+    setScanning(true)
     void extractDocumentFromFile(file)
       .then(res => {
         createBusinessDocument('scan', {
@@ -231,6 +240,7 @@ export function BusinessView() {
         })
       })
       .finally(() => {
+        setScanning(false)
         if (scanFileInputRef.current) {
           scanFileInputRef.current.value = ''
         }
@@ -295,6 +305,7 @@ export function BusinessView() {
       !docSearch.trim() ||
       doc.title.toLowerCase().includes(docSearch.toLowerCase()) ||
       doc.type.toLowerCase().includes(docSearch.toLowerCase())
+
     const matchesType = docTypeFilter === 'all' || doc.type === docTypeFilter
 
     return matchesSearch && matchesType
@@ -313,6 +324,7 @@ export function BusinessView() {
         />
 
         <ProfileModal onClose={() => setProfileOpen(false)} open={profileOpen} />
+        {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
 
         {/* Apple-style Hero Header */}
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/50 pb-6">
@@ -342,6 +354,7 @@ export function BusinessView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
             <button
               aria-label="Business & Personal Profiles"
               className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3.5 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted"
@@ -423,442 +436,10 @@ export function BusinessView() {
                 <Codicon name="close" size="0.85rem" />
               </button>
             )}
-            <button
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white shadow-xs transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canStartChat || !question.trim()}
-              style={{ background: 'linear-gradient(180deg,#B57E23,#8a5a12)' }}
-              type="submit"
-            >
-              Open in chat
-            </button>
-          </form>
-
-          {/* Quick Consultation Chips */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <span className="text-[0.6875rem] font-medium text-muted-foreground">Quick queries:</span>
-            {CONSULTANT_SUGGESTIONS.map(prompt => (
+            {IS_DESKTOP ? (
               <button
-                className="rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[0.6875rem] text-muted-foreground transition hover:border-primary/40 hover:bg-card hover:text-foreground disabled:opacity-40"
-                disabled={!canStartChat}
-                key={prompt}
-                onClick={() => setQuestion(prompt)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!canStartChat || !question.trim()}
+                onClick={() => void askBusinessLocalAgent(question.trim())}
                 type="button"
               >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Quick Creation / Interactive Builders */}
-        <div className="mb-4 mt-9 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold tracking-tight">Interactive builders</h2>
-            <span className="rounded-full bg-[#1F8A65]/12 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-[#17694D] dark:text-emerald-400">
-              Live Editor + Export
-            </span>
-          </div>
-          <button
-            className="text-xs font-semibold text-primary transition hover:underline disabled:opacity-40"
-            disabled={!canStartChat}
-            onClick={() => startChat(NEW_DOCUMENT_PROMPT)}
-            type="button"
-          >
-            Or draft custom document in chat →
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
-          {BUILDERS.map(b => (
-            <div
-              className="group flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-2xs transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg"
-              key={b.id}
-            >
-              <button
-                aria-label={b.title}
-                className="flex flex-1 flex-col text-left disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!canStartChat}
-                onClick={() => handleOpenBuilder(b.id)}
-                type="button"
-              >
-                <div className="relative h-[135px] w-full overflow-hidden bg-gradient-to-br from-primary/[0.08] to-transparent">
-                  <DocLines variant={b.id === 'invoice' ? 'invoice' : b.id === 'deck' ? 'deck' : 'cv'} />
-                </div>
-                <div className="flex items-start gap-2.5 p-3.5">
-                  <span
-                    className={cn(
-                      'grid size-8 shrink-0 place-items-center rounded-xl shadow-2xs',
-                      b.accent === 'gold'
-                        ? 'bg-[#C98A2B]/12 text-[#B57E23]'
-                        : 'bg-primary/10 text-primary'
-                    )}
-                  >
-                    <Codicon name={b.icon} size="1rem" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">{b.title}</span>
-                    <span className="mt-0.5 block text-[0.6875rem] text-muted-foreground">{b.sub}</span>
-                  </span>
-                  <Codicon
-                    className="mt-1 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary"
-                    name="chevron-right"
-                    size="0.85rem"
-                  />
-                </div>
-              </button>
-              <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2">
-                <button
-                  className="text-[0.6875rem] font-semibold text-primary transition hover:underline disabled:opacity-40"
-                  disabled={!canStartChat}
-                  onClick={() => handleOpenBuilder(b.id)}
-                  type="button"
-                >
-                  Open Studio
-                </button>
-                <button
-                  aria-label={`Draft ${b.title} in chat`}
-                  className="text-[0.6875rem] font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-40"
-                  disabled={!canStartChat}
-                  onClick={() => startChat(BUILDER_PROMPTS[b.id])}
-                  type="button"
-                >
-                  Chat prompt
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Recent Documents Section */}
-        <section className="mt-10">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-bold tracking-tight">Recent Documents</h2>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-                {documents.length}
-              </span>
-            </div>
-
-            {documents.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <input
-                    className="h-7 w-36 rounded-lg border border-border/70 bg-card/80 px-2 pl-6 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:w-48 transition-all"
-                    onChange={e => setDocSearch(e.target.value)}
-                    placeholder="Search docs..."
-                    value={docSearch}
-                  />
-                  <Codicon className="absolute left-1.5 top-1.5 text-muted-foreground" name="search" size="0.75rem" />
-                </div>
-                <select
-                  aria-label="Filter documents by type"
-                  className="h-7 rounded-lg border border-border/70 bg-card/80 px-2 text-xs font-medium text-muted-foreground focus:outline-none"
-                  onChange={e => setDocTypeFilter(e.target.value)}
-                  value={docTypeFilter}
-                >
-                  <option value="all">All types</option>
-                  <option value="cv">CV / Résumé</option>
-                  <option value="invoice">Facture</option>
-                  <option value="quote">Devis</option>
-                  <option value="contract">Contrat</option>
-                  <option value="deck">Pitch Deck</option>
-                  <option value="plan">Business Plan</option>
-                  <option value="letter">Lettre</option>
-                  <option value="attestation">Attestation</option>
-                  <option value="scan">Scan</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          {documents.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground backdrop-blur-xs">
-              No saved documents yet. Choose a builder above or select a template below to create your first document.
-            </div>
-          ) : filteredDocuments.length === 0 ? (
-            <div className="rounded-2xl border border-border/60 bg-card/40 p-6 text-center text-xs text-muted-foreground">
-              No documents matched your search filter.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredDocuments.map(doc => (
-                <div
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card/90 px-4 py-3 shadow-2xs backdrop-blur-sm transition-all hover:border-primary/30"
-                  key={doc.id}
-                >
-                  <div className="min-w-0 flex-1">
-                    {renamingId === doc.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          aria-label={`Rename input for ${doc.title}`}
-                          autoFocus
-                          className="h-7 rounded-lg border border-primary bg-background px-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          onChange={e => setRenameDraft(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              handleCommitRename(doc.id)
-                            } else if (e.key === 'Escape') {
-                              e.preventDefault()
-                              setRenamingId(null)
-                            }
-                          }}
-                          value={renameDraft}
-                        />
-                        <button
-                          className="rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground shadow-2xs transition hover:brightness-105"
-                          onClick={() => handleCommitRename(doc.id)}
-                          type="button"
-                        >
-                          Save Name
-                        </button>
-                        <button
-                          aria-label="Cancel rename"
-                          className="rounded-lg border border-border/70 bg-background px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
-                          onClick={() => setRenamingId(null)}
-                          type="button"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          className="truncate text-sm font-semibold hover:text-primary hover:underline transition"
-                          onClick={() => openBusinessDocument(doc.id)}
-                          type="button"
-                        >
-                          {doc.title}
-                        </button>
-                        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[0.625rem] font-bold uppercase text-primary">
-                          {doc.type}
-                        </span>
-                        <span
-                          className={cn(
-                            'rounded-md px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase',
-                            doc.status === 'final'
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-muted text-muted-foreground'
-                          )}
-                        >
-                          {doc.status}
-                        </span>
-                      </div>
-                    )}
-                    <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">
-                      Template: {doc.templateId} · Language: {doc.language.toUpperCase()} · Updated{' '}
-                      {new Date(doc.updatedAt).toLocaleDateString()}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      aria-label={`Open ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold shadow-2xs transition hover:border-primary/40 hover:bg-muted"
-                      onClick={() => openBusinessDocument(doc.id)}
-                      type="button"
-                    >
-                      Open
-                    </button>
-                    <button
-                      aria-label={`Duplicate ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
-                      onClick={() => duplicateBusinessDocument(doc.id)}
-                      type="button"
-                    >
-                      Duplicate
-                    </button>
-                    <button
-                      aria-label={`Rename ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
-                      onClick={() => {
-                        setRenamingId(doc.id)
-                        setRenameDraft(doc.title)
-                      }}
-                      type="button"
-                    >
-                      Rename
-                    </button>
-                    <button
-                      aria-label={`Export ${doc.title} PDF`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold text-primary transition hover:border-primary/40 hover:bg-primary/10"
-                      onClick={() => handleExportRecent(doc)}
-                      type="button"
-                    >
-                      Export PDF
-                    </button>
-                    <button
-                      aria-label={`Delete ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
-                      onClick={() => handleDeleteRecent(doc.id, doc.title)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Template Gallery */}
-        <section className="mt-10">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold tracking-tight">Template Gallery</h2>
-              <p className="text-xs text-muted-foreground">
-                8 specialized CV layouts plus OHADA invoices, contracts, investor plans, and 16:9 pitch decks.
-              </p>
-            </div>
-            {/* Apple Segmented Filter */}
-            <div className="inline-flex max-w-full flex-wrap rounded-xl border border-border/40 bg-muted/60 p-1 backdrop-blur-sm">
-              {(
-                [
-                  ['all', 'All Templates'],
-                  ['cv', 'CV / Résumé (8)'],
-                  ['finance', 'Invoices & Quotes'],
-                  ['legal', 'Contracts & HR'],
-                  ['strategy', 'Business Plan & Deck']
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  className={cn(
-                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150',
-                    templateFilter === id
-                      ? 'bg-card text-foreground shadow-2xs'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                  key={id}
-                  onClick={() => setTemplateFilter(id)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {visibleTemplates.map(tpl => (
-              <button
-                className="flex flex-col justify-between rounded-2xl border border-border/80 bg-card/85 p-4 text-left shadow-2xs backdrop-blur-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:opacity-50"
-                disabled={!canStartChat}
-                key={tpl.id}
-                onClick={() =>
-                  createBusinessDocument(tpl.documentType, {
-                    templateId: tpl.id
-                  })
-                }
-                type="button"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className="inline-block size-3 rounded-full shadow-2xs"
-                      style={{ backgroundColor: tpl.accentColor }}
-                    />
-                    <span className="text-[0.625rem] font-bold uppercase tracking-wider text-muted-foreground">
-                      {tpl.documentType} · {tpl.fontFamily}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-xs font-bold text-foreground">{tpl.name}</div>
-                  <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
-                    {tpl.description}
-                  </p>
-                </div>
-                <div className="mt-4 flex items-center gap-1 text-[0.6875rem] font-semibold text-primary">
-                  <span>Use template</span>
-                  <Codicon name="arrow-right" size="0.75rem" />
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Scan to text CTA */}
-        <div
-          className="group relative mt-8 flex w-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl px-5 py-5 text-left text-white shadow-xl sm:mt-10 sm:gap-6 sm:px-8 sm:py-7"
-          style={{ background: 'linear-gradient(135deg,#0b1020,#12224e 55%,#0a2f6b)' }}
-        >
-          <span
-            className="pointer-events-none absolute inset-0"
-            style={{ background: 'radial-gradient(50% 120% at 88% 10%,rgba(61,123,255,.5),transparent 55%)' }}
-          />
-          <div className="relative z-10 flex-1">
-            <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide backdrop-blur-xs">
-              OCR & Document Extraction
-            </span>
-            <span className="mt-3 block text-xl font-bold tracking-tight">Turn photos and PDFs into text</span>
-            <span className="mt-2 block max-w-lg text-sm text-white/75 leading-relaxed">
-              Upload a PDF, JPG, or PNG to extract text directly into an editable workspace, convert it into an invoice or CV draft, or open in chat. Unclear text is marked [illegible], never guessed.
-            </span>
-            <div className="mt-5 flex flex-wrap gap-2.5">
-              <button
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-[#0a2f6b] shadow-md transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!canStartChat}
-                onClick={handleScanButton}
-                type="button"
-              >
-                <Codicon name="cloud-upload" size="0.9rem" />
-                Select PDF / Image to Scan
-              </button>
-              <button
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-xs transition hover:bg-white/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!canStartChat}
-                onClick={() => startChat(SCAN_TO_TEXT_PROMPT)}
-                type="button"
-              >
-                <Codicon name="comment-discussion" size="0.9rem" />
-                Scan in Chat
-              </button>
-            </div>
-          </div>
-          <span className="relative z-10 hidden shrink-0 items-center gap-3 sm:flex">
-            <span className="flex">
-              {['#f2a65a', '#5a8cf2', '#57b98b'].map((c, i) => (
-                <span
-                  className="size-16 rounded-xl border-2 border-white/15 shadow-xl backdrop-blur-xs"
-                  key={c}
-                  style={{
-                    background: `linear-gradient(150deg,${c},rgba(0,0,0,.35))`,
-                    marginLeft: i ? '-1.25rem' : 0,
-                    transform: `rotate(${(i - 1) * 8}deg)`
-                  }}
-                />
-              ))}
-            </span>
-            <Codicon name="arrow-right" size="1.4rem" />
-            <span className="grid h-20 w-16 place-items-center gap-1 rounded-2xl bg-white text-[#0a2f6b] shadow-xl">
-              <Codicon name="file" size="1.5rem" />
-              <b className="text-[0.625rem] font-bold">Text</b>
-            </span>
-          </span>
-        </div>
-
-        {/* Feature grid */}
-        <h2 className="mb-4 mt-10 text-lg font-bold tracking-tight">What the workspace does here</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map(f => (
-            <div className="rounded-2xl border border-border/80 bg-card/85 p-5 shadow-2xs backdrop-blur-sm transition-all hover:border-primary/30" key={f.title}>
-              <span
-                className={cn(
-                  'mb-3.5 grid size-9 place-items-center rounded-xl shadow-2xs',
-                  f.gold ? 'bg-[#C98A2B]/12 text-[#B57E23]' : 'bg-primary/10 text-primary'
-                )}
-              >
-                <Codicon name={f.icon} size="1.05rem" />
-              </span>
-              <div className="text-sm font-semibold">{f.title}</div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        <p className="mt-8 text-xs text-muted-foreground">
-          Drafts can contain errors. Check amounts, dates, names and legal terms before you sign or send.
-        </p>
-      </div>
-    </div>
-  )
-}
