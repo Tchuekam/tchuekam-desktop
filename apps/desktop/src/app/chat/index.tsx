@@ -119,7 +119,9 @@ function ChatHeader({
             type="button"
             variant="ghost"
           >
-            <h2 className="max-w-full truncate text-[0.75rem] font-medium leading-none sm:max-w-[52vw]">{title}</h2>
+            <h2 className="max-w-full truncate text-[0.8125rem] font-medium tracking-[-0.01em] leading-none sm:max-w-[52vw]">
+              {title}
+            </h2>
             <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-down" size="0.8125rem" />
           </Button>
         </SessionActionsMenu>
@@ -318,7 +320,7 @@ export function ChatView({
       <NotificationStack />
 
       {IS_WEB && !gatewayOpen && gatewayState !== 'idle' && (
-        <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+        <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs text-foreground backdrop-blur-md">
           <span className="truncate">
             {gatewayState === 'connecting'
               ? 'Reconnecting to TchuekaM gateway…'
