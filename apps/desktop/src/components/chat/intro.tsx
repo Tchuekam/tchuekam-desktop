@@ -49,8 +49,10 @@ function StarterCard({ icon: Icon, label, prompt }: (typeof STARTERS)[number]) {
       }}
       type="button"
     >
-      <Icon className="size-4 shrink-0 text-muted-foreground transition-colors duration-150 group-hover:text-foreground" stroke={1.5} />
-      <span className="text-[0.8125rem] font-normal leading-snug text-foreground">{label}</span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-bg-tertiary) text-(--ui-text-secondary) transition-colors duration-200 group-hover:bg-(--tk-indigo-soft) group-hover:text-(--tk-indigo-text)">
+        <Icon className="size-4" stroke={1.6} />
+      </span>
+      <span className="text-[0.8125rem] font-medium leading-snug text-foreground/92">{label}</span>
     </button>
   )
 }
