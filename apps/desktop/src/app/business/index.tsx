@@ -418,7 +418,7 @@ export function BusinessView() {
                 AI Consultant
               </label>
               <input
-                className="w-full bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed"
+                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed"
                 disabled={!canStartChat}
                 id="business-consultant"
                 onChange={event => setQuestion(event.target.value)}
@@ -429,7 +429,7 @@ export function BusinessView() {
             {question && (
               <button
                 aria-label="Clear question"
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onClick={() => setQuestion('')}
                 type="button"
               >
@@ -438,7 +438,7 @@ export function BusinessView() {
             )}
             {IS_DESKTOP ? (
               <button
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-cyan-border) bg-(--tk-cyan-soft) px-3 text-xs font-semibold text-(--tk-cyan-text) transition-colors hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canStartChat || !question.trim()}
                 onClick={() => void askBusinessLocalAgent(question.trim())}
                 type="button"
@@ -448,9 +448,8 @@ export function BusinessView() {
               </button>
             ) : null}
             <button
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white shadow-xs transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              className="tk-btn-primary inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat || !question.trim()}
-              style={{ background: 'linear-gradient(180deg,#B57E23,#8a5a12)' }}
               type="submit"
             >
               Open in chat
@@ -460,11 +459,11 @@ export function BusinessView() {
           {IS_DESKTOP ? <BusinessLocalAiInlineCard /> : null}
 
           {/* Quick Consultation Chips */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <span className="text-[0.6875rem] font-medium text-muted-foreground">Quick queries:</span>
             {CONSULTANT_SUGGESTIONS.map(prompt => (
               <button
-                className="rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[0.6875rem] text-muted-foreground transition hover:border-primary/40 hover:bg-card hover:text-foreground disabled:opacity-40"
+                className="rounded-lg border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-1 text-[0.7rem] text-(--ui-text-secondary) backdrop-blur-xs transition-all duration-150 hover:border-(--tk-indigo-border) hover:bg-[color-mix(in_srgb,var(--tk-indigo-soft)_65%,transparent)] hover:text-foreground disabled:opacity-40"
                 disabled={!canStartChat}
                 key={prompt}
                 onClick={() => setQuestion(prompt)}
