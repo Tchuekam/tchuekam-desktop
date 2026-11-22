@@ -1,23 +1,26 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getRecastModelById, getLipSyncModelById, getAudioModelById } from './models.js';
 
+import { getMuapiFetchOptions, resolveMuapiProxyBase } from '@/app/image-studio/proxyUrl';
+
 // In an http(s) browser we route through TchueKAM's FastAPI proxy
 // (/api/muapi-proxy/* -> https://api.muapi.ai/*) so api.muapi.ai CORS is bypassed
 // without colliding with /api/v1/* SaaS routes.
 // SSR (no window) and Electron's file:// renderer call the upstream directly.
-const _WEB_BACKEND_ORIGIN = (() => {
-    const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HERMES_API_URL)
-        ? String(import.meta.env.VITE_HERMES_API_URL).replace(/\/+$/, '')
-        : '';
-    if (envUrl) return envUrl;
-    if (typeof window !== 'undefined' && window.location?.hostname?.endsWith('.vercel.app') && !window.__HERMES_SESSION_TOKEN__) {
-        return 'https://tchuekam-agent-production.up.railway.app';
-    }
-    return '';
-})();
+const _PROXY_BASE = resolveMuapiProxyBase();
 const BASE_URL = (typeof window !== 'undefined' && window.location?.protocol?.startsWith('http'))
-    ? `${_WEB_BACKEND_ORIGIN}/api/muapi-proxy`
+    ? _PROXY_BASE
     : 'https://api.muapi.ai';
-const PROXY_WF_BASE = `${_WEB_BACKEND_ORIGIN}/api/muapi-proxy/workflow`;
+const PROXY_WF_BASE = `${_PROXY_BASE}/workflow`;
+
+function muapiFetch(url, options = {}) {
+    const extraHeaders = options.headers && !(options.headers instanceof Headers) ? options.headers : {};
+    const proxyOpts = getMuapiFetchOptions(extraHeaders);
+    return muapiFetch(url, {
+        ...options,
+        credentials: options.credentials || proxyOpts.credentials,
+        headers: options.headers instanceof Headers ? options.headers : proxyOpts.headers,
+    });
+}
 
 export class AuthError extends Error {
     constructor(message, status = 401, detail = '') {
@@ -36,7 +39,7 @@ function notifyAuthRequired(status, detail) {
 }
 
 async function authFetch(url, options = {}) {
-    const response = await fetch(url, options);
+    const response = await muapiFetch(url, options);
     if (!response.ok) {
         const errText = await response.text();
         notifyAuthRequired(response.status, errText);
@@ -59,7 +62,7 @@ async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000,
             throw new Error('Generation cancelled by user');
         }
         try {
-            const response = await fetch(pollUrl, {
+            const response = await muapiFetch(pollUrl, {
                 headers: { 'Content-Type': 'application/json', 'x-api-key': key },
                 signal: options.signal
             });
@@ -89,7 +92,7 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
         throw new AuthError('API key not configured. Please enter your API key in Settings.', 401);
     }
     const url = `${BASE_URL}/api/v1/${endpoint}`;
-    const response = await fetch(url, {
+    const response = await muapiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
         body: JSON.stringify(payload),
@@ -334,7 +337,7 @@ export function uploadFile(apiKey, file, onProgress) {
 }
 
 export async function getUserBalance(apiKey) {
-    const response = await fetch(`${BASE_URL}/api/v1/account/balance`, {
+    const response = await muapiFetch(`${BASE_URL}/api/v1/account/balance`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -431,7 +434,7 @@ export async function getUserConversations(apiKey) {
 // GET /agents/by-slug/{slug} — public agent details (works unauthenticated for
 // published/template agents; x-api-key is sent for consistency but not required).
 export async function getAgentBySlug(apiKey, slug) {
-    const response = await fetch(`${BASE_URL}/agents/by-slug/${slug}`, {
+    const response = await muapiFetch(`${BASE_URL}/agents/by-slug/${slug}`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -440,449 +443,3 @@ export async function getAgentBySlug(apiKey, slug) {
     if (!response.ok) {
         const errText = await response.text();
         throw new Error(`Failed to fetch agent: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-// GET /agents/by-slug/{slug}/{conversationId} — chat history for one conversation.
-export async function getAgentConversation(apiKey, agentSlug, conversationId) {
-    const response = await fetch(`${BASE_URL}/agents/by-slug/${agentSlug}/${conversationId}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch conversation: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-// POST /agents/by-slug/{slug}/chat — send a message, returns {request_id, status}
-// to poll via pollAgentChatResult.
-export async function sendAgentChatMessage(apiKey, agentSlug, { message, conversationId, attachments } = {}) {
-    const response = await fetch(`${BASE_URL}/agents/by-slug/${agentSlug}/chat`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify({
-            message,
-            conversation_id: conversationId || null,
-            attachments: attachments || null,
-            stream: false
-        })
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to send message: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-// Polls /api/v1/predictions/{requestId}/result until the agent turn completes.
-// Unlike submitAndPoll's generic media polling, a completed agent-chat result is
-// the full {conversation_id, messages, is_complete, suggestions} envelope, not a
-// media URL — while processing, the endpoint doesn't surface intermediate status
-// text (get_result_url_from_output only returns output_data once COMPLETED), so
-// this just waits until is_complete rather than showing incremental progress.
-export async function pollAgentChatResult(apiKey, requestId, { maxAttempts = 150, interval = 2000 } = {}) {
-    const url = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, interval));
-        const response = await fetch(url, {
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey
-            }
-        });
-        if (response.status === 400) {
-            const errBody = await response.json().catch(() => ({}));
-            throw new Error(errBody?.detail?.error || 'Agent failed to respond');
-        }
-        if (!response.ok) {
-            if (attempt === maxAttempts) throw new Error(`Poll failed: ${response.status}`);
-            continue;
-        }
-        const data = await response.json();
-        if (data.is_complete) return data;
-    }
-    throw new Error('Agent response timed out.');
-}
-
-// POST /agents — create a new persona agent (no skill picker in this minimal
-// embedded form; skill_ids defaults to [] server-side, so the agent is created
-// as a plain system-prompt-driven assistant with no extra tool skills attached).
-export async function createAgent(apiKey, payload) {
-    const response = await fetch(`${BASE_URL}/agents`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to create agent: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function createWorkflow(apiKey, payload) {
-    const response = await fetch(`${BASE_URL}/workflow/create`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to create workflow: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-};
-
-export async function updateWorkflowName(apiKey, workflowId, name) {
-    const response = await fetch(`${BASE_URL}/workflow/update-name/${workflowId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify({ name })
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to rename workflow: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-};
-
-export async function deleteWorkflow(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/delete-workflow-def/${workflowId}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to delete workflow: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-};
-
-export async function getWorkflowInputs(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/api-inputs`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch workflow inputs: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-};
-
-export async function executeWorkflow(apiKey, workflowId, inputs) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/api-execute`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify({ inputs })
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to execute workflow: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    const submitData = await response.json();
-    const runId = submitData.run_id || submitData.id;
-    if (!runId) return submitData;
-    
-    // Poll for results
-    return await pollWorkflowResult(runId, apiKey);
-};
-
-async function pollWorkflowResult(runId, apiKey, maxAttempts = 900, interval = 2000) {
-    const pollUrl = `${BASE_URL}/workflow/run/${runId}/api-outputs`;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, interval));
-        try {
-            const response = await fetch(pollUrl, {
-                headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey }
-            });
-            if (!response.ok) {
-                if (response.status >= 500) continue;
-                throw new Error(`Poll Failed: ${response.status}`);
-            }
-            const data = await response.json();
-            const status = data.status?.toLowerCase();
-            if (status === 'completed' || status === 'succeeded' || status === 'success') return data;
-            if (status === 'failed' || status === 'error') throw new Error(`Workflow failed: ${data.error || 'Unknown error'}`);
-        } catch (error) {
-            if (attempt === maxAttempts) throw error;
-        }
-    }
-    throw new Error('Workflow timed out after polling.');
-};
-
-export async function getAllNodeSchemas(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/node-schemas`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch node schemas: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-};
-
-export async function getWorkflowData(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/get-workflow-def/${workflowId}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch workflow data: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-};
-
-export async function getNodeSchemas(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/api-node-schemas`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch node schemas: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function runSingleNode(apiKey, workflowId, nodeId, payload) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/node/${nodeId}/run`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to run single node: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function deleteNodeRun(apiKey, nodeRunId) {
-    const response = await fetch(`${BASE_URL}/workflow/node-run/${nodeRunId}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to delete node run: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function getNodeStatus(apiKey, runId) {
-    const response = await fetch(`${BASE_URL}/workflow/run/${runId}/status`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to get node status: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-/**
- * Handle proxy requests centralizing communication logic with MuAPI.
- * This is used by the server-side entry points.
- */
-export async function handleProxyRequest(prefix, path, method, headers, body, apiKey) {
-    const url = `${BASE_URL}/${prefix}/${path}`;
-    
-    const finalHeaders = new Headers(headers);
-    finalHeaders.delete('host');
-    finalHeaders.delete('connection');
-    finalHeaders.delete('content-length'); // Let fetch recalculate this for safety
-
-    if (apiKey) {
-        finalHeaders.set('x-api-key', apiKey);
-    }
-
-    try {
-        const response = await fetch(url, {
-            method,
-            headers: finalHeaders,
-            body: (method !== 'GET' && method !== 'HEAD') ? body : undefined,
-            redirect: 'follow',
-        });
-
-        const contentType = response.headers.get('Content-Type') || 'application/json';
-        const buffer = await response.arrayBuffer();
-        
-        return {
-            status: response.status,
-            contentType,
-            data: buffer
-        };
-    } catch (error) {
-        console.error(`MuAPI Proxy error for ${url}:`, error);
-        throw error;
-    }
-}
-
-/**
- * A centralized handler for Next.js API routes or middleware.
- */
-export async function handleServerSideProxy(prefix, request, params, apiKey) {
-    try {
-        const slug = await params;
-        const pathSegments = slug.path || [];
-        const path = pathSegments.join('/');
-        
-        const method = request.method;
-        let body = null;
-        if (method !== 'GET' && method !== 'HEAD') {
-            body = await request.arrayBuffer();
-        }
-
-        const { search } = new URL(request.url);
-        const pathWithSearch = search ? `${path}${search}` : path;
-
-        return await handleProxyRequest(
-            prefix, 
-            pathWithSearch, 
-            method, 
-            request.headers, 
-            body, 
-            apiKey
-        );
-    } catch (error) {
-        console.error(`Server proxy failed:`, error);
-        throw error;
-    }
-}
-
-export async function calculateDynamicCost(apiKey, taskName, payload) {
-    const response = await fetch(`${BASE_URL}/api/v1/app/calculate_dynamic_cost`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify({ task_name: taskName, payload })
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to calculate dynamic cost: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function registerAppInterest(apiKey, appName) {
-    const response = await fetch(`${BASE_URL}/app/interest`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        },
-        body: JSON.stringify({ app_name: appName })
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to register interest: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function getAppInterests(apiKey) {
-    const response = await fetch(`${BASE_URL}/app/interests`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch interests: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-// Paginated past-generations list, scoped server-side to the calling identity
-// (BYOK key or white-label session token) — see GET /api/v1/history.
-export async function getHistory(apiKey, { cursor, limit = 50 } = {}) {
-    const params = new URLSearchParams();
-    if (cursor) params.set('cursor', cursor);
-    if (limit) params.set('limit', String(limit));
-    const response = await fetch(`${BASE_URL}/api/v1/history?${params.toString()}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey
-        }
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Failed to fetch history: ${response.status} - ${errText.slice(0, 100)}`);
-    }
-    return await response.json();
-}
-
-export async function runClipping(apiKey, params) {
-    const payload = {
-        video_url: params.video_url,
-        num_highlights: params.num_highlights || 3,
-        aspect_ratio: params.aspect_ratio || "9:16",
-        return_coordinates_only: !!params.return_coordinates_only
-    };
-    return submitAndPoll("ai-clipping", payload, apiKey, params.onRequestId, 900);
-}
-
-export async function runMotionGraphics(apiKey, params) {
-    const payload = {
-        prompt: params.prompt,
-        aspect_ratio: params.aspect_ratio || "16:9",
-        duration_seconds: params.duration_seconds || 6,
-    };
-    return submitAndPoll("motion-graphics", payload, apiKey, params.onRequestId, 900);
-}
-
-export async function runMotionGraphicsEdit(apiKey, params) {
-    const payload = {
-        request_id: params.request_id,
-        edit_prompt: params.edit_prompt,
-        aspect_ratio: params.aspect_ratio || "16:9",
-        duration_seconds: params.duration_seconds || 6,
-    };
-    return submitAndPoll("motion-graphics-edit", payload, apiKey, params.onRequestId, 900);
-}
