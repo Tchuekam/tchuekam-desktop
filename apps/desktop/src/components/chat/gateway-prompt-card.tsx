@@ -144,11 +144,11 @@ export function GatewayPromptCard({ gateway, sessionId }: GatewayPromptCardProps
 
   return (
     <form
-      className="mx-auto mb-2 w-full max-w-3xl rounded-xl border border-(--ui-stroke-secondary) bg-card p-3.5 shadow-sm"
+      className="tk-glass-elevated mx-auto mb-2.5 w-full max-w-3xl rounded-xl p-4"
       onSubmit={handleSubmit}
     >
       <div className="flex items-start gap-2.5">
-        <KeyRound className="mt-0.5 size-4 shrink-0 text-(--theme-primary)" />
+        <KeyRound className="mt-0.5 size-4 shrink-0 text-(--tk-indigo-text)" />
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-foreground">
             {prompt.kind === 'sudo' ? 'Sudo password requested' : `Secret required: ${prompt.envVar}`}
