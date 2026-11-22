@@ -7,6 +7,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import type { SkillInfo, ToolsetInfo } from '@/types/hermes'
@@ -251,11 +252,15 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                             {asText(skill.description) || 'No description.'}
                           </p>
                         </div>
-                        <Switch
-                          checked={skill.enabled}
-                          disabled={savingSkill === skill.name}
-                          onCheckedChange={checked => void handleToggleSkill(skill, checked)}
-                        />
+                        {IS_LOCKED_DEMO ? (
+                          <StatusPill active={skill.enabled}>{skill.enabled ? 'Enabled' : 'Disabled'}</StatusPill>
+                        ) : (
+                          <Switch
+                            checked={skill.enabled}
+                            disabled={savingSkill === skill.name}
+                            onCheckedChange={checked => void handleToggleSkill(skill, checked)}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -284,23 +289,31 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                       <div className="flex items-center justify-between gap-2">
                         <div className="truncate text-sm font-medium">{label}</div>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <button
-                            aria-expanded={expanded}
-                            aria-label={`Configure ${label}`}
-                            className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                            onClick={() => setExpandedToolset(current => (current === toolset.name ? null : toolset.name))}
-                            type="button"
-                          >
-                            <StatusPill active={toolset.configured}>
-                              {toolset.configured ? 'Configured' : 'Needs keys'}
+                          {!IS_LOCKED_DEMO ? (
+                            <>
+                              <button
+                                aria-expanded={expanded}
+                                aria-label={`Configure ${label}`}
+                                className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                onClick={() => setExpandedToolset(current => (current === toolset.name ? null : toolset.name))}
+                                type="button"
+                              >
+                                <StatusPill active={toolset.configured}>
+                                  {toolset.configured ? 'Configured' : 'Needs keys'}
+                                </StatusPill>
+                              </button>
+                              <Switch
+                                aria-label={`Toggle ${label} toolset`}
+                                checked={toolset.enabled}
+                                disabled={savingToolset === toolset.name}
+                                onCheckedChange={checked => void handleToggleToolset(toolset, checked)}
+                              />
+                            </>
+                          ) : (
+                            <StatusPill active={toolset.enabled}>
+                              {toolset.enabled ? 'Enabled' : 'Disabled'}
                             </StatusPill>
-                          </button>
-                          <Switch
-                            aria-label={`Toggle ${label} toolset`}
-                            checked={toolset.enabled}
-                            disabled={savingToolset === toolset.name}
-                            onCheckedChange={checked => void handleToggleToolset(toolset, checked)}
-                          />
+                          )}
                         </div>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
