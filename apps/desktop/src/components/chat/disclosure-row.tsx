@@ -34,7 +34,7 @@ export function DisclosureRow({
           // subtle frosted pill target on hover/focus.
           '-mx-1.5 flex min-w-0 max-w-fit items-start gap-1.5 rounded-lg px-1.5 py-0.5 text-left transition-all duration-150',
           onToggle
-            ? 'cursor-pointer hover:text-foreground focus-visible:text-foreground focus-visible:outline-none'
+            ? 'cursor-pointer hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:bg-(--ui-control-hover-background) focus-visible:text-foreground focus-visible:outline-none'
             : 'cursor-default'
         )}
         disabled={!onToggle}
