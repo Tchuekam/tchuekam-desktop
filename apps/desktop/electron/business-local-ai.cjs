@@ -711,3 +711,716 @@ function createBusinessLocalAiManager(options = {}) {
     if (idleTimer) {
       clearTimeout(idleTimer)
       idleTimer = null
+    }
+  }
+
+  function scheduleIdleUnload() {
+    clearIdleTimer()
+    const delay = Number(config.idleUnloadMs)
+    if (!childProc || !Number.isFinite(delay) || delay <= 0) return
+    idleTimer = setTimeout(() => {
+      if (childProc && Date.now() - lastUsedAt >= delay - 200) {
+        log('[business-ai] idle timeout reached; unloading local model to free RAM')
+        void unload()
+      }
+    }, delay)
+    if (typeof idleTimer.unref === 'function') idleTimer.unref()
+  }
+
+  async function sampleProcessMemoryMb(pid) {
+    if (!pid) return null
+    const now = Date.now()
+    if (cachedMemory.pid === pid && now - cachedMemory.at < MEMORY_CACHE_TTL_MS) {
+      return cachedMemory.mb
+    }
+
+    const mb = await new Promise(resolve => {
+      if (platform === 'win32') {
+        execFile(
+          'tasklist',
+          ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+          { windowsHide: true, timeout: 5000 },
+          (err, stdout) => {
+            if (err || !stdout) return resolve(null)
+            const line = stdout.trim().split(/\r?\n/)[0] || ''
+            const match = line.match(/"([^"]+)"\s*$/)
+            if (!match) return resolve(null)
+            const digits = match[1].replace(/[^\d]/g, '')
+            const kb = Number(digits)
+            resolve(Number.isFinite(kb) && kb > 0 ? Math.round(kb / 1024) : null)
+          }
+        )
+        return
+      }
+
+      execFile('ps', ['-o', 'rss=', '-p', String(pid)], { timeout: 2000 }, (err, stdout) => {
+        if (err || !stdout) return resolve(null)
+        const kb = Number(stdout.trim())
+        resolve(Number.isFinite(kb) && kb > 0 ? Math.round(kb / 1024) : null)
+      })
+    })
+
+    cachedMemory = { pid, at: Date.now(), mb }
+    return mb
+  }
+
+  async function getStatus() {
+    const matcher = getPlatformRuntimeAssetMatcher(platform, arch)
+    const runtimePath = resolveLlamaServerBinary()
+    const installedModels = listInstalledModelIds()
+    const activeModel = getModelSpec(config.modelId)
+    const activeModelInstalled = installedModels.includes(activeModel.id)
+    const running = Boolean(childProc && !childProc.killed && serverPort)
+    const memoryMb = running && childProc?.pid ? await sampleProcessMemoryMb(childProc.pid) : 0
+
+    return {
+      supported: Boolean(matcher),
+      baseDir,
+      runtimeInstalled: Boolean(runtimePath),
+      installed: Boolean(runtimePath && activeModelInstalled),
+      installedModels,
+      enabled: Boolean(config.enabled),
+      activeModelId: activeModel.id,
+      activeModelName: activeModel.name,
+      running,
+      installing: Boolean(installAbortController),
+      installProgress,
+      lastError,
+      config: { ...config },
+      hardware: {
+        ...hardware,
+        freeRamMb: Math.max(128, Math.round(os.freemem() / (1024 * 1024)))
+      },
+      server: {
+        port: running ? serverPort : null,
+        pid: running ? childProc?.pid || null : null,
+        modelId: running ? serverModelId : null,
+        memoryMb: running ? memoryMb : 0,
+        uptimeMs: running && startedAt ? Date.now() - startedAt : 0
+      },
+      models: BUSINESS_LOCAL_MODELS.map(model => ({
+        ...model,
+        installed: installedModels.includes(model.id),
+        active: model.id === activeModel.id
+      }))
+    }
+  }
+
+  async function emitStatus() {
+    try {
+      onStatus(await getStatus())
+    } catch {}
+  }
+
+  async function resolveLatestLlamaReleaseAsset() {
+    const matcher = getPlatformRuntimeAssetMatcher(platform, arch)
+    if (!matcher) {
+      throw new Error(`Unsupported platform/architecture for Business Hub local runtime: ${platform}/${arch}`)
+    }
+
+    const releases = await fetchJsonImpl('https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=8', {
+      timeoutMs: 15_000
+    })
+
+    const list = Array.isArray(releases) ? releases : []
+    for (const rel of list) {
+      const assets = Array.isArray(rel?.assets) ? rel.assets : []
+      const asset = assets.find(a => a && typeof a.name === 'string' && matcher.match(a.name))
+      if (asset && asset.browser_download_url) {
+        return {
+          tag: rel.tag_name || 'latest',
+          name: asset.name,
+          size: Number(asset.size || 0),
+          url: asset.browser_download_url,
+          archiveType: matcher.archiveType
+        }
+      }
+    }
+
+    throw new Error('Could not locate a prebuilt CPU llama.cpp release archive for this OS.')
+  }
+
+  async function install(opts = {}) {
+    if (installAbortController) {
+      throw new Error('Business Hub local AI installation is already in progress.')
+    }
+
+    const targetModelId = MODEL_BY_ID.has(opts.modelId) ? opts.modelId : config.modelId
+    const modelSpec = getModelSpec(targetModelId)
+    installAbortController = new AbortController()
+    lastError = null
+
+    try {
+      await fsp.mkdir(runtimeDir, { recursive: true })
+      await fsp.mkdir(modelsDir, { recursive: true })
+
+      // 1. Runtime binary
+      if (!resolveLlamaServerBinary()) {
+        installProgress = {
+          stage: 'runtime',
+          percent: 0,
+          downloadedBytes: 0,
+          totalBytes: 0,
+          speedBps: 0,
+          message: 'Locating lightweight CPU engine (llama.cpp)...'
+        }
+        await emitStatus()
+
+        const asset = await resolveLatestLlamaReleaseAsset()
+        const archivePath = path.join(baseDir, asset.name)
+
+        await downloadFileImpl(asset.url, archivePath, {
+          abortSignal: installAbortController.signal,
+          onProgress: p => {
+            installProgress = {
+              stage: 'runtime',
+              ...p,
+              message: `Downloading local CPU engine (${asset.tag})...`
+            }
+            void emitStatus()
+          }
+        })
+
+        installProgress = {
+          stage: 'extract',
+          percent: 100,
+          downloadedBytes: asset.size,
+          totalBytes: asset.size,
+          speedBps: 0,
+          message: 'Extracting local CPU engine...'
+        }
+        await emitStatus()
+
+        await extractArchiveImpl(archivePath, runtimeDir, asset.archiveType, platform)
+        try {
+          await fsp.unlink(archivePath)
+        } catch {}
+
+        const binaryPath = resolveLlamaServerBinary()
+        if (!binaryPath) {
+          throw new Error('Runtime extracted, but llama-server binary was not found.')
+        }
+        if (platform !== 'win32') {
+          try {
+            await fsp.chmod(binaryPath, 0o755)
+          } catch {}
+        }
+      }
+
+      // 2. GGUF model
+      const destModelPath = getModelPath(modelSpec.id)
+      if (!isModelInstalled(modelSpec.id)) {
+        installProgress = {
+          stage: 'model',
+          percent: 0,
+          downloadedBytes: 0,
+          totalBytes: modelSpec.sizeMb * 1024 * 1024,
+          speedBps: 0,
+          message: `Downloading ${modelSpec.name} (~${modelSpec.sizeMb} MB)...`
+        }
+        await emitStatus()
+
+        await downloadFileImpl(modelSpec.downloadUrl, destModelPath, {
+          abortSignal: installAbortController.signal,
+          onProgress: p => {
+            installProgress = {
+              stage: 'model',
+              ...p,
+              message: `Downloading ${modelSpec.name} (~${modelSpec.sizeMb} MB)...`
+            }
+            void emitStatus()
+          }
+        })
+
+        if (!isModelInstalled(modelSpec.id)) {
+          throw new Error(`Downloaded model ${modelSpec.filename} is incomplete or smaller than expected.`)
+        }
+      }
+
+      if (config.modelId !== modelSpec.id && childProc) {
+        await unload()
+      }
+
+      saveStoredConfig({
+        ...config,
+        enabled: true,
+        modelId: modelSpec.id,
+        ctxSize: clampCtxSize(config.ctxSize, modelSpec.defaultCtxSize)
+      })
+
+      installProgress = {
+        stage: 'complete',
+        percent: 100,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        speedBps: 0,
+        message: `${modelSpec.name} installed and ready.`
+      }
+      log(`[business-ai] installed ${modelSpec.id} in ${baseDir}`)
+      return await getStatus()
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
+      installProgress = {
+        stage: 'error',
+        percent: null,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        speedBps: 0,
+        message: lastError
+      }
+      throw err
+    } finally {
+      installAbortController = null
+      await emitStatus()
+    }
+  }
+
+  function cancelInstall() {
+    if (installAbortController) {
+      installAbortController.abort()
+      return { ok: true, cancelled: true }
+    }
+    return { ok: true, cancelled: false }
+  }
+
+  async function unload() {
+    clearIdleTimer()
+    const proc = childProc
+    childProc = null
+    serverPort = null
+    serverModelId = null
+    startedAt = null
+    cachedMemory = { pid: null, at: 0, mb: null }
+
+    if (proc && !proc.killed) {
+      await new Promise(resolve => {
+        let done = false
+        const finish = () => {
+          if (done) return
+          done = true
+          resolve()
+        }
+        proc.once('exit', finish)
+        try {
+          proc.kill('SIGTERM')
+        } catch {}
+        setTimeout(() => {
+          if (!done) {
+            try {
+              if (platform === 'win32' && proc.pid) {
+                spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+              } else {
+                proc.kill('SIGKILL')
+              }
+            } catch {}
+            finish()
+          }
+        }, 1200)
+      })
+    }
+
+    await emitStatus()
+    return await getStatus()
+  }
+
+  async function waitForHealth(port, proc, stderrTail) {
+    const deadline = Date.now() + HEALTH_WAIT_TIMEOUT_MS
+    while (Date.now() < deadline) {
+      if (!proc || proc.exitCode !== null || proc.killed) {
+        const tail = stderrTail.slice(-5).join(' | ')
+        throw new Error(`Local Business AI server exited prematurely${tail ? `: ${tail}` : '.'}`)
+      }
+      try {
+        const res = await fetchJsonImpl(`http://127.0.0.1:${port}/health`, { timeoutMs: 1200 })
+        if (res && (res.status === 'ok' || res.ok === true)) {
+          return
+        }
+      } catch {
+        // Server still warming / loading mmap weights
+      }
+      await new Promise(r => setTimeout(r, HEALTH_POLL_INTERVAL_MS))
+    }
+    throw new Error('Timed out waiting for Business Hub local AI server health check.')
+  }
+
+  async function ensureRunning() {
+    if (childProc && !childProc.killed && serverPort && serverModelId === config.modelId) {
+      lastUsedAt = Date.now()
+      scheduleIdleUnload()
+      return { port: serverPort, modelId: serverModelId }
+    }
+
+    if (startPromise) {
+      return startPromise
+    }
+
+    startPromise = (async () => {
+      if (childProc) {
+        await unload()
+      }
+
+      const binaryPath = resolveLlamaServerBinary()
+      if (!binaryPath) {
+        const err = new Error('Business Hub local AI runtime is not installed yet.')
+        err.code = 'NOT_INSTALLED'
+        throw err
+      }
+
+      const modelSpec = getModelSpec(config.modelId)
+      const modelPath = getModelPath(modelSpec.id)
+      if (!isModelInstalled(modelSpec.id)) {
+        const err = new Error(`Model ${modelSpec.name} is not installed yet.`)
+        err.code = 'NOT_INSTALLED'
+        throw err
+      }
+
+      const port = await pickFreePort()
+      const args = buildServerArgs({
+        modelPath,
+        modelSpec,
+        port,
+        config,
+        hardware
+      })
+
+      const stderrTail = []
+      const proc = spawn(binaryPath, args, {
+        cwd: path.dirname(binaryPath),
+        stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true
+      })
+
+      childProc = proc
+      serverPort = port
+      serverModelId = modelSpec.id
+      startedAt = Date.now()
+      lastUsedAt = Date.now()
+      lastError = null
+
+      if (proc.stderr) {
+        proc.stderr.setEncoding('utf8')
+        proc.stderr.on('data', chunk => {
+          for (const line of String(chunk).split(/\r?\n/)) {
+            const trimmed = line.trim()
+            if (!trimmed) continue
+            stderrTail.push(trimmed)
+            if (stderrTail.length > 30) stderrTail.shift()
+          }
+        })
+      }
+
+      proc.once('exit', code => {
+        if (childProc === proc) {
+          childProc = null
+          serverPort = null
+          serverModelId = null
+          startedAt = null
+          clearIdleTimer()
+          log(`[business-ai] llama-server exited (code=${code})`)
+          void emitStatus()
+        }
+      })
+
+      try {
+        await waitForHealth(port, proc, stderrTail)
+        lastUsedAt = Date.now()
+        scheduleIdleUnload()
+        log(`[business-ai] started ${modelSpec.id} on 127.0.0.1:${port}`)
+        await emitStatus()
+        return { port, modelId: modelSpec.id }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err)
+        await unload()
+        throw err
+      }
+    })()
+
+    try {
+      return await startPromise
+    } finally {
+      startPromise = null
+    }
+  }
+
+  function enqueueInference(fn) {
+    const task = inferenceTail.then(fn, fn)
+    inferenceTail = task.catch(() => {})
+    return task
+  }
+
+  async function completeChat(messages, { maxTokens = 180, temperature = 0.25, timeoutMs = DEFAULT_INFERENCE_TIMEOUT_MS } = {}) {
+    return enqueueInference(async () => {
+      const { port, modelId } = await ensureRunning()
+      const modelSpec = getModelSpec(modelId)
+      const started = Date.now()
+
+      const payload = {
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+        top_p: 0.9,
+        repeat_penalty: 1.08,
+        stream: false,
+        ...(modelSpec.reasoningModel ? { chat_template_kwargs: { enable_thinking: false } } : {})
+      }
+
+      const response = await fetchJsonImpl(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: 'POST',
+        body: payload,
+        timeoutMs
+      })
+
+      lastUsedAt = Date.now()
+      scheduleIdleUnload()
+
+      const rawContent = response?.choices?.[0]?.message?.content || ''
+      const output = cleanModelOutput(rawContent)
+      const durationMs = Math.max(1, Date.now() - started)
+      const predictedPerSec = Number(response?.timings?.predicted_per_second || 0)
+      const completionTokens = Number(response?.usage?.completion_tokens || 0)
+      const tokensPerSec =
+        predictedPerSec > 0
+          ? Math.round(predictedPerSec * 10) / 10
+          : completionTokens > 0
+            ? Math.round((completionTokens / (durationMs / 1000)) * 10) / 10
+            : null
+
+      return {
+        output,
+        modelId,
+        modelName: modelSpec.name,
+        durationMs,
+        tokensPerSec
+      }
+    })
+  }
+
+  async function runOperation(req) {
+    if (!config.enabled) {
+      return { ok: false, disabled: true, output: '' }
+    }
+
+    if (!resolveLlamaServerBinary() || !isModelInstalled(config.modelId)) {
+      return { ok: false, notInstalled: true, output: '' }
+    }
+
+    const { maxTokens, messages } = buildOperationMessages(req)
+    const result = await completeChat(messages, { maxTokens, temperature: 0.25 })
+
+    if (!result.output) {
+      return { ok: false, output: '' }
+    }
+
+    if (req?.operation === 'suggest_skills') {
+      const suggestions = parseSkillSuggestions(result.output)
+      return {
+        ok: true,
+        output: suggestions.length > 0 ? suggestions.join(', ') : result.output,
+        suggestions,
+        modelId: result.modelId,
+        durationMs: result.durationMs,
+        tokensPerSec: result.tokensPerSec
+      }
+    }
+
+    return {
+      ok: true,
+      output: result.output,
+      modelId: result.modelId,
+      durationMs: result.durationMs,
+      tokensPerSec: result.tokensPerSec
+    }
+  }
+
+  async function askAssistant(req) {
+    if (!resolveLlamaServerBinary() || !isModelInstalled(config.modelId)) {
+      return {
+        ok: false,
+        notInstalled: true,
+        error: 'Business Hub local AI is not installed yet.'
+      }
+    }
+
+    const messages = buildAssistantMessages(req)
+    const result = await completeChat(messages, {
+      maxTokens: Number(req?.maxTokens) > 0 ? Math.min(400, Number(req.maxTokens)) : 260,
+      temperature: 0.3
+    })
+
+    return {
+      ok: Boolean(result.output),
+      output: result.output,
+      modelId: result.modelId,
+      modelName: result.modelName,
+      durationMs: result.durationMs,
+      tokensPerSec: result.tokensPerSec
+    }
+  }
+
+  async function setConfig(patch = {}) {
+    const prevModelId = config.modelId
+    const prevCtx = config.ctxSize
+    const prevKv = config.useKvQuant
+
+    const next = {
+      ...config,
+      ...(typeof patch.enabled === 'boolean' ? { enabled: patch.enabled } : {}),
+      ...(MODEL_BY_ID.has(patch.modelId) ? { modelId: patch.modelId } : {}),
+      ...(Number.isFinite(patch.idleUnloadMs) && patch.idleUnloadMs >= 0
+        ? { idleUnloadMs: Math.round(patch.idleUnloadMs) }
+        : {}),
+      ...(patch.ctxSize !== undefined ? { ctxSize: clampCtxSize(patch.ctxSize, config.ctxSize) } : {}),
+      ...(typeof patch.useKvQuant === 'boolean' ? { useKvQuant: patch.useKvQuant } : {})
+    }
+
+    saveStoredConfig(next)
+
+    if (childProc && (next.modelId !== prevModelId || next.ctxSize !== prevCtx || next.useKvQuant !== prevKv)) {
+      await unload()
+    } else if (childProc) {
+      scheduleIdleUnload()
+    }
+
+    await emitStatus()
+    return await getStatus()
+  }
+
+  async function deleteModel(modelId) {
+    const spec = MODEL_BY_ID.get(modelId)
+    if (!spec) {
+      return await getStatus()
+    }
+    if (childProc && serverModelId === spec.id) {
+      await unload()
+    }
+    const target = getModelPath(spec.id)
+    try {
+      await fsp.unlink(target)
+    } catch {}
+    try {
+      await fsp.unlink(`${target}.part`)
+    } catch {}
+
+    const remaining = listInstalledModelIds()
+    if (config.modelId === spec.id && remaining.length > 0) {
+      saveStoredConfig({ ...config, modelId: remaining[0] })
+    }
+    await emitStatus()
+    return await getStatus()
+  }
+
+  async function ensureOcrHelperFile() {
+    await fsp.mkdir(baseDir, { recursive: true })
+    const source = await fsp.readFile(ocrHelperSourcePath, 'utf8')
+    let existing = ''
+    try {
+      existing = await fsp.readFile(ocrHelperCachedPath, 'utf8')
+    } catch {}
+    if (existing !== source) {
+      await fsp.writeFile(ocrHelperCachedPath, source, 'utf8')
+    }
+    return ocrHelperCachedPath
+  }
+
+  async function runOcr(req = {}) {
+    const python = findPython()
+    if (!python) {
+      return { ok: false, unavailable: true, error: 'Local Python environment not available.' }
+    }
+
+    const helperPath = await ensureOcrHelperFile()
+    const payload = JSON.stringify({
+      data_url: String(req.dataUrl || req.data_url || ''),
+      file_name: String(req.fileName || req.file_name || 'scan'),
+      mime_type: String(req.mimeType || req.mime_type || 'image/png')
+    })
+
+    return await new Promise(resolve => {
+      const child = spawn(python, [helperPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      })
+
+      let stdout = ''
+      let stderr = ''
+      let finished = false
+
+      const timer = setTimeout(() => {
+        if (finished) return
+        finished = true
+        try {
+          child.kill('SIGKILL')
+        } catch {}
+        resolve({ ok: false, error: 'Local OCR timed out.' })
+      }, 20_000)
+
+      child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
+      child.stdout.on('data', chunk => {
+        stdout += chunk
+      })
+      child.stderr.on('data', chunk => {
+        stderr += chunk
+      })
+      child.on('error', err => {
+        clearTimeout(timer)
+        if (finished) return
+        finished = true
+        resolve({ ok: false, error: err.message })
+      })
+      child.on('close', () => {
+        clearTimeout(timer)
+        if (finished) return
+        finished = true
+        const trimmed = stdout.trim()
+        if (!trimmed) {
+          resolve({ ok: false, error: stderr.trim() || 'OCR helper produced no output.' })
+          return
+        }
+        try {
+          resolve(JSON.parse(trimmed))
+        } catch {
+          resolve({ ok: false, error: `Invalid OCR response: ${trimmed.slice(0, 120)}` })
+        }
+      })
+
+      child.stdin.write(payload, 'utf8')
+      child.stdin.end()
+    })
+  }
+
+  async function dispose() {
+    cancelInstall()
+    await unload()
+  }
+
+  return {
+    askAssistant,
+    cancelInstall,
+    deleteModel,
+    dispose,
+    ensureRunning,
+    getStatus,
+    install,
+    runOcr,
+    runOperation,
+    setConfig,
+    start: ensureRunning,
+    unload
+  }
+}
+
+module.exports = {
+  BUSINESS_LOCAL_MODELS,
+  buildAssistantMessages,
+  buildOperationMessages,
+  buildServerArgs,
+  clampCtxSize,
+  cleanModelOutput,
+  computeThreadCounts,
+  createBusinessLocalAiManager,
+  detectHardwareProfile,
+  getModelSpec,
+  getPlatformRuntimeAssetMatcher,
+  parseSkillSuggestions
+}
