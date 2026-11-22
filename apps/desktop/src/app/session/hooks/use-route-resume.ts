@@ -1,6 +1,6 @@
 import { type MutableRefObject, useEffect, useRef } from 'react'
 
-import { isNewChatRoute } from '@/app/routes'
+import { isNewChatRoute, RESERVED_PATHS } from '@/app/routes'
 
 interface RouteResumeOptions {
   activeSessionId: string | null
@@ -32,12 +32,9 @@ function rawHashLooksLikeSession(): boolean {
     return false
   }
 
-  return (
-    !hash.startsWith('/settings') &&
-    !hash.startsWith('/skills') &&
-    !hash.startsWith('/messaging') &&
-    !hash.startsWith('/artifacts')
-  )
+  const path = hash.split('?')[0] || '/'
+
+  return !RESERVED_PATHS.has(path)
 }
 
 export function useRouteResume({

@@ -26,6 +26,7 @@ import type {
 } from '@/hermes'
 import { sessionTitle } from '@/lib/chat-runtime'
 import { Activity, AlertCircle, BarChart3, Pin } from '@/lib/icons'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { exportSession } from '@/lib/session-export'
 import { cn } from '@/lib/utils'
 import { upsertDesktopActionTask } from '@/store/activity'
@@ -82,14 +83,20 @@ interface SectionSearchEntry {
 
 const NAVIGATION_SEARCH_ENTRIES: readonly NavigationSearchEntry[] = [
   { id: 'nav-new-chat', route: NEW_CHAT_ROUTE, title: 'New session', detail: 'Start a fresh session' },
-  { id: 'nav-settings', route: SETTINGS_ROUTE, title: 'Settings', detail: 'Configure TchuekaM desktop' },
+  ...(IS_LOCKED_DEMO
+    ? []
+    : [{ id: 'nav-settings', route: SETTINGS_ROUTE, title: 'Settings', detail: 'Configure TchuekaM desktop' }]),
   { id: 'nav-skills', route: SKILLS_ROUTE, title: 'Skills & Tools', detail: 'Enable skills, toolsets, and providers' },
-  {
-    id: 'nav-messaging',
-    route: MESSAGING_ROUTE,
-    title: 'Messaging',
-    detail: 'Set up Telegram, Slack, Discord, and more'
-  },
+  ...(IS_LOCKED_DEMO
+    ? []
+    : [
+        {
+          id: 'nav-messaging',
+          route: MESSAGING_ROUTE,
+          title: 'Messaging',
+          detail: 'Set up Telegram, Slack, Discord, and more'
+        }
+      ]),
   { id: 'nav-artifacts', route: ARTIFACTS_ROUTE, title: 'Artifacts', detail: 'Browse generated outputs' }
 ]
 
@@ -276,18 +283,29 @@ export function CommandCenterView({
     setSystemError('')
 
     try {
-      const [nextStatus, nextLogs] = await Promise.all([
+      const [statusResult, logsResult] = await Promise.allSettled([
         getStatus(),
-        getLogs({
-          file: 'agent',
-          lines: 120
-        })
+        IS_LOCKED_DEMO
+          ? Promise.resolve({ lines: [] as string[] })
+          : getLogs({
+              file: 'agent',
+              lines: 120
+            })
       ])
 
-      setStatus(nextStatus)
-      setLogs(nextLogs.lines)
-    } catch (error) {
-      setSystemError(error instanceof Error ? error.message : String(error))
+      if (statusResult.status === 'fulfilled') {
+        setStatus(statusResult.value)
+      } else {
+        setSystemError(
+          statusResult.reason instanceof Error ? statusResult.reason.message : String(statusResult.reason)
+        )
+      }
+
+      if (logsResult.status === 'fulfilled') {
+        setLogs(logsResult.value.lines)
+      } else if (!IS_LOCKED_DEMO && statusResult.status === 'fulfilled') {
+        setSystemError(logsResult.reason instanceof Error ? logsResult.reason.message : String(logsResult.reason))
+      }
     } finally {
       setSystemLoading(false)
     }
@@ -650,14 +668,16 @@ export function CommandCenterView({
                           TchuekaM {status.version} · Active sessions {status.active_sessions}
                         </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-                        <OverlayActionButton className="h-7 px-2.5" onClick={() => void runSystemAction('restart')}>
-                          Restart messaging
-                        </OverlayActionButton>
-                        <OverlayActionButton className="h-7 px-2.5" onClick={() => void runSystemAction('update')}>
-                          Update TchuekaM
-                        </OverlayActionButton>
-                      </div>
+                      {!IS_LOCKED_DEMO && (
+                        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                          <OverlayActionButton className="h-7 px-2.5" onClick={() => void runSystemAction('restart')}>
+                            Restart messaging
+                          </OverlayActionButton>
+                          <OverlayActionButton className="h-7 px-2.5" onClick={() => void runSystemAction('update')}>
+                            Update TchuekaM
+                          </OverlayActionButton>
+                        </div>
+                      )}
                     </div>
                     {systemAction && (
                       <div className="text-xs text-muted-foreground">

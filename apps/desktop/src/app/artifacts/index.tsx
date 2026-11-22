@@ -21,6 +21,7 @@ import { getSessionMessages, listSessions } from '@/hermes'
 import { sessionTitle } from '@/lib/chat-runtime'
 import { ExternalLink, ExternalLinkIcon, hostPathLabel, urlSlugTitleLabel, useLinkTitle } from '@/lib/external-link'
 import { FileImage, FileText, FolderOpen, Link2 } from '@/lib/icons'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notifyError } from '@/store/notifications'
 import type { SessionInfo, SessionMessage } from '@/types/hermes'
@@ -129,7 +130,7 @@ function artifactHref(value: string): string {
     return value
   }
 
-  if (value.startsWith('/')) {
+  if (IS_DESKTOP && value.startsWith('/')) {
     return `file://${encodeURI(value)}`
   }
 
@@ -473,6 +474,10 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   }, [artifacts])
 
   const openArtifact = useCallback(async (href: string) => {
+    if (!IS_DESKTOP && !/^https?:\/\//i.test(href)) {
+      return
+    }
+
     try {
       if (window.hermesDesktop?.openExternal) {
         await window.hermesDesktop.openExternal(href)
@@ -671,7 +676,7 @@ function ArtifactImageCard({ artifact, failedImage, onImageError, onOpenChat }: 
           failedImage && 'cursor-default'
         )}
       >
-        {!failedImage && (
+        {!failedImage && (IS_DESKTOP || /^(?:https?|data|blob):/i.test(artifact.href)) && (
           <ZoomableImage
             alt={artifact.label}
             className="max-h-40 max-w-full cursor-zoom-in rounded-md object-contain shadow-sm"

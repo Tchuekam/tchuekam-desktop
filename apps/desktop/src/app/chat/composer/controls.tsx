@@ -115,7 +115,7 @@ function ConversationPill({
 
   const label =
     status === 'speaking'
-      ? 'Speaking'
+      ? 'Speaking · Interrupt anytime'
       : status === 'transcribing'
         ? 'Transcribing'
         : status === 'thinking'
@@ -142,21 +142,21 @@ function ConversationPill({
       >
         <Codicon name={muted ? 'mic-off' : 'mic'} size="1rem" />
       </Button>
-      {listening && (
+      {(listening || speaking) && (
         <Button
-          aria-label="Stop listening and send"
+          aria-label={speaking ? 'Interrupt assistant speech' : 'Stop listening and send'}
           className="h-(--composer-control-size) shrink-0 gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
           disabled={disabled}
           onClick={() => {
             triggerHaptic('submit')
             onStopTurn()
           }}
-          title="Stop listening and send"
+          title={speaking ? 'Interrupt speech' : 'Stop listening and send'}
           type="button"
           variant="ghost"
         >
           <Square className="fill-current" size={11} />
-          <span>Stop</span>
+          <span>{speaking ? 'Interrupt' : 'Stop'}</span>
         </Button>
       )}
       <Button

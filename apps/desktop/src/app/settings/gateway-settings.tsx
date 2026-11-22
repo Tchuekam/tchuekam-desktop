@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AlertCircle, Check, FileText, Globe, Loader2, Monitor } from '@/lib/icons'
+import { IS_DESKTOP, IS_WEB } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 
@@ -206,13 +207,30 @@ export function GatewaySettings() {
       </div>
 
       {state.envOverride ? (
-        <div className="mb-5 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[length:var(--conversation-caption-font-size)] text-destructive">
+        <div
+          className={cn(
+            'mb-5 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[length:var(--conversation-caption-font-size)]',
+            IS_WEB
+              ? 'border-border bg-muted/40 text-muted-foreground'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
+          )}
+        >
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <div>
-            <div className="font-medium">Environment variables are controlling this desktop session.</div>
+            <div className="font-medium">
+              {IS_WEB
+                ? 'Gateway connection is managed by this web deployment.'
+                : 'Environment variables are controlling this desktop session.'}
+            </div>
             <div className="mt-1 leading-5">
-              Unset <code>HERMES_DESKTOP_REMOTE_URL</code> and <code>HERMES_DESKTOP_REMOTE_TOKEN</code> to use the saved
-              setting below.
+              {IS_WEB
+                ? `Connected to ${state.remoteUrl || 'the TchuekaM web backend'}.`
+                : (
+                    <>
+                      Unset <code>HERMES_DESKTOP_REMOTE_URL</code> and <code>HERMES_DESKTOP_REMOTE_TOKEN</code> to use the
+                      saved setting below.
+                    </>
+                  )}
             </div>
           </div>
         </div>
@@ -290,18 +308,20 @@ export function GatewaySettings() {
         </Button>
       </div>
 
-      <div className="mt-6 divide-y divide-border/40">
-        <ListRow
-          action={
-            <Button onClick={() => void window.hermesDesktop?.revealLogs()} variant="outline">
-              <FileText className="size-4" />
-              Open logs
-            </Button>
-          }
-          description="Reveal desktop.log in your file manager — useful when the gateway fails to start."
-          title="Diagnostics"
-        />
-      </div>
+      {IS_DESKTOP && (
+        <div className="mt-6 divide-y divide-border/40">
+          <ListRow
+            action={
+              <Button onClick={() => void window.hermesDesktop?.revealLogs()} variant="outline">
+                <FileText className="size-4" />
+                Open logs
+              </Button>
+            }
+            description="Reveal desktop.log in your file manager — useful when the gateway fails to start."
+            title="Diagnostics"
+          />
+        </div>
+      )}
     </SettingsContent>
   )
 }

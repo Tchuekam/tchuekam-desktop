@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { SetTitlebarToolGroup, TitlebarTool } from '@/app/shell/titlebar-controls'
 import { Bug } from '@/lib/icons'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { $previewServerRestart, failPreviewServerRestart, type PreviewTarget } from '@/store/preview'
@@ -507,6 +508,33 @@ export function PreviewPane({
       setLoading(false)
 
       return
+    }
+
+    if (!IS_DESKTOP) {
+      const iframe = document.createElement('iframe')
+      iframe.className = 'h-full w-full flex-1 border-0 bg-white'
+      iframe.src = target.url
+      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups')
+      iframe.setAttribute('referrerpolicy', 'no-referrer')
+
+      const onLoad = () => setLoading(false)
+      const onIframeError = () => {
+        setLoadError({
+          description: 'The preview page could not be embedded.',
+          url: target.url
+        })
+        setLoading(false)
+      }
+
+      iframe.addEventListener('load', onLoad)
+      iframe.addEventListener('error', onIframeError)
+      host.appendChild(iframe)
+
+      return () => {
+        iframe.removeEventListener('load', onLoad)
+        iframe.removeEventListener('error', onIframeError)
+        iframe.remove()
+      }
     }
 
     const webview = document.createElement('webview') as PreviewWebview

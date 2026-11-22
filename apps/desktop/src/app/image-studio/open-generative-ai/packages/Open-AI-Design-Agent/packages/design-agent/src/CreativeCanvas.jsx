@@ -31,19 +31,18 @@ const SyntaxHighlighter = dynamic(
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { HiOutlineArrowUpTray, HiOutlineTrash } from "react-icons/hi2";
 import Image from "next/image";
+import { rewriteMuapiProxyUrl } from "@/app/image-studio/proxyUrl";
 
 
 // Mirrors the convention in packages/studio/src/muapi.js: under an http(s)
-// origin we go through the host app's /api proxy (Next re-issues the call
-// server-side, so api.muapi.ai CORS never applies). Electron's packaged
-// renderer runs on file://, where no proxy exists, so it calls upstream
-// directly. Without this the desktop build 404s every design-agent request.
+// origin we go through the host app's /api/muapi-proxy endpoint so api.muapi.ai
+// CORS never applies without colliding with /api/v1/* SaaS routes.
 const DIRECT_UPSTREAM =
   typeof window === "undefined" || !window.location?.protocol?.startsWith("http");
 const UPSTREAM_ORIGIN = "https://api.muapi.ai";
 const API = DIRECT_UPSTREAM
   ? `${UPSTREAM_ORIGIN}/api/v1/creative-agent`
-  : "/api/v1/creative-agent";
+  : rewriteMuapiProxyUrl("/api/v1/creative-agent");
 
 const formatTime = (dateStr) => {
   if (!dateStr) return "";
@@ -602,7 +601,7 @@ export default function CreativeCanvas({
       const { data: signData } = await axios.get(
         DIRECT_UPSTREAM
           ? `${UPSTREAM_ORIGIN}/app/get_file_upload_url`
-          : "/api/v1/get_upload_url",
+          : rewriteMuapiProxyUrl("/api/app/get_file_upload_url"),
         {
           params: { filename: file.name },
           headers: getHeaders()
@@ -612,18 +611,13 @@ export default function CreativeCanvas({
       const { url, fields } = signData;
 
       const formData = new FormData();
-      // The /api/v1/upload-binary route strips this field and POSTs the rest to
-      // the signed URL. Posting straight to S3 does the same thing without the
-      // proxy hop, so only send the marker field when the proxy is in play.
-      if (!DIRECT_UPSTREAM) formData.append("x-proxy-target-url", url);
       Object.entries(fields).forEach(([key, value]) => {
         formData.append(key, value);
       });
       formData.append("file", file);
 
-      // 2. Upload the binary — direct to the signed S3 URL on file://, via the
-      // CORS-avoiding local proxy under http(s).
-      await axios.post(DIRECT_UPSTREAM ? url : "/api/v1/upload-binary", formData, {
+      // 2. Upload the binary directly to the signed upload URL.
+      await axios.post(url, formData, {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (pe) => {
           setUploadProgress(Math.round((pe.loaded * 100) / pe.total));

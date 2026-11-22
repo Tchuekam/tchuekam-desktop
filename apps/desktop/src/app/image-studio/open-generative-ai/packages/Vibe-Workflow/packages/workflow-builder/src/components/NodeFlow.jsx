@@ -12,6 +12,7 @@ import ReactFlow, {
   useEdgesState,
   useReactFlow,
 } from "reactflow";
+import { applyMuapiProxyRequest } from "@/app/image-studio/proxyUrl";
 // import "reactflow/dist/style.css";
 import { BsArrowUpCircleFill } from "react-icons/bs";
 import { FiZoomIn, FiZoomOut } from "react-icons/fi";
@@ -232,7 +233,8 @@ const NodeFlow = ({ apiKey, initialNodeSchemas, initialWorkflowData }) => {
   const api = useMemo(() => {
     const instance = axios.create();
     instance.interceptors.request.use((config) => {
-      if (apiKey) {
+      applyMuapiProxyRequest(config);
+      if (apiKey && apiKey !== "server-configured") {
         config.headers = config.headers || {};
         config.headers["Authorization"] = `Bearer ${apiKey}`;
         config.headers["x-api-key"] = apiKey;

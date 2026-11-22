@@ -19,18 +19,45 @@
  *   - packager.appInfo.productFilename: the exe basename (e.g. 'Hermes')
  */
 
+const fs = require('node:fs')
 const path = require('node:path')
 
 const { stampExeIdentity } = require('./set-exe-identity.cjs')
 
+function resolvePackagedResourcesDir(context) {
+  if (context.electronPlatformName === 'darwin') {
+    const appName = context.packager?.appInfo?.productFilename || 'Tchuekam'
+    return path.join(context.appOutDir, `${appName}.app`, 'Contents', 'Resources')
+  }
+  return path.join(context.appOutDir, 'resources')
+}
+
+function copyStagedRuntimeModules(desktopRoot, resourcesDir) {
+  // electron-builder omits **/node_modules/** inside extraResources even when
+  // staged under build/native-deps/. Copy the staged closure explicitly so
+  // require(path.join(process.resourcesPath, 'native-deps', 'node_modules', ...))
+  // resolves in packaged builds on all platforms.
+  const src = path.join(desktopRoot, 'build', 'native-deps', 'node_modules')
+  if (!fs.existsSync(src)) {
+    throw new Error(`[after-pack] Missing staged runtime modules at ${src}. Run scripts/stage-native-deps.cjs first.`)
+  }
+  const dst = path.join(resourcesDir, 'native-deps', 'node_modules')
+  fs.rmSync(dst, { recursive: true, force: true })
+  fs.mkdirSync(path.dirname(dst), { recursive: true })
+  fs.cpSync(src, dst, { recursive: true, force: true })
+  console.log(`[after-pack] copied staged runtime node_modules -> ${dst}`)
+}
+
 exports.default = async function afterPack(context) {
+  const desktopRoot = path.resolve(__dirname, '..')
+  copyStagedRuntimeModules(desktopRoot, resolvePackagedResourcesDir(context))
+
   if (context.electronPlatformName !== 'win32') {
     return
   }
 
   const productName = context.packager?.appInfo?.productFilename || 'Hermes'
   const exe = path.join(context.appOutDir, `${productName}.exe`)
-  const desktopRoot = path.resolve(__dirname, '..')
 
   try {
     await stampExeIdentity(exe, desktopRoot)

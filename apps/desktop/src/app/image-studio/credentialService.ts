@@ -110,18 +110,20 @@ export async function getProviderKey(provider: StudioProviderId): Promise<string
     // Fallback to backend or memory
   }
 
-  // 3. Try Tchuekam backend .env reveal
-  try {
-    const revealed = await revealEnvVar(envKey)
-    if (revealed?.value && revealed.value.trim().length > 0 && revealed.value !== 'genimage_free_key') {
-      const trimmed = revealed.value.trim()
-      memoryKeys[provider] = trimmed
-      // Mirror to safeStorage if available
-      void window.hermesDesktop?.setSecureSecret?.(secretKey, trimmed).catch(() => null)
-      return memoryKeys[provider]
+  // 3. Try Tchuekam backend .env reveal (skipped in locked public demo mode)
+  if (!IS_LOCKED_DEMO) {
+    try {
+      const revealed = await revealEnvVar(envKey)
+      if (revealed?.value && revealed.value.trim().length > 0 && revealed.value !== 'genimage_free_key') {
+        const trimmed = revealed.value.trim()
+        memoryKeys[provider] = trimmed
+        // Mirror to safeStorage if available
+        void window.hermesDesktop?.setSecureSecret?.(secretKey, trimmed).catch(() => null)
+        return memoryKeys[provider]
+      }
+    } catch {
+      // Backend may not have key or be running in remote mode
     }
-  } catch {
-    // Backend may not have key or be running in remote mode
   }
 
   return null
@@ -238,7 +240,7 @@ export async function validateProvider(provider: StudioProviderId, key: string):
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err)
     if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.toLowerCase().includes('not authorized')) {
-      return { ok: false, status: 403, error: 'The API key was rejected by MuAPI. Please verify your key.', provider }
+      return { ok: false, status: 403, error: 'The API key was rejected by the provider (MuAPI). Please verify your key.', provider }
     }
     return { ok: false, status: 500, error: errorMsg || 'Unable to connect to MuAPI authentication.', provider }
   }

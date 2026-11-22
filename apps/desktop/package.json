@@ -36,7 +36,7 @@
     "test:desktop:nsis": "node scripts/test-desktop.mjs nsis",
     "test:desktop:existing": "node scripts/test-desktop.mjs existing",
     "test:desktop:fresh": "node scripts/test-desktop.mjs fresh",
-    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/backend-probes.test.cjs electron/bootstrap-runner.test.cjs scripts/write-build-stamp.test.cjs",
+    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/backend-probes.test.cjs electron/bootstrap-runner.test.cjs electron/business-local-ai.test.cjs scripts/write-build-stamp.test.cjs",
     "type-check": "tsc -b",
     "lint": "eslint src/ electron/",
     "lint:fix": "eslint src/ electron/ --fix",
@@ -163,8 +163,6 @@
       "assets/**",
       "electron/**",
       "public/**",
-      "node_modules/electron-updater/**",
-      "node_modules/builder-util-runtime/**",
       "package.json"
     ],
     "beforeBuild": "scripts/before-build.cjs",

@@ -1,23 +1,26 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getRecastModelById, getLipSyncModelById, getAudioModelById } from './models.js';
 
+import { getMuapiFetchOptions, resolveMuapiProxyBase } from '@/app/image-studio/proxyUrl';
+
 // In an http(s) browser we route through TchueKAM's FastAPI proxy
 // (/api/muapi-proxy/* -> https://api.muapi.ai/*) so api.muapi.ai CORS is bypassed
 // without colliding with /api/v1/* SaaS routes.
 // SSR (no window) and Electron's file:// renderer call the upstream directly.
-const _WEB_BACKEND_ORIGIN = (() => {
-    const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HERMES_API_URL)
-        ? String(import.meta.env.VITE_HERMES_API_URL).replace(/\/+$/, '')
-        : '';
-    if (envUrl) return envUrl;
-    if (typeof window !== 'undefined' && window.location?.hostname?.endsWith('.vercel.app') && !window.__HERMES_SESSION_TOKEN__) {
-        return 'https://tchuekam-agent-production.up.railway.app';
-    }
-    return '';
-})();
+const _PROXY_BASE = resolveMuapiProxyBase();
 const BASE_URL = (typeof window !== 'undefined' && window.location?.protocol?.startsWith('http'))
-    ? `${_WEB_BACKEND_ORIGIN}/api/muapi-proxy`
+    ? _PROXY_BASE
     : 'https://api.muapi.ai';
-const PROXY_WF_BASE = `${_WEB_BACKEND_ORIGIN}/api/muapi-proxy/workflow`;
+const PROXY_WF_BASE = `${_PROXY_BASE}/workflow`;
+
+function muapiFetch(url, options = {}) {
+    const extraHeaders = options.headers && !(options.headers instanceof Headers) ? options.headers : {};
+    const proxyOpts = getMuapiFetchOptions(extraHeaders);
+    return muapiFetch(url, {
+        ...options,
+        credentials: options.credentials || proxyOpts.credentials,
+        headers: options.headers instanceof Headers ? options.headers : proxyOpts.headers,
+    });
+}
 
 export class AuthError extends Error {
     constructor(message, status = 401, detail = '') {
@@ -36,7 +39,7 @@ function notifyAuthRequired(status, detail) {
 }
 
 async function authFetch(url, options = {}) {
-    const response = await fetch(url, options);
+    const response = await muapiFetch(url, options);
     if (!response.ok) {
         const errText = await response.text();
         notifyAuthRequired(response.status, errText);
@@ -59,7 +62,7 @@ async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000,
             throw new Error('Generation cancelled by user');
         }
         try {
-            const response = await fetch(pollUrl, {
+            const response = await muapiFetch(pollUrl, {
                 headers: { 'Content-Type': 'application/json', 'x-api-key': key },
                 signal: options.signal
             });
@@ -89,7 +92,7 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
         throw new AuthError('API key not configured. Please enter your API key in Settings.', 401);
     }
     const url = `${BASE_URL}/api/v1/${endpoint}`;
-    const response = await fetch(url, {
+    const response = await muapiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
         body: JSON.stringify(payload),
@@ -334,7 +337,7 @@ export function uploadFile(apiKey, file, onProgress) {
 }
 
 export async function getUserBalance(apiKey) {
-    const response = await fetch(`${BASE_URL}/api/v1/account/balance`, {
+    const response = await muapiFetch(`${BASE_URL}/api/v1/account/balance`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -431,7 +434,7 @@ export async function getUserConversations(apiKey) {
 // GET /agents/by-slug/{slug} — public agent details (works unauthenticated for
 // published/template agents; x-api-key is sent for consistency but not required).
 export async function getAgentBySlug(apiKey, slug) {
-    const response = await fetch(`${BASE_URL}/agents/by-slug/${slug}`, {
+    const response = await muapiFetch(`${BASE_URL}/agents/by-slug/${slug}`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -446,7 +449,7 @@ export async function getAgentBySlug(apiKey, slug) {
 
 // GET /agents/by-slug/{slug}/{conversationId} — chat history for one conversation.
 export async function getAgentConversation(apiKey, agentSlug, conversationId) {
-    const response = await fetch(`${BASE_URL}/agents/by-slug/${agentSlug}/${conversationId}`, {
+    const response = await muapiFetch(`${BASE_URL}/agents/by-slug/${agentSlug}/${conversationId}`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -462,7 +465,7 @@ export async function getAgentConversation(apiKey, agentSlug, conversationId) {
 // POST /agents/by-slug/{slug}/chat — send a message, returns {request_id, status}
 // to poll via pollAgentChatResult.
 export async function sendAgentChatMessage(apiKey, agentSlug, { message, conversationId, attachments } = {}) {
-    const response = await fetch(`${BASE_URL}/agents/by-slug/${agentSlug}/chat`, {
+    const response = await muapiFetch(`${BASE_URL}/agents/by-slug/${agentSlug}/chat`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -492,7 +495,7 @@ export async function pollAgentChatResult(apiKey, requestId, { maxAttempts = 150
     const url = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise(resolve => setTimeout(resolve, interval));
-        const response = await fetch(url, {
+        const response = await muapiFetch(url, {
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': apiKey
@@ -516,7 +519,7 @@ export async function pollAgentChatResult(apiKey, requestId, { maxAttempts = 150
 // embedded form; skill_ids defaults to [] server-side, so the agent is created
 // as a plain system-prompt-driven assistant with no extra tool skills attached).
 export async function createAgent(apiKey, payload) {
-    const response = await fetch(`${BASE_URL}/agents`, {
+    const response = await muapiFetch(`${BASE_URL}/agents`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -532,7 +535,7 @@ export async function createAgent(apiKey, payload) {
 }
 
 export async function createWorkflow(apiKey, payload) {
-    const response = await fetch(`${BASE_URL}/workflow/create`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/create`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -548,7 +551,7 @@ export async function createWorkflow(apiKey, payload) {
 };
 
 export async function updateWorkflowName(apiKey, workflowId, name) {
-    const response = await fetch(`${BASE_URL}/workflow/update-name/${workflowId}`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/update-name/${workflowId}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -564,7 +567,7 @@ export async function updateWorkflowName(apiKey, workflowId, name) {
 };
 
 export async function deleteWorkflow(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/delete-workflow-def/${workflowId}`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/delete-workflow-def/${workflowId}`, {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json',
@@ -579,7 +582,7 @@ export async function deleteWorkflow(apiKey, workflowId) {
 };
 
 export async function getWorkflowInputs(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/api-inputs`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/${workflowId}/api-inputs`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -593,7 +596,7 @@ export async function getWorkflowInputs(apiKey, workflowId) {
 };
 
 export async function executeWorkflow(apiKey, workflowId, inputs) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/api-execute`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/${workflowId}/api-execute`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -618,7 +621,7 @@ async function pollWorkflowResult(runId, apiKey, maxAttempts = 900, interval = 2
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise(resolve => setTimeout(resolve, interval));
         try {
-            const response = await fetch(pollUrl, {
+            const response = await muapiFetch(pollUrl, {
                 headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey }
             });
             if (!response.ok) {
@@ -637,7 +640,7 @@ async function pollWorkflowResult(runId, apiKey, maxAttempts = 900, interval = 2
 };
 
 export async function getAllNodeSchemas(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/node-schemas`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/${workflowId}/node-schemas`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -651,7 +654,7 @@ export async function getAllNodeSchemas(apiKey, workflowId) {
 };
 
 export async function getWorkflowData(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/get-workflow-def/${workflowId}`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/get-workflow-def/${workflowId}`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -665,7 +668,7 @@ export async function getWorkflowData(apiKey, workflowId) {
 };
 
 export async function getNodeSchemas(apiKey, workflowId) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/api-node-schemas`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/${workflowId}/api-node-schemas`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -679,7 +682,7 @@ export async function getNodeSchemas(apiKey, workflowId) {
 }
 
 export async function runSingleNode(apiKey, workflowId, nodeId, payload) {
-    const response = await fetch(`${BASE_URL}/workflow/${workflowId}/node/${nodeId}/run`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/${workflowId}/node/${nodeId}/run`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -695,7 +698,7 @@ export async function runSingleNode(apiKey, workflowId, nodeId, payload) {
 }
 
 export async function deleteNodeRun(apiKey, nodeRunId) {
-    const response = await fetch(`${BASE_URL}/workflow/node-run/${nodeRunId}`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/node-run/${nodeRunId}`, {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json',
@@ -710,7 +713,7 @@ export async function deleteNodeRun(apiKey, nodeRunId) {
 }
 
 export async function getNodeStatus(apiKey, runId) {
-    const response = await fetch(`${BASE_URL}/workflow/run/${runId}/status`, {
+    const response = await muapiFetch(`${BASE_URL}/workflow/run/${runId}/status`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -794,7 +797,7 @@ export async function handleServerSideProxy(prefix, request, params, apiKey) {
 }
 
 export async function calculateDynamicCost(apiKey, taskName, payload) {
-    const response = await fetch(`${BASE_URL}/api/v1/app/calculate_dynamic_cost`, {
+    const response = await muapiFetch(`${BASE_URL}/api/v1/app/calculate_dynamic_cost`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -810,7 +813,7 @@ export async function calculateDynamicCost(apiKey, taskName, payload) {
 }
 
 export async function registerAppInterest(apiKey, appName) {
-    const response = await fetch(`${BASE_URL}/app/interest`, {
+    const response = await muapiFetch(`${BASE_URL}/app/interest`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -826,7 +829,7 @@ export async function registerAppInterest(apiKey, appName) {
 }
 
 export async function getAppInterests(apiKey) {
-    const response = await fetch(`${BASE_URL}/app/interests`, {
+    const response = await muapiFetch(`${BASE_URL}/app/interests`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey
@@ -845,7 +848,7 @@ export async function getHistory(apiKey, { cursor, limit = 50 } = {}) {
     const params = new URLSearchParams();
     if (cursor) params.set('cursor', cursor);
     if (limit) params.set('limit', String(limit));
-    const response = await fetch(`${BASE_URL}/api/v1/history?${params.toString()}`, {
+    const response = await muapiFetch(`${BASE_URL}/api/v1/history?${params.toString()}`, {
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey

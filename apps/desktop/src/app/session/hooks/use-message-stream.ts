@@ -17,8 +17,10 @@ import { coerceGatewayText, coerceThinkingText, normalizePersonalityValue } from
 import { triggerHaptic } from '@/lib/haptics'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { setClarifyRequest } from '@/store/clarify'
+import { applyConnectivitySnapshot, applyIntelligenceRouteEvent } from '@/store/intelligence'
 import { notify } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
+import { clearGatewayPrompt, setGatewayPrompt } from '@/store/prompts'
 import {
   setCurrentBranch,
   setCurrentCwd,
@@ -734,6 +736,14 @@ export function useMessageStream({
         // KawaiiSpinner), not real reasoning. The bottom-of-thread loading
         // indicator already covers that UX, so we ignore these events to
         // avoid a duplicative "Thinking" disclosure showing spinner text.
+      } else if (event.type === 'intelligence.route') {
+        if (payload && typeof payload === 'object') {
+          applyIntelligenceRouteEvent(payload as Parameters<typeof applyIntelligenceRouteEvent>[0])
+        }
+      } else if (event.type === 'intelligence.state') {
+        if (payload && typeof payload === 'object') {
+          applyConnectivitySnapshot(payload as Parameters<typeof applyConnectivitySnapshot>[0])
+        }
       } else if (event.type === 'reasoning.delta') {
         if (sessionId) {
           appendReasoningDelta(sessionId, coerceThinkingText(payload?.text))
@@ -812,7 +822,66 @@ export function useMessageStream({
             sessionId: sessionId ?? null
           })
         }
+      } else if (event.type === 'approval.request') {
+        if (!isActiveEvent || !sessionId) {
+          return
+        }
+
+        const command = typeof payload?.command === 'string' ? payload.command : ''
+
+        const description =
+          typeof payload?.description === 'string' && payload.description
+            ? payload.description
+            : 'Command requires approval'
+
+        const patternKeys = Array.isArray(payload?.pattern_keys)
+          ? payload.pattern_keys.filter((k: unknown): k is string => typeof k === 'string')
+          : undefined
+
+        setGatewayPrompt({
+          kind: 'approval',
+          command,
+          description,
+          patternKeys,
+          sessionId
+        })
+      } else if (event.type === 'sudo.request') {
+        if (!isActiveEvent) {
+          return
+        }
+
+        const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
+
+        if (requestId) {
+          setGatewayPrompt({
+            kind: 'sudo',
+            requestId,
+            sessionId: sessionId ?? null
+          })
+        }
+      } else if (event.type === 'secret.request') {
+        if (!isActiveEvent) {
+          return
+        }
+
+        const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
+        const envVar = typeof payload?.env_var === 'string' ? payload.env_var : 'SECRET'
+        const prompt = typeof payload?.prompt === 'string' ? payload.prompt : ''
+
+        if (requestId) {
+          setGatewayPrompt({
+            kind: 'secret',
+            requestId,
+            envVar,
+            prompt,
+            sessionId: sessionId ?? null
+          })
+        }
       } else if (event.type === 'error') {
+        if (sessionId) {
+          clearGatewayPrompt({ sessionId })
+        }
+
         const errorMessage = payload?.message || 'TchuekaM reported an error'
         const looksLikeProviderSetup = isProviderSetupErrorMessage(errorMessage)
 

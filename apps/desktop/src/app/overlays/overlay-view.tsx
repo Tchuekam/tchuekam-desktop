@@ -80,7 +80,9 @@ export function OverlayView({
           </Button>
         </div>
 
-        <div className={cn('min-h-0 flex flex-1 flex-col pt-(--titlebar-height)', contentClassName)}>{children}</div>
+        <div className={cn('min-h-0 flex flex-1 flex-col sm:pt-(--titlebar-height)', contentClassName)}>
+          {children}
+        </div>
       </div>
     </div>
   )

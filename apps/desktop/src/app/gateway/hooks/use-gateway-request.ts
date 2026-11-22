@@ -2,7 +2,38 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
 import type { HermesGateway } from '@/hermes'
+import { IS_WEB } from '@/lib/platform'
 import { $gatewayState, setConnection } from '@/store/session'
+
+function maybeRedirectToLoginFromError(error: unknown): boolean {
+  if (!IS_WEB || typeof window === 'undefined') {
+    return false
+  }
+
+  const msg = error instanceof Error ? error.message : String(error ?? '')
+
+  if (!msg.startsWith('401:') && !msg.includes('401')) {
+    return false
+  }
+
+  try {
+    const jsonStart = msg.indexOf('{')
+
+    if (jsonStart !== -1) {
+      const body = JSON.parse(msg.slice(jsonStart)) as { login_url?: unknown }
+
+      if (typeof body.login_url === 'string' && body.login_url) {
+        window.location.assign(body.login_url)
+
+        return true
+      }
+    }
+  } catch {
+    // Ignore parse failures on non-JSON 401 messages
+  }
+
+  return false
+}
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
@@ -48,7 +79,8 @@ export function useGatewayRequest() {
         await existing.connect(conn.wsUrl)
 
         return existing
-      } catch {
+      } catch (err) {
+        maybeRedirectToLoginFromError(err)
         connectionRef.current = null
         setConnection(null)
 

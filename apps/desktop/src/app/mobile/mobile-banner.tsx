@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { triggerHaptic } from '@/lib/haptics'
+import { resolveBackendOrigin, webConfig } from '@/lib/platform'
 import { MOBILE_ROUTE } from '../routes'
 
 const DISMISSED_KEY = 'tchuekam_mobile_banner_dismissed_v1'
@@ -52,8 +53,10 @@ export function MobilePromoBanner() {
 
   const handleDownload = () => {
     triggerHaptic('success')
+    const origin = resolveBackendOrigin()
+    const base = origin || webConfig.basePath
     const link = document.createElement('a')
-    link.href = '/api/download/android'
+    link.href = `${base}/api/download/android`
     link.setAttribute('download', 'TchueKAM-Mobile.apk')
     document.body.appendChild(link)
     link.click()

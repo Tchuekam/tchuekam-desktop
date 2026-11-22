@@ -75,8 +75,22 @@ export function routeSessionId(pathname: string): string | null {
 
   const id = pathname.slice(SESSION_ROUTE_PREFIX.length)
 
-  return id && !id.includes('/') ? decodeURIComponent(id) : null
+  if (!id || id.includes('/')) {
+    return null
+  }
+
+  try {
+    return decodeURIComponent(id)
+  } catch {
+    return id
+  }
 }
+
+export function isStandaloneWebRoute(pathname: string): boolean {
+  return pathname === BUSINESS_ROUTE || pathname === MOBILE_ROUTE || pathname === IMAGE_STUDIO_ROUTE
+}
+
+export { RESERVED_PATHS }
 
 export function sessionRoute(sessionId: string): string {
   return `${SESSION_ROUTE_PREFIX}${encodeURIComponent(sessionId)}`

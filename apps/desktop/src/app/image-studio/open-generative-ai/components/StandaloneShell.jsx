@@ -49,6 +49,7 @@ const DesignAgentStudio = dynamic(() => import('studio').then(mod => mod.DesignA
   loading: () => <StudioLoadingFallback name="Design Studio" />
 });
 import axios from 'axios';
+import { applyMuapiProxyRequest } from '@/app/image-studio/proxyUrl';
 import ApiKeyModal from './ApiKeyModal';
 import {
   getProviderKey,
@@ -388,6 +389,7 @@ export default function StandaloneShell() {
   
   const [activeProvider, setActiveProviderState] = useState(() => getActiveStudioProvider());
   const [apiKey, setApiKey] = useState(null);
+  const [serverManaged, setServerManaged] = useState(false);
   const [authState, setAuthState] = useState('validating'); // 'unconfigured' | 'validating' | 'authenticated' | 'invalid' | 'insufficient_quota' | 'unavailable'
   const [authErrorMessage, setAuthErrorMessage] = useState('');
   const [activeTab, setActiveTab] = useState(getInitialTab());
@@ -396,6 +398,7 @@ export default function StandaloneShell() {
   const [showSettings, setShowSettings] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
+  const studioContainerRef = useRef(null);
 
   // Sidebar Collapsed & Mobile Drawer State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -622,9 +625,11 @@ export default function StandaloneShell() {
       }
     };
 
-    document.addEventListener('click', handleAnchorClick, true);
-    return () => document.removeEventListener('click', handleAnchorClick, true);
-  }, [handleTabChange]);
+    const container = studioContainerRef.current;
+    if (!container) return undefined;
+    container.addEventListener('click', handleAnchorClick, true);
+    return () => container.removeEventListener('click', handleAnchorClick, true);
+  }, [handleTabChange, hasMounted]);
 
   const handleOpenNotification = useCallback((notification) => {
     handleTabChange(notification.tabId);
@@ -716,7 +721,8 @@ export default function StandaloneShell() {
 
         if (currentProv === 'fal' && serverFalConfigured) {
           if (!active) return;
-          setApiKey('server-configured');
+          setServerManaged(true);
+          setApiKey(null);
           setAuthState('authenticated');
           setAuthErrorMessage('');
           return;
@@ -732,7 +738,8 @@ export default function StandaloneShell() {
             if (!active) return;
             setActiveStudioProvider('fal');
             setActiveProviderState('fal');
-            setApiKey('server-configured');
+            setServerManaged(true);
+            setApiKey(null);
             setAuthState('authenticated');
             setAuthErrorMessage('');
             return;
@@ -747,7 +754,8 @@ export default function StandaloneShell() {
             if (!active) return;
             setActiveStudioProvider('fal');
             setActiveProviderState('fal');
-            setApiKey('server-configured');
+            setServerManaged(true);
+            setApiKey(null);
             setAuthState('authenticated');
             setAuthErrorMessage('');
             return;
@@ -812,6 +820,7 @@ export default function StandaloneShell() {
 
     setActiveStudioProvider(provider);
     setActiveProviderState(provider);
+    setServerManaged(false);
     setApiKey(newKey);
     const validation = await validateProvider(provider, newKey);
     if (validation.ok) {
@@ -840,29 +849,34 @@ export default function StandaloneShell() {
 
   const handleKeyChange = useCallback(async () => {
     await deleteProviderKey(activeProvider);
+    setServerManaged(false);
     setApiKey(null);
     setBalance(null);
     setAuthState('unconfigured');
     setAuthErrorMessage('');
   }, [activeProvider]);
 
-  // Inject API key into all outgoing Axios requests (prop-based approach)
-  // We use an interceptor to be selective and NOT send the key to external domains like S3
+  // Inject proxy rewrite, session token, and BYOK API key into outgoing Axios requests.
   useEffect(() => {
-    // Safety: Clear any global defaults that might have been set previously
     delete axios.defaults.headers.common['x-api-key'];
 
-    if (!apiKey) return;
-
     const interceptorId = axios.interceptors.request.use((config) => {
-      // Check if URL is local/proxied
-      const isRelative = config.url.startsWith('/') || !config.url.startsWith('http');
-      const isInternalProxy = config.url.includes('/api/app') || config.url.includes('/api/workflow') || config.url.includes('/api/agents') || config.url.includes('/api/api') || config.url.includes('/api/v1');
+      applyMuapiProxyRequest(config);
+      const rawUrl = config.url || '';
+      const isRelative = rawUrl.startsWith('/') || !rawUrl.startsWith('http');
+      const isInternalProxy =
+        rawUrl.includes('/api/muapi-proxy') ||
+        rawUrl.includes('/api/app') ||
+        rawUrl.includes('/api/workflow') ||
+        rawUrl.includes('/api/agents') ||
+        rawUrl.includes('/api/api') ||
+        rawUrl.includes('/api/v1');
 
-      if (isRelative || isInternalProxy) {
+      if ((isRelative || isInternalProxy) && apiKey && apiKey !== 'server-configured') {
+        config.headers = config.headers || {};
         config.headers['x-api-key'] = apiKey;
       }
-      
+
       return config;
     });
 
@@ -923,11 +937,11 @@ export default function StandaloneShell() {
   );
 
   // If no credentials are configured or invalid on initial load, show the configuration interface
-  if (!apiKey || authState === 'unconfigured') {
+  if (!serverManaged && (!apiKey || authState === 'unconfigured')) {
     return (
       <ApiKeyModal
         initialProvider={activeProvider}
-        initialKey={apiKey || ''}
+        initialKey={apiKey && apiKey !== 'server-configured' ? apiKey : ''}
         onSave={handleKeySave}
         authState={authState}
         errorMessage={authErrorMessage}
@@ -938,6 +952,7 @@ export default function StandaloneShell() {
 
   return (
     <div 
+      ref={studioContainerRef}
       className="h-full min-h-0 bg-[#030303] flex flex-col overflow-hidden text-white relative"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
@@ -963,7 +978,7 @@ export default function StandaloneShell() {
 
       {/* Header */}
       {isHeaderVisible && (
-        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-2.5 sm:px-4 md:pl-[max(1rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1rem))] bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-2 sm:gap-3 select-none">
+        <header className="flex-shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-2.5 sm:px-4 md:pl-[max(1rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*3)+1.25rem))] md:pr-[max(1rem,calc(var(--titlebar-tools-right,0.75rem)+var(--titlebar-tools-width,0px)+0.75rem))] bg-[#0a0a0b]/95 backdrop-blur-md z-50 gap-2 sm:gap-3 select-none">
           {/* Left: Logo */}
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <img src={`${import.meta.env.BASE_URL}apple-touch-icon.png`} alt="TchuekaM Studio Logo" className="w-8 h-8 rounded-lg object-contain bg-[#111]" />
@@ -1279,7 +1294,7 @@ export default function StandaloneShell() {
         <ApiKeyModal
           overlay={true}
           initialProvider={activeProvider}
-          initialKey={apiKey || ''}
+          initialKey={apiKey && apiKey !== 'server-configured' ? apiKey : ''}
           authState={authState}
           errorMessage={authErrorMessage}
           isValidating={authState === 'validating'}

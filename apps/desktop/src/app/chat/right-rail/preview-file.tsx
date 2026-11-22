@@ -11,6 +11,7 @@ import ShikiHighlighter from 'react-shiki'
 import { Streamdown } from 'streamdown'
 
 import { HERMES_PATHS_MIME } from '@/app/chat/hooks/use-composer-actions'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 
@@ -432,6 +433,15 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
 
       if (!isImage && !isText) {
         setState({ loading: false })
+
+        return
+      }
+
+      if (!IS_DESKTOP && !filePath.startsWith('data:')) {
+        setState({
+          error: 'Local file previews are only available in the TchuekaM desktop app.',
+          loading: false
+        })
 
         return
       }

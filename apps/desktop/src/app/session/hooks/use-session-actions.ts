@@ -4,7 +4,7 @@ import type { NavigateFunction } from 'react-router-dom'
 
 import { deleteSession, getSessionMessages, setSessionArchived } from '@/hermes'
 import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
-import { IS_DESKTOP } from '@/lib/platform'
+import { IS_DESKTOP, IS_LOCKED_DEMO } from '@/lib/platform'
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
 import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
@@ -14,6 +14,8 @@ import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
 import {
   $currentCwd,
+  $currentModel,
+  $currentProvider,
   $messages,
   $sessions,
   getRememberedWorkspaceCwd,
@@ -339,11 +341,29 @@ export function useSessionActions({
         navigate(sessionRoute(stored), { replace: true })
       }
 
+      const chosenModel = $currentModel.get().trim()
+      const chosenProvider = $currentProvider.get().trim()
+
       setFreshDraftReady(false)
       setActiveSessionId(created.session_id)
       setSelectedStoredSessionId(stored)
       setSessionStartedAt(Date.now())
       const runtimeInfo = applyRuntimeInfo(created.info)
+
+      if (
+        IS_LOCKED_DEMO &&
+        chosenModel &&
+        chosenProvider &&
+        (created.info?.model !== chosenModel || created.info?.provider !== chosenProvider)
+      ) {
+        await requestGateway('model.switch', {
+          session_id: created.session_id,
+          provider: chosenProvider,
+          model: chosenModel
+        }).catch(() => undefined)
+        setCurrentModel(chosenModel)
+        setCurrentProvider(chosenProvider)
+      }
 
       if (runtimeInfo) {
         updateSessionState(created.session_id, state => ({ ...state, ...runtimeInfo }), stored)
@@ -543,13 +563,17 @@ export function useSessionActions({
           return
         }
 
-        const fallback = await getSessionMessages(storedSessionId)
+        try {
+          const fallback = await getSessionMessages(storedSessionId)
 
-        if (!isCurrentResume()) {
-          return
+          if (!isCurrentResume()) {
+            return
+          }
+
+          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
+        } catch {
+          // Fall through to error toast when stored session is also unreachable
         }
-
-        setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
         notifyError(err, 'Resume failed')
       } finally {
         if (isCurrentResume()) {

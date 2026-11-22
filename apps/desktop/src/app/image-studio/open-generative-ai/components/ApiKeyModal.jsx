@@ -14,9 +14,10 @@ export default function ApiKeyModal({
   errorMessage = '',
   isValidating = false,
 }) {
+  const cleanInitial = initialKey === 'server-configured' ? '' : initialKey;
   const [selectedProvider, setSelectedProvider] = useState(initialProvider);
-  const [falKey, setFalKey] = useState(initialProvider === 'fal' ? initialKey : '');
-  const [muapiKey, setMuapiKey] = useState(initialProvider === 'muapi' ? initialKey : '');
+  const [falKey, setFalKey] = useState(initialProvider === 'fal' ? cleanInitial : '');
+  const [muapiKey, setMuapiKey] = useState(initialProvider === 'muapi' ? cleanInitial : '');
   const [localError, setLocalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 

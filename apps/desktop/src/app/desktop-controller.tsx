@@ -17,18 +17,8 @@ import { useSkinCommand } from '@/themes/use-skin-command'
 import { formatRefValue } from '../components/assistant-ui/directive-text'
 import { getSessionMessages, listSessions } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
-import {
-  $pinnedSessionIds,
-  $sessionsLimit,
-  bumpSessionsLimit,
-  FILE_BROWSER_DEFAULT_WIDTH,
-  FILE_BROWSER_MAX_WIDTH,
-  FILE_BROWSER_MIN_WIDTH,
-  pinSession,
-  SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MAX_WIDTH,
-  unpinSession
-} from '../store/layout'
+import { $pinnedSessionIds, $sessionsLimit, bumpSessionsLimit, FILE_BROWSER_DEFAULT_WIDTH, FILE_BROWSER_MAX_WIDTH, FILE_BROWSER_MIN_WIDTH, pinSession, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, unpinSession } from '../store/layout'
+import { initIntelligenceListeners } from '../store/intelligence'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import {
   $activeSessionId,
@@ -179,10 +169,12 @@ export function DesktopController() {
 
   useEffect(() => {
     startUpdatePoller()
+    const stopIntelligence = initIntelligenceListeners()
     const unsubscribe = window.hermesDesktop?.onOpenUpdatesRequested?.(() => openUpdatesWindow())
 
     return () => {
       unsubscribe?.()
+      stopIntelligence()
       stopUpdatePoller()
     }
   }, [])
@@ -715,9 +707,13 @@ export function DesktopController() {
           />
           <Route
             element={
-              <Suspense fallback={null}>
-                <MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
+              IS_LOCKED_DEMO ? (
+                <Navigate replace to={NEW_CHAT_ROUTE} />
+              ) : (
+                <Suspense fallback={null}>
+                  <MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />
+                </Suspense>
+              )
             }
             path="messaging"
           />
@@ -747,24 +743,32 @@ export function DesktopController() {
           />
           <Route
             element={
-              <Suspense fallback={null}>
-                <CronView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
+              IS_LOCKED_DEMO ? (
+                <Navigate replace to={NEW_CHAT_ROUTE} />
+              ) : (
+                <Suspense fallback={null}>
+                  <CronView setStatusbarItemGroup={setStatusbarItemGroup} />
+                </Suspense>
+              )
             }
             path="cron"
           />
           <Route
             element={
-              <Suspense fallback={null}>
-                <ProfilesView
-                  setStatusbarItemGroup={setStatusbarItemGroup}
-                  setTitlebarToolGroup={setTitlebarToolGroup}
-                />
-              </Suspense>
+              IS_LOCKED_DEMO ? (
+                <Navigate replace to={NEW_CHAT_ROUTE} />
+              ) : (
+                <Suspense fallback={null}>
+                  <ProfilesView
+                    setStatusbarItemGroup={setStatusbarItemGroup}
+                    setTitlebarToolGroup={setTitlebarToolGroup}
+                  />
+                </Suspense>
+              )
             }
             path="profiles"
           />
-          <Route element={null} path="settings" />
+          <Route element={IS_LOCKED_DEMO ? <Navigate replace to={NEW_CHAT_ROUTE} /> : null} path="settings" />
           <Route element={null} path="command-center" />
           <Route element={null} path="agents" />
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />

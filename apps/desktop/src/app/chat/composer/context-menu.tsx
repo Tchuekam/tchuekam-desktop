@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Clipboard, FileText, FolderOpen, type IconComponent, ImageIcon, Link, MessageSquareText } from '@/lib/icons'
+import { HAS_NATIVE_FS } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 
 import { GHOST_ICON_BTN } from './controls'
@@ -79,12 +80,16 @@ export function ContextMenu({
           <DropdownMenuLabel className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground/85">
             Attach
           </DropdownMenuLabel>
-          <ContextMenuItem disabled={!onPickFiles} icon={FileText} onSelect={onPickFiles}>
-            Files…
-          </ContextMenuItem>
-          <ContextMenuItem disabled={!onPickFolders} icon={FolderOpen} onSelect={onPickFolders}>
-            Folder…
-          </ContextMenuItem>
+          {HAS_NATIVE_FS && (
+            <ContextMenuItem disabled={!onPickFiles} icon={FileText} onSelect={onPickFiles}>
+              Files…
+            </ContextMenuItem>
+          )}
+          {HAS_NATIVE_FS && (
+            <ContextMenuItem disabled={!onPickFolders} icon={FolderOpen} onSelect={onPickFolders}>
+              Folder…
+            </ContextMenuItem>
+          )}
           <ContextMenuItem disabled={!onPickImages} icon={ImageIcon} onSelect={onPickImages}>
             Images…
           </ContextMenuItem>

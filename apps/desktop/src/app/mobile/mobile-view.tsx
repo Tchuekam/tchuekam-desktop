@@ -13,11 +13,14 @@ import {
   IconTerminal2,
   IconWorld
 } from '@tabler/icons-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { triggerHaptic } from '@/lib/haptics'
+import { resolveBackendOrigin, webConfig } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+
+import { generateQrMatrix } from './qr-svg'
 
 interface ScenarioOption {
   id: string
@@ -85,17 +88,24 @@ export function MobileView() {
   const [executed, setExecuted] = useState(false)
   const [mobileTab, setMobileTab] = useState<'decide' | 'chat' | 'tools'>('decide')
   const [copiedLink, setCopiedLink] = useState(false)
+  const [simReply, setSimReply] = useState<{ prompt: string; reply: string } | null>(null)
 
-  const downloadApkUrl = '/api/download/android'
+  const backendOrigin = resolveBackendOrigin()
+  const downloadApkUrl = `${backendOrigin || webConfig.basePath}/api/download/android`
+  const qrTargetUrl = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return downloadApkUrl
+    }
+    try {
+      return new URL(downloadApkUrl, window.location.origin).href
+    } catch {
+      return downloadApkUrl
+    }
+  }, [downloadApkUrl])
+  const qrMatrix = useMemo(() => generateQrMatrix(qrTargetUrl), [qrTargetUrl])
 
-  const handleDownloadApk = () => {
+  const handleDownloadClick = () => {
     triggerHaptic('success')
-    const link = document.createElement('a')
-    link.href = downloadApkUrl
-    link.setAttribute('download', 'TchueKAM-Mobile.apk')
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
   }
 
   const handleCopyLink = () => {
@@ -183,7 +193,7 @@ export function MobileView() {
               {/* 1-Click Download Button */}
               <a
                 href={downloadApkUrl}
-                onClick={handleDownloadApk}
+                onClick={handleDownloadClick}
                 download="TchueKAM-Mobile.apk"
                 className={cn(
                   'group flex h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl',
@@ -262,41 +272,22 @@ export function MobileView() {
 
             {/* QR Code Card for Phone Scan */}
             <div className="flex items-center gap-4 border border-border/80 bg-background/60 p-4 backdrop-blur-md">
-              {/* Crisp SVG QR code representation */}
-              <div className="grid size-24 shrink-0 place-items-center rounded-xl border border-white/10 bg-white p-2 shadow-inner">
+              {/* Scannable ISO QR code for APK download */}
+              <div className="grid size-24 shrink-0 place-items-center rounded-xl border border-white/10 bg-white p-1.5 shadow-inner">
                 <svg
+                  aria-label="QR code to download TchueKAM Mobile"
                   className="size-full text-slate-950"
-                  viewBox="0 0 100 100"
-                  fill="none"
+                  role="img"
+                  shapeRendering="crispEdges"
+                  viewBox={`0 0 ${qrMatrix.size + 4} ${qrMatrix.size + 4}`}
                   xmlns="http://www.w3.org/2000/svg"
                 >
-                  {/* Outer markers */}
-                  <rect x="10" y="10" width="24" height="24" rx="4" fill="currentColor" />
-                  <rect x="14" y="14" width="16" height="16" rx="2" fill="white" />
-                  <rect x="18" y="18" width="8" height="8" rx="1" fill="currentColor" />
-
-                  <rect x="66" y="10" width="24" height="24" rx="4" fill="currentColor" />
-                  <rect x="70" y="14" width="16" height="16" rx="2" fill="white" />
-                  <rect x="74" y="18" width="8" height="8" rx="1" fill="currentColor" />
-
-                  <rect x="10" y="66" width="24" height="24" rx="4" fill="currentColor" />
-                  <rect x="14" y="70" width="16" height="16" rx="2" fill="white" />
-                  <rect x="18" y="74" width="8" height="8" rx="1" fill="currentColor" />
-
-                  {/* QR Data Pattern */}
-                  <rect x="40" y="14" width="6" height="6" rx="1" fill="currentColor" />
-                  <rect x="52" y="14" width="6" height="6" rx="1" fill="currentColor" />
-                  <rect x="46" y="24" width="8" height="8" rx="1" fill="currentColor" />
-                  <rect x="40" y="38" width="20" height="6" rx="1" fill="currentColor" />
-                  <rect x="14" y="44" width="8" height="8" rx="1" fill="currentColor" />
-                  <rect x="28" y="44" width="6" height="6" rx="1" fill="currentColor" />
-                  <rect x="70" y="44" width="16" height="6" rx="1" fill="currentColor" />
-                  <rect x="40" y="52" width="8" height="14" rx="1" fill="currentColor" />
-                  <rect x="54" y="54" width="12" height="6" rx="1" fill="currentColor" />
-                  <rect x="74" y="58" width="12" height="12" rx="1" fill="currentColor" />
-                  <rect x="44" y="72" width="14" height="6" rx="1" fill="currentColor" />
-                  <rect x="64" y="76" width="6" height="10" rx="1" fill="currentColor" />
-                  <rect x="76" y="76" width="10" height="10" rx="1" fill="currentColor" />
+                  <rect width={qrMatrix.size + 4} height={qrMatrix.size + 4} fill="white" />
+                  {qrMatrix.modules.map((row, r) =>
+                    row.map((dark, c) =>
+                      dark ? <rect key={`${r}-${c}`} x={c + 2} y={r + 2} width={1} height={1} fill="currentColor" /> : null
+                    )
+                  )}
                 </svg>
               </div>
 
@@ -496,26 +487,53 @@ export function MobileView() {
                         <span className="text-[0.68rem] uppercase tracking-wider text-neutral-400">Quick prompts:</span>
                         <button
                           type="button"
-                          onClick={() => triggerHaptic('tap')}
+                          onClick={() => {
+                            triggerHaptic('tap')
+                            setSimReply({
+                              prompt: 'Draft a non-disclosure agreement clause for contractors',
+                              reply:
+                                'Draft Confidentiality & IP Clause ready: mutual 3-year term, carve-outs for prior IP, and [to confirm] governing jurisdiction.'
+                            })
+                          }}
                           className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
                         >
                           💬 &quot;Draft a non-disclosure agreement clause for contractors&quot;
                         </button>
                         <button
                           type="button"
-                          onClick={() => triggerHaptic('tap')}
+                          onClick={() => {
+                            triggerHaptic('tap')
+                            setSimReply({
+                              prompt: 'Review quarterly burn rate and runway projections',
+                              reply:
+                                'Finance Summary template opened: enter net monthly burn and cash balance [to confirm] to project 12/18/24-month runway scenarios.'
+                            })
+                          }}
                           className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
                         >
                           📊 &quot;Review quarterly burn rate and runway projections&quot;
                         </button>
                         <button
                           type="button"
-                          onClick={() => triggerHaptic('tap')}
+                          onClick={() => {
+                            triggerHaptic('tap')
+                            setSimReply({
+                              prompt: 'Schedule an automated cron audit for midnight',
+                              reply:
+                                'Scheduled task template ready: daily 00:00 UTC workspace health + summary delivery via /cron on connected nodes.'
+                            })
+                          }}
                           className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
                         >
                           ⚡ &quot;Schedule an automated cron audit for midnight&quot;
                         </button>
                       </div>
+                      {simReply && (
+                        <div className="mt-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-2.5 text-[0.72rem] text-neutral-200">
+                          <div className="font-semibold text-emerald-300">{simReply.prompt}</div>
+                          <div className="mt-1 text-neutral-300">{simReply.reply}</div>
+                        </div>
+                      )}
                     </div>
                   )}
 
