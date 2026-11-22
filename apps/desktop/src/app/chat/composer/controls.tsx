@@ -185,13 +185,13 @@ function ConversationPill({
           type="button"
           variant="ghost"
         >
-          <Square className="fill-current" size={11} />
+          <Square className="fill-current" size={10} />
           <span>{speaking ? 'Interrupt' : 'Stop'}</span>
         </Button>
       )}
       <Button
         aria-label="End voice conversation"
-        className="h-(--composer-control-size) gap-1.5 rounded-full bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        className="tk-btn-primary h-7 gap-2 rounded-full px-3 text-xs font-semibold text-white active:scale-95"
         disabled={disabled}
         onClick={() => {
           triggerHaptic('close')
@@ -223,7 +223,7 @@ function ConversationIndicator({
     return <Loader2 className="animate-spin" size={12} />
   }
 
-  const bars = [0.55, 0.85, 1, 0.85, 0.55]
+  const bars = [0.42, 0.72, 0.95, 1, 0.95, 0.72, 0.42]
   const normalized = Math.max(0, Math.min(level, 1))
 
   return (
