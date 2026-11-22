@@ -60,9 +60,9 @@ export function BusinessLocalAiStatusBadge() {
   const dotClass = isInstalling
     ? 'bg-amber-500 animate-pulse'
     : isRunning
-      ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]'
+      ? 'bg-(--tk-cyan) shadow-[0_0_8px_var(--tk-cyan-glow)]'
       : isInstalled && isEnabled
-        ? 'bg-primary'
+        ? 'bg-(--tk-indigo)'
         : 'bg-muted-foreground/50'
 
   const label = isInstalling
@@ -78,7 +78,7 @@ export function BusinessLocalAiStatusBadge() {
   return (
     <button
       aria-label="Business Hub Local AI Settings"
-      className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted"
+      className="tk-glass-subtle tk-surface-hover inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-semibold tabular-nums hover:border-(--tk-indigo-border) hover:bg-muted/70"
       onClick={() => $businessLocalAiModalOpen.set(true)}
       type="button"
     >
@@ -211,7 +211,7 @@ export function BusinessLocalAiModal() {
     <div
       aria-label="Business Hub Local AI Agent"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-md sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-md sm:p-4"
       onClick={event => {
         if (event.target === event.currentTarget) {
           $businessLocalAiModalOpen.set(false)
@@ -219,11 +219,11 @@ export function BusinessLocalAiModal() {
       }}
       role="dialog"
     >
-      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/95 text-foreground shadow-2xl backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/20 px-5 py-4">
+      <div className="tk-glass-elevated flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl text-foreground">
+        <div className="flex items-center justify-between gap-3 border-b border-(--tk-glass-border) bg-(--ui-bg-tertiary)/35 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-xl bg-primary/15 text-primary">
-              <Codicon name="chip" size="1.15rem" />
+            <div className="grid size-9 place-items-center rounded-xl bg-linear-to-br from-(--tk-indigo) to-(--tk-cyan) text-white shadow-xs">
+              <Codicon name="chip" size="1.1rem" />
             </div>
             <div>
               <h2 className="text-base font-semibold tracking-tight">Business Hub Local AI Agent</h2>
