@@ -417,3 +417,422 @@ export function updateCronJob(jobId: string, updates: CronJobUpdates): Promise<C
     body: { updates }
   })
 }
+
+export function pauseCronJob(jobId: string): Promise<CronJob> {
+  return window.hermesDesktop.api<CronJob>({
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}/pause`,
+    method: 'POST'
+  })
+}
+
+export function resumeCronJob(jobId: string): Promise<CronJob> {
+  return window.hermesDesktop.api<CronJob>({
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}/resume`,
+    method: 'POST'
+  })
+}
+
+export function triggerCronJob(jobId: string): Promise<CronJob> {
+  return window.hermesDesktop.api<CronJob>({
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}/trigger`,
+    method: 'POST'
+  })
+}
+
+export function deleteCronJob(jobId: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}`,
+    method: 'DELETE'
+  })
+}
+
+export function getProfiles(): Promise<ProfilesResponse> {
+  return window.hermesDesktop.api<ProfilesResponse>({
+    path: '/api/profiles'
+  })
+}
+
+export function createProfile(body: ProfileCreatePayload): Promise<{ name: string; ok: boolean; path: string }> {
+  return window.hermesDesktop.api<{ name: string; ok: boolean; path: string }>({
+    path: '/api/profiles',
+    method: 'POST',
+    body
+  })
+}
+
+export function renameProfile(name: string, newName: string): Promise<{ name: string; ok: boolean; path: string }> {
+  return window.hermesDesktop.api<{ name: string; ok: boolean; path: string }>({
+    path: `/api/profiles/${encodeURIComponent(name)}`,
+    method: 'PATCH',
+    body: { new_name: newName }
+  })
+}
+
+export function deleteProfile(name: string): Promise<{ ok: boolean; path: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; path: string }>({
+    path: `/api/profiles/${encodeURIComponent(name)}`,
+    method: 'DELETE'
+  })
+}
+
+export function getProfileSoul(name: string): Promise<ProfileSoul> {
+  return window.hermesDesktop.api<ProfileSoul>({
+    path: `/api/profiles/${encodeURIComponent(name)}/soul`
+  })
+}
+
+export function updateProfileSoul(name: string, content: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: `/api/profiles/${encodeURIComponent(name)}/soul`,
+    method: 'PUT',
+    body: { content }
+  })
+}
+
+export function getProfileSetupCommand(name: string): Promise<ProfileSetupCommand> {
+  return window.hermesDesktop.api<ProfileSetupCommand>({
+    path: `/api/profiles/${encodeURIComponent(name)}/setup-command`
+  })
+}
+
+export function getUsageAnalytics(days = 30): Promise<AnalyticsResponse> {
+  return window.hermesDesktop.api<AnalyticsResponse>({
+    path: `/api/analytics/usage?days=${Math.max(1, Math.floor(days))}`
+  })
+}
+
+export function getGlobalModelOptions(): Promise<ModelOptionsResponse> {
+  return window.hermesDesktop.api<ModelOptionsResponse>({
+    path: '/api/model/options'
+  })
+}
+
+export interface RecommendedDefaultModel {
+  provider: string
+  model: string
+  /** True/false for Nous (free vs paid tier); null for other providers. */
+  free_tier: boolean | null
+}
+
+// Recommended default model for a freshly-authenticated provider. Mirrors the
+// curation `hermes model` does — for Nous it honors the free/paid tier so a
+// free user gets a free model instead of a paid default.
+export function getRecommendedDefaultModel(provider: string): Promise<RecommendedDefaultModel> {
+  return window.hermesDesktop.api<RecommendedDefaultModel>({
+    path: `/api/model/recommended-default?provider=${encodeURIComponent(provider)}`
+  })
+}
+
+export function setGlobalModel(
+  provider: string,
+  model: string
+): Promise<{ ok: boolean; provider: string; model: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; provider: string; model: string }>({
+    path: '/api/model/set',
+    method: 'POST',
+    body: {
+      scope: 'main',
+      provider,
+      model
+    }
+  })
+}
+
+export function getAuxiliaryModels(): Promise<AuxiliaryModelsResponse> {
+  return window.hermesDesktop.api<AuxiliaryModelsResponse>({
+    path: '/api/model/auxiliary'
+  })
+}
+
+export function setModelAssignment(body: ModelAssignmentRequest): Promise<ModelAssignmentResponse> {
+  return window.hermesDesktop.api<ModelAssignmentResponse>({
+    path: '/api/model/set',
+    method: 'POST',
+    body
+  })
+}
+
+export function restartGateway(): Promise<ActionResponse> {
+  return window.hermesDesktop.api<ActionResponse>({
+    path: '/api/gateway/restart',
+    method: 'POST'
+  })
+}
+
+export function updateHermes(): Promise<ActionResponse> {
+  return window.hermesDesktop.api<ActionResponse>({
+    path: '/api/hermes/update',
+    method: 'POST'
+  })
+}
+
+export function getActionStatus(name: string, lines = 200): Promise<ActionStatusResponse> {
+  return window.hermesDesktop.api<ActionStatusResponse>({
+    path: `/api/actions/${encodeURIComponent(name)}/status?lines=${Math.max(1, lines)}`
+  })
+}
+
+export function transcribeAudio(dataUrl: string, mimeType?: string): Promise<AudioTranscriptionResponse> {
+  return window.hermesDesktop.api<AudioTranscriptionResponse>({
+    path: '/api/audio/transcribe',
+    method: 'POST',
+    body: {
+      data_url: dataUrl,
+      mime_type: mimeType
+    }
+  })
+}
+
+export function speakText(text: string): Promise<AudioSpeakResponse> {
+  return window.hermesDesktop.api<AudioSpeakResponse>({
+    path: '/api/audio/speak',
+    method: 'POST',
+    body: { text }
+  })
+}
+
+export function getElevenLabsVoices(): Promise<ElevenLabsVoicesResponse> {
+  return window.hermesDesktop.api<ElevenLabsVoicesResponse>({
+    path: '/api/audio/elevenlabs/voices'
+  })
+}
+
+export interface StudioAsset {
+  id: string
+  url: string
+  prompt?: string
+  provider?: string
+  model?: string
+  studioType?: string
+  parameters?: Record<string, unknown>
+  mimeType?: string
+  jobId?: string | null
+  workspaceId?: string
+  conversationId?: string | null
+  hasLocalFile?: boolean
+  tags?: string[]
+  favorite?: boolean
+  createdAt?: number
+}
+
+export type StudioJobState =
+  | 'REQUESTED'
+  | 'VALIDATING'
+  | 'SUBMITTED'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+
+export interface ImageGenStudioResponse {
+  success: boolean
+  images?: string[]
+  asset?: StudioAsset
+  jobId?: string
+  state?: StudioJobState
+  duplicate?: boolean
+  provider?: string
+  model?: string
+  error?: string
+  error_type?: string
+}
+
+export function generateStudioImages(payload: {
+  prompt: string
+  style: string
+  aspectRatio: string
+  quality: string
+  model: string
+  numImages: number
+  provider?: string
+  workspaceId?: string
+  conversationId?: string
+  /** Optional per-request BYOK credential for web demo mode (never persisted on backend). */
+  apiKey?: string
+  /** Idempotency key: re-sending it never triggers a second generation. */
+  clientRequestId?: string
+}): Promise<ImageGenStudioResponse> {
+  return window.hermesDesktop.api<ImageGenStudioResponse>({
+    path: '/api/images/generate',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export function cancelStudioJob(jobId: string): Promise<{ success: boolean; state?: StudioJobState }> {
+  return window.hermesDesktop.api({ path: `/api/images/jobs/${encodeURIComponent(jobId)}/cancel`, method: 'POST' })
+}
+
+/** Make a library asset available as a local file (chat attachments need a path). */
+export function materializeStudioAsset(id: string): Promise<{ success: boolean; path?: string; error?: string }> {
+  return window.hermesDesktop.api({
+    path: `/api/images/assets/${encodeURIComponent(id)}/materialize`,
+    method: 'POST'
+  })
+}
+
+/** Data URL for an asset that only exists as a local file on the backend. */
+export function getStudioAssetData(id: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+  return window.hermesDesktop.api({ path: `/api/images/assets/${encodeURIComponent(id)}/data`, method: 'GET' })
+}
+
+export function processImageEdit(payload: {
+  image: string
+  mask?: string
+  operation: string
+  prompt?: string
+  options?: Record<string, any>
+}): Promise<{ success: boolean; image?: string; error?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; image?: string; error?: string }>({
+    path: '/api/images/edit',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export function analyzeStudioImage(payload: {
+  image: string
+  mode: string
+  question?: string
+}): Promise<{ success: boolean; result?: string; colors?: string[]; error?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; result?: string; colors?: string[]; error?: string }>({
+    path: '/api/images/analyze',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export function performStudioOCR(payload: {
+  image: string
+}): Promise<{ success: boolean; text?: string; error?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; text?: string; error?: string }>({
+    path: '/api/images/ocr',
+    method: 'POST',
+    body: payload
+  })
+}
+
+export interface LibraryItem extends StudioAsset {
+  name?: string
+  tags: string[]
+  favorite: boolean
+  createdAt: number
+}
+
+export function getStudioLibrary(): Promise<{ success: boolean; items: LibraryItem[] }> {
+  return window.hermesDesktop.api<{ success: boolean; items: LibraryItem[] }>({
+    path: '/api/images/library',
+    method: 'GET'
+  })
+}
+
+export function saveToStudioLibrary(item: Omit<LibraryItem, 'createdAt'>): Promise<{ success: boolean; item?: LibraryItem }> {
+  return window.hermesDesktop.api<{ success: boolean; item?: LibraryItem }>({
+    path: '/api/images/library',
+    method: 'POST',
+    body: item
+  })
+}
+
+export function deleteFromStudioLibrary(id: string): Promise<{ success: boolean }> {
+  return window.hermesDesktop.api<{ success: boolean }>({
+    path: `/api/images/library/${encodeURIComponent(id)}`,
+    method: 'DELETE'
+  })
+}
+
+export interface SavedPrompt {
+  id: string
+  prompt: string
+  style: string
+  favorite: boolean
+  createdAt: number
+}
+
+export function getStudioPrompts(): Promise<{ success: boolean; prompts: SavedPrompt[] }> {
+  return window.hermesDesktop.api<{ success: boolean; prompts: SavedPrompt[] }>({
+    path: '/api/images/prompts',
+    method: 'GET'
+  })
+}
+
+export function saveStudioPrompt(prompt: Omit<SavedPrompt, 'createdAt'>): Promise<{ success: boolean; prompt?: SavedPrompt }> {
+  return window.hermesDesktop.api<{ success: boolean; prompt?: SavedPrompt }>({
+    path: '/api/images/prompts',
+    method: 'POST',
+    body: prompt
+  })
+}
+
+export function getIntelligenceStatus(probe = true): Promise<IntelligenceStatusResponse> {
+  return window.hermesDesktop.api<IntelligenceStatusResponse>({
+    path: `/api/intelligence/status?probe=${probe ? 'true' : 'false'}`,
+    method: 'GET'
+  })
+}
+
+export function setIntelligenceMode(
+  mode: IntelligenceMode,
+  persist = true
+): Promise<IntelligenceStatusResponse> {
+  return window.hermesDesktop.api<IntelligenceStatusResponse>({
+    path: '/api/intelligence/mode',
+    method: 'POST',
+    body: { mode, persist }
+  })
+}
+
+export function preloadLocalIntelligence(
+  modelId = 'mbowagpt'
+): Promise<{ ok: boolean; model_id: string; served_model: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; model_id: string; served_model: string }>({
+    path: '/api/intelligence/local/preload',
+    method: 'POST',
+    body: { model_id: modelId }
+  })
+}
+
+export function installLocalIntelligenceModel(
+  modelId: string
+): Promise<{ ok: boolean; model_id: string; path?: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; model_id: string; path?: string }>({
+    path: '/api/intelligence/local/install',
+    method: 'POST',
+    body: { model_id: modelId },
+    timeoutMs: 600_000
+  })
+}
+
+export async function buildVoiceWsUrl(sessionId?: string | null): Promise<string> {
+  const conn = await window.hermesDesktop.getConnection()
+  const rawWsUrl = String(conn?.wsUrl || '')
+  const parsed = new URL(rawWsUrl, typeof window !== 'undefined' ? window.location.href : 'http://127.0.0.1/')
+
+  if (parsed.pathname.endsWith('/api/ws')) {
+    parsed.pathname = `${parsed.pathname.slice(0, -'/api/ws'.length)}/api/ws/voice`
+  } else if (!parsed.pathname.endsWith('/ws/voice')) {
+    parsed.pathname = `${parsed.pathname.replace(/\/$/, '')}/api/ws/voice`
+  }
+
+  // Mint fresh single-use ticket in public gated mode if existing conn carried one
+  if (parsed.searchParams.has('ticket')) {
+    try {
+      const minted = await window.hermesDesktop.api<{ ticket: string }>({
+        path: '/api/auth/ws-ticket',
+        method: 'POST'
+      })
+
+      if (minted?.ticket) {
+        parsed.searchParams.set('ticket', minted.ticket)
+      }
+    } catch {
+      // keep existing query if mint fails
+    }
+  }
+
+  if (sessionId && sessionId.trim()) {
+    parsed.searchParams.set('session_id', sessionId.trim())
+  }
+
+  return parsed.toString()
+}
