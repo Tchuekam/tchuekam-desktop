@@ -727,8 +727,8 @@ const UserMessage: FC<{
 
   const bubbleClassName = cn(
     USER_BUBBLE_BASE_CLASS,
-    'border-(--ui-stroke-tertiary) pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors',
-    !threadRunning && 'cursor-pointer hover:border-(--ui-stroke-secondary)'
+    'border-(--tk-glass-border) pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95',
+    !threadRunning && 'cursor-pointer hover:border-(--tk-indigo-border)'
   )
 
   const bubbleContent = (
