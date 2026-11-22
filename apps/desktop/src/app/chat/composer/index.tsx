@@ -1156,7 +1156,7 @@ export function ChatBar({
           )}
           <SkinSlashPopover draft={draft} onSelect={selectSkinSlashCommand} />
           {activeQueueSessionKey && queuedPrompts.length > 0 && (
-            <div className="relative z-6 mb-1 px-0.5">
+            <div className="relative z-6 mb-1.5 px-0.5">
               <QueuePanel
                 busy={busy}
                 editingId={queueEdit?.entryId ?? null}
@@ -1178,7 +1178,7 @@ export function ChatBar({
           <div className="relative w-full rounded-[inherit]">
             <div
               className={cn(
-                'relative z-4 isolate rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))] shadow-composer transition-[border-color,box-shadow] duration-200 ease-out',
+                'relative z-4 isolate rounded-[inherit] border border-(--tk-glass-border) shadow-composer transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]',
                 COMPOSER_DROP_FADE_CLASS,
                 'group-focus-within/composer:border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(45%*var(--composer-ring-strength)),transparent)] group-focus-within/composer:shadow-composer-focus',
                 'group-has-data-[state=open]/composer:border-t-transparent',
