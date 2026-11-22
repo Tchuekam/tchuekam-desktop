@@ -23,8 +23,8 @@ import {
   mediaPathFromMarkdownHref,
   mediaStreamUrl
 } from '@/lib/media'
-import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { IS_DESKTOP } from '@/lib/platform'
+import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { cn } from '@/lib/utils'
 
 // Math rendering plugin (KaTeX). Configured once at module scope — the
