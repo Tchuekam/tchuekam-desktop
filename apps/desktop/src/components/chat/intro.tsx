@@ -212,11 +212,20 @@ export function Intro({ personality, seed }: IntroProps) {
       data-slot="aui_intro"
     >
       <div className="w-full min-w-0 max-w-2xl">
-        <h1 className="m-0 text-center text-[2rem] font-medium leading-tight tracking-tight text-foreground">
+        <div className="mb-4 flex justify-center">
+          <span className="inline-flex items-center gap-2 rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-1 text-[0.7rem] font-medium tracking-[0.02em] text-(--ui-text-secondary) shadow-xs backdrop-blur-md">
+            <span aria-hidden className="size-1.5 rounded-full bg-linear-to-r from-(--tk-indigo) to-(--tk-cyan)" />
+            TchuekaM Intelligence
+          </span>
+        </div>
+
+        <h1 className="m-0 text-center text-[clamp(1.625rem,3vw,2.125rem)] font-medium leading-[1.18] tracking-[-0.025em] text-foreground">
           {copy.headline}
         </h1>
 
-        <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-relaxed text-muted-foreground">{copy.body}</p>
+        <p className="mx-auto mt-3 max-w-lg text-center text-[0.9rem] leading-relaxed text-(--ui-text-secondary)">
+          {copy.body}
+        </p>
 
         <div className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {STARTERS.map(starter => (
