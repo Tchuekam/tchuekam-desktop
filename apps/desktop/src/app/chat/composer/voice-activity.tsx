@@ -254,12 +254,12 @@ export function VoicePlaybackActivity() {
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate font-medium text-foreground/85">{title}</span>
+        <span className="truncate font-medium text-foreground/92">{title}</span>
         {!preparing && <PlaybackWaveform audioElement={playback.audioElement} />}
       </div>
 
       <Button
-        className="h-6 shrink-0 gap-1 rounded-full px-2 text-[0.6875rem]"
+        className="h-6 shrink-0 gap-1 rounded-full px-2.5 text-[0.6875rem] font-medium hover:bg-(--tk-indigo-soft) hover:text-foreground"
         onClick={stopVoicePlayback}
         size="sm"
         type="button"
