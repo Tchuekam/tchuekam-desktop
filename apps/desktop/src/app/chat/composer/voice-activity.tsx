@@ -214,8 +214,8 @@ export function VoiceActivity({ state }: { state: VoiceActivityState }) {
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate font-medium text-foreground/85">{title}</span>
-        <span className="font-mono text-[0.6875rem] text-muted-foreground/85">
+        <span className="truncate font-medium text-foreground/92">{title}</span>
+        <span className="font-mono text-[0.6875rem] tabular-nums text-(--ui-text-secondary)">
           {formatElapsed(state.elapsedSeconds)}
         </span>
       </div>
@@ -244,13 +244,13 @@ export function VoicePlaybackActivity() {
     <div
       aria-live="polite"
       className={cn(
-        'flex h-8 items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-2.5 text-xs text-primary',
-        'shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-sm'
+        'flex h-8.5 items-center gap-2.5 rounded-xl border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-3 text-xs text-(--tk-indigo-text)',
+        'shadow-[inset_0_1px_0_var(--tk-specular-edge)] backdrop-blur-md'
       )}
       role="status"
     >
-      <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-        {preparing ? <Loader2 className="animate-spin" size={12} /> : <Volume2 size={12} />}
+      <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-(--tk-indigo) to-(--tk-cyan) text-white shadow-xs">
+        {preparing ? <Loader2 className="animate-spin" size={11} /> : <Volume2 size={11} />}
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
