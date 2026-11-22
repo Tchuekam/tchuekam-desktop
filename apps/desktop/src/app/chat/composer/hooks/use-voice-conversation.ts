@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
+  isJarvisDuplexVoiceSupported,
+  JarvisVoiceClient
+} from '@/lib/jarvis-voice-client'
+import {
   playSpeechText,
   prefetchSpeechText,
   stopVoicePlayback,
   wasVoicePlaybackStopped
 } from '@/lib/voice-playback'
+import { applyIntelligenceRouteEvent } from '@/store/intelligence'
 import { notify, notifyError } from '@/store/notifications'
+import { $activeSessionId } from '@/store/session'
 
 import { useMicRecorder } from './use-mic-recorder'
 
@@ -40,6 +46,10 @@ export function useVoiceConversation({
   const { handle, level } = useMicRecorder()
   const [status, setStatus] = useState<ConversationStatus>('idle')
   const [muted, setMuted] = useState(false)
+  const [duplexActive, setDuplexActive] = useState(false)
+  const [duplexLevel, setDuplexLevel] = useState(0)
+  const [liveTranscript, setLiveTranscript] = useState('')
+  const duplexClientRef = useRef<JarvisVoiceClient | null>(null)
   const turnTimeoutRef = useRef<number | null>(null)
   const pendingStartRef = useRef(false)
   const turnClosingRef = useRef(false)
@@ -290,6 +300,69 @@ export function useVoiceConversation({
   )
 
   const start = useCallback(async () => {
+    setMuted(false)
+    setLiveTranscript('')
+    awaitingSpokenResponseRef.current = false
+    resetSpeechBuffer()
+    consumePendingResponse()
+
+    if (isJarvisDuplexVoiceSupported()) {
+      try {
+        const sessionId = $activeSessionId.get()
+
+        const client = new JarvisVoiceClient({
+          onAssistantDelta: () => {
+            if (duplexClientRef.current === client) {
+              setStatus(prev => (prev === 'thinking' ? 'speaking' : prev))
+            }
+          },
+          onAssistantFinal: () => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('hermes:voice-session-updated', { detail: { sessionId } }))
+            }
+          },
+          onClose: () => {
+            if (duplexClientRef.current === client && enabledRef.current) {
+              setDuplexActive(false)
+              setStatus('idle')
+            }
+          },
+          onError: error => {
+            notifyError(error, 'Voice channel error')
+          },
+          onIntelligence: route => applyIntelligenceRouteEvent(route),
+          onLevel: val => setDuplexLevel(val),
+          onStateChange: next => {
+            if (next !== 'idle') {
+              setStatus(next)
+            }
+          },
+          onTranscript: text => {
+            setLiveTranscript(text)
+
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('hermes:voice-session-updated', { detail: { sessionId } }))
+            }
+          }
+        })
+
+        duplexClientRef.current = client
+        await client.start({ bargeIn: true, language: 'auto', sessionId })
+        setDuplexActive(true)
+        setStatus('listening')
+
+        return
+      } catch {
+        // Fall through seamlessly to chunked REST voice mode when AudioWorklet or WS is unavailable
+        if (duplexClientRef.current) {
+          await duplexClientRef.current.stop()
+          duplexClientRef.current = null
+        }
+
+        setDuplexActive(false)
+      }
+    }
+
     if (!onTranscribeAudio) {
       notify({
         kind: 'warning',
@@ -301,10 +374,6 @@ export function useVoiceConversation({
       return
     }
 
-    setMuted(false)
-    awaitingSpokenResponseRef.current = false
-    resetSpeechBuffer()
-    consumePendingResponse()
     pendingStartRef.current = true
     await startListening()
   }, [consumePendingResponse, onFatalError, onTranscribeAudio, startListening])
@@ -312,6 +381,15 @@ export function useVoiceConversation({
   const end = useCallback(async () => {
     pendingStartRef.current = false
     clearTurnTimeout()
+
+    if (duplexClientRef.current) {
+      await duplexClientRef.current.stop()
+      duplexClientRef.current = null
+    }
+
+    setDuplexActive(false)
+    setDuplexLevel(0)
+    setLiveTranscript('')
     stopVoicePlayback()
     handle.cancel()
     turnClosingRef.current = false
@@ -323,6 +401,21 @@ export function useVoiceConversation({
   }, [consumePendingResponse, handle])
 
   const stopTurn = useCallback(() => {
+    if (duplexClientRef.current) {
+      if (statusRef.current === 'speaking' || statusRef.current === 'thinking') {
+        duplexClientRef.current.interrupt('user_stop')
+        setStatus('listening')
+
+        return
+      }
+
+      if (statusRef.current === 'listening') {
+        duplexClientRef.current.sendControl({ type: 'commit' })
+
+        return
+      }
+    }
+
     if (statusRef.current === 'listening') {
       void handleTurn(true)
 
@@ -342,6 +435,12 @@ export function useVoiceConversation({
   const toggleMute = useCallback(() => {
     setMuted(value => {
       const next = !value
+
+      if (duplexClientRef.current) {
+        duplexClientRef.current.sendControl({ muted: next, type: 'config' })
+
+        return next
+      }
 
       if (next) {
         clearTurnTimeout()
@@ -387,7 +486,7 @@ export function useVoiceConversation({
   // Drive the loop: after a voice-submitted turn, speak stable chunks as the
   // assistant stream grows. Otherwise start listening when idle between turns.
   useEffect(() => {
-    if (!enabled || muted) {
+    if (!enabled || muted || duplexActive) {
       return
     }
 
@@ -441,7 +540,7 @@ export function useVoiceConversation({
     if (pendingStartRef.current) {
       void startListening()
     }
-  }, [busy, consumePendingResponse, enabled, muted, pendingResponse, speak, startListening, status])
+  }, [busy, consumePendingResponse, duplexActive, enabled, muted, pendingResponse, speak, startListening, status])
 
   useEffect(() => {
     if (enabled && !wasEnabledRef.current) {
@@ -455,5 +554,15 @@ export function useVoiceConversation({
     wasEnabledRef.current = enabled
   }, [enabled, end, start])
 
-  return { end, level, muted, start, status, stopTurn, toggleMute }
+  return {
+    duplexActive,
+    end,
+    level: duplexActive ? duplexLevel : level,
+    liveTranscript,
+    muted,
+    start,
+    status,
+    stopTurn,
+    toggleMute
+  }
 }
