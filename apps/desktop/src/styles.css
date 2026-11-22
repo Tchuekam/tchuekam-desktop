@@ -1169,7 +1169,11 @@ canvas {
   flex-shrink: 0;
   cursor: pointer;
   color: var(--color-muted-foreground);
-  opacity: 0.5;
+  opacity: 0.58;
+  transition:
+    opacity 150ms ease-out,
+    background-color 150ms ease-out,
+    color 150ms ease-out;
 }
 
 [data-slot='aui_msg-actions'] button:disabled {
@@ -1177,7 +1181,7 @@ canvas {
 }
 
 [data-slot='aui_msg-actions'] button:hover {
-  background: transparent;
+  background: var(--ui-control-hover-background);
   color: var(--color-foreground);
   opacity: 1;
 }
