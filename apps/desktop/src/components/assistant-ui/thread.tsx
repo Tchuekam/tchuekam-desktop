@@ -250,7 +250,7 @@ const AssistantMessage: FC<{ onBranchInNewChat?: (messageId: string) => void }> 
         )}
         <MessagePrimitive.Error>
           <ErrorPrimitive.Root
-            className="mt-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
+            className="mt-2.5 rounded-xl border border-destructive/30 bg-destructive/8 px-3.5 py-2.5 text-[0.8125rem] leading-relaxed text-destructive backdrop-blur-xs"
             role="alert"
           >
             <ErrorPrimitive.Message />
