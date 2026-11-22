@@ -104,6 +104,43 @@
     --theme-mix-elevated: 28%;
     --theme-mix-bubble: 0%;
 
+    /* Scoped TchuekaM Three-Color + Glass Material Tokens (Light Mode) */
+    --tk-indigo: #4f46e5;
+    --tk-indigo-hover: #4338ca;
+    --tk-indigo-text: #4338ca;
+    --tk-indigo-soft: rgba(79, 70, 229, 0.08);
+    --tk-indigo-border: rgba(79, 70, 229, 0.24);
+    --tk-indigo-glow: rgba(79, 70, 229, 0.16);
+    --tk-cyan: #0284c7;
+    --tk-cyan-text: #0369a1;
+    --tk-cyan-soft: rgba(2, 132, 199, 0.085);
+    --tk-cyan-border: rgba(2, 132, 199, 0.24);
+    --tk-cyan-glow: rgba(2, 132, 199, 0.16);
+    --tk-cta-top: #5b54ee;
+    --tk-cta-bottom: #4338ca;
+    --tk-cta-shadow:
+      0 1px 2px rgba(15, 20, 36, 0.14),
+      0 6px 16px -6px rgba(79, 70, 229, 0.42),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    --tk-glass-bg: rgba(255, 255, 255, 0.78);
+    --tk-glass-elevated-bg: rgba(255, 255, 255, 0.88);
+    --tk-glass-subtle-bg: rgba(248, 250, 254, 0.74);
+    --tk-glass-border: rgba(15, 23, 42, 0.085);
+    --tk-specular-edge: rgba(255, 255, 255, 0.85);
+    --tk-glass-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 8px 24px -12px rgba(15, 23, 42, 0.09),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-glass-elevated-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.05),
+      0 14px 36px -14px rgba(15, 23, 42, 0.14),
+      inset 0 1px 0 var(--tk-specular-edge);
+    --tk-stage-bg: #eef1f7;
+    --tk-voice-surface: rgba(240, 249, 255, 0.88);
+    --tk-voice-shadow:
+      0 4px 18px -6px rgba(2, 132, 199, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
     /* Accent tint per surface. All zero by design: colour is spent on the
      * primary action and destructive states only, never on chrome. Each fill
      * and stroke below falls through to its neutral `--ui-base` term, which is
@@ -232,10 +269,10 @@
       var(--theme-neutral-card)
     );
     --ui-chat-bubble-opaque-background: var(--ui-bg-editor);
-    --ui-inline-code-background: color-mix(in srgb, #141414 5%, transparent);
-    --ui-inline-code-border: color-mix(in srgb, #141414 8%, transparent);
-    --ui-inline-code-foreground: color-mix(in srgb, #141414 88%, transparent);
-    --ui-selection-background: color-mix(in srgb, #ffd24a 55%, transparent);
+    --ui-inline-code-background: color-mix(in srgb, var(--tk-indigo) 6%, transparent);
+    --ui-inline-code-border: color-mix(in srgb, var(--tk-indigo) 14%, transparent);
+    --ui-inline-code-foreground: color-mix(in srgb, var(--ui-base) 92%, transparent);
+    --ui-selection-background: color-mix(in srgb, var(--tk-indigo) 22%, transparent);
 
     --dt-background: var(--ui-bg-chrome);
     --dt-foreground: var(--ui-text-primary);
