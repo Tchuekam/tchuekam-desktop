@@ -1028,15 +1028,11 @@ canvas {
 
 [data-slot='composer-rich-input'] {
   color: var(--ui-text-primary);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 
 [data-slot='composer-rich-input']:empty::before {
   color: var(--ui-text-tertiary) !important;
-}
-
-[data-slot='composer-root']:focus-within [data-slot='composer-surface'] > [aria-hidden='true'] {
-  background: var(--ui-chat-bubble-background) !important;
 }
 
 /* Tool/thinking blocks now live at message-text alignment (no leading
