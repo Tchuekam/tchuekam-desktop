@@ -303,13 +303,28 @@ function ToolEntry({ part }: ToolEntryProps) {
             <FadeText
               className={cn(
                 TOOL_HEADER_TITLE_CLASS,
-                isPending && 'shimmer text-(--ui-text-tertiary)',
+                isPending && 'shimmer text-foreground/75',
                 view.status === 'error' && 'text-destructive',
                 view.status === 'warning' && 'text-amber-700 dark:text-amber-300'
               )}
             >
               {view.title}
             </FadeText>
+            {isPending && (
+              <span className="shrink-0 rounded-full bg-(--tk-cyan-soft) px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-(--tk-cyan-text)">
+                Running
+              </span>
+            )}
+            {!isPending && view.status === 'error' && (
+              <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-destructive">
+                Failed
+              </span>
+            )}
+            {!isPending && view.status === 'warning' && (
+              <span className="shrink-0 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-amber-700 dark:text-amber-300">
+                Recovered
+              </span>
+            )}
             {!isPending && view.countLabel && <span className={TOOL_HEADER_DURATION_CLASS}>{view.countLabel}</span>}
             {!isPending && view.durationLabel && (
               <span className={TOOL_HEADER_DURATION_CLASS}>{view.durationLabel}</span>
@@ -318,7 +333,7 @@ function ToolEntry({ part }: ToolEntryProps) {
         </DisclosureRow>
       </div>
       {open && (
-        <div className="grid w-full min-w-0 max-w-full gap-1.5 overflow-hidden p-1.5">
+        <div className="grid w-full min-w-0 max-w-full gap-2 overflow-hidden p-2.5">
           {!embedded && view.previewTarget && isPreviewableTarget(view.previewTarget) && (
             <PreviewAttachment source="tool-result" target={view.previewTarget} />
           )}
