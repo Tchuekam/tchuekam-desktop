@@ -311,9 +311,9 @@
     --radius-scalar: 0.85;
 
     /* Space under last message vs overlay composer — driven by the measured composer height (see composer/index.tsx). */
-    --thread-last-message-clearance: calc(var(--composer-measured-height) + 2rem);
+    --thread-last-message-clearance: calc(var(--composer-measured-height) + 2.25rem);
 
-    --composer-shell-pad-block-end: 0.625rem;
+    --composer-shell-pad-block-end: 0.75rem;
     --message-text-indent: 0.75rem;
     --conversation-text-font-size: 0.8125rem;
     --conversation-tool-font-size: var(--conversation-text-font-size);
