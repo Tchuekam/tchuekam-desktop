@@ -29,9 +29,10 @@ const APP = (() => {
   }
   if (PLATFORM === 'win32') {
     const unpacked = path.join(RELEASE_ROOT, 'win-unpacked')
+    const exeName = PACKAGE_JSON.build?.executableName || 'Tchuekam'
     return {
       appPath: unpacked,
-      binary: path.join(unpacked, 'Hermes.exe'),
+      binary: path.join(unpacked, `${exeName}.exe`),
       resourcesPath: path.join(unpacked, 'resources'),
       asarPath: path.join(unpacked, 'resources', 'app.asar'),
       unpackedDistIndex: path.join(unpacked, 'resources', 'app.asar.unpacked', 'dist', 'index.html')
@@ -340,6 +341,33 @@ function validateBundle() {
     if (!exists(spawnHelper)) {
       die(`Missing node-pty spawn-helper (required on darwin): ${spawnHelper}`)
     }
+  }
+
+  // Positive assertion: staged electron-updater runtime closure shipped
+  const updaterDir = path.join(
+    APP.resourcesPath,
+    'native-deps',
+    'node_modules',
+    'electron-updater'
+  )
+  const updaterPkg = path.join(updaterDir, 'package.json')
+  if (!exists(updaterPkg)) {
+    die(`Missing staged electron-updater in resources/native-deps/node_modules: ${updaterPkg}`)
+  }
+  const updaterRuntimeCandidates = [
+    path.join(updaterDir, 'node_modules', 'builder-util-runtime', 'package.json'),
+    path.join(
+      APP.resourcesPath,
+      'native-deps',
+      'node_modules',
+      'builder-util-runtime',
+      'package.json'
+    )
+  ]
+  if (!updaterRuntimeCandidates.some(exists)) {
+    die(
+      `Missing staged builder-util-runtime in resources/native-deps/node_modules (checked ${updaterRuntimeCandidates.join(', ')})`
+    )
   }
 
   // Renderer payload check (either unpacked or in the asar)
