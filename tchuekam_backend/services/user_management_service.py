@@ -12,6 +12,9 @@ from tchuekam_backend.repositories.session_repository import SessionRepository
 from tchuekam_backend.repositories.audit_repository import AuditRepository
 
 
+_ORG_ROLE_RANK = {"VIEWER": 1, "MEMBER": 2, "ADMIN": 3, "OWNER": 4}
+
+
 class UserManagementService:
     def __init__(self, db: Session):
         self.db = db
@@ -21,8 +24,15 @@ class UserManagementService:
         self.audit_repo = AuditRepository(db)
 
     def suspend_user_in_org(self, org_id: str, actor_id: str, target_user_id: str) -> bool:
+        if target_user_id == actor_id:
+            return False
+        actor_membership = self.membership_repo.get_org_membership(org_id, actor_id)
         membership = self.membership_repo.get_org_membership(org_id, target_user_id)
-        if not membership:
+        if not membership or not actor_membership:
+            return False
+        actor_rank = _ORG_ROLE_RANK.get((actor_membership.role or "").strip().upper(), 0)
+        target_rank = _ORG_ROLE_RANK.get((membership.role or "").strip().upper(), 0)
+        if target_rank > actor_rank:
             return False
         membership.status = "SUSPENDED"
         self.db.commit()
