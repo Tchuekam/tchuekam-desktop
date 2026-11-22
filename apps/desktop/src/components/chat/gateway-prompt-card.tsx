@@ -93,14 +93,14 @@ export function GatewayPromptCard({ gateway, sessionId }: GatewayPromptCardProps
 
   if (prompt.kind === 'approval') {
     return (
-      <div className="mx-auto mb-2 w-full max-w-3xl rounded-xl border border-amber-500/40 bg-card p-3.5 shadow-sm">
+      <div className="tk-glass-elevated mx-auto mb-2.5 w-full max-w-3xl rounded-xl border-amber-500/35 p-4">
         <div className="flex items-start gap-2.5">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold text-foreground">Command approval required</div>
             <p className="mt-0.5 text-xs text-muted-foreground">{prompt.description}</p>
             {prompt.command && (
-              <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-muted/60 px-2.5 py-1.5 font-mono text-[0.72rem] text-foreground">
+              <pre className="mt-2 max-h-28 overflow-auto rounded-lg border border-(--tk-glass-border) bg-(--ui-bg-tertiary) px-3 py-2 font-mono text-[0.75rem] text-foreground">
                 {prompt.command}
               </pre>
             )}
