@@ -779,7 +779,7 @@ export function BusinessView() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {visibleTemplates.map(tpl => (
               <button
-                className="flex flex-col justify-between rounded-2xl border border-border/80 bg-card/85 p-4 text-left shadow-2xs backdrop-blur-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:opacity-50"
+                className="tk-glass-subtle tk-surface-hover group flex flex-col justify-between rounded-2xl p-4 text-left hover:-translate-y-0.5 hover:border-(--tk-indigo-border) hover:shadow-(--tk-glass-shadow) disabled:opacity-50"
                 disabled={!canStartChat}
                 key={tpl.id}
                 onClick={() =>
@@ -792,21 +792,21 @@ export function BusinessView() {
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className="inline-block size-3 rounded-full shadow-2xs"
+                      className="inline-block size-3 rounded-full ring-2 ring-inset ring-black/10 dark:ring-white/15"
                       style={{ backgroundColor: tpl.accentColor }}
                     />
-                    <span className="text-[0.625rem] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground">
                       {tpl.documentType} · {tpl.fontFamily}
                     </span>
                   </div>
-                  <div className="mt-2 text-xs font-bold text-foreground">{tpl.name}</div>
+                  <div className="mt-2.5 text-xs font-semibold text-foreground">{tpl.name}</div>
                   <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
                     {tpl.description}
                   </p>
                 </div>
-                <div className="mt-4 flex items-center gap-1 text-[0.6875rem] font-semibold text-primary">
+                <div className="mt-4 flex items-center gap-1 text-[0.6875rem] font-semibold text-(--tk-indigo-text)">
                   <span>Use template</span>
-                  <Codicon name="arrow-right" size="0.75rem" />
+                  <Codicon className="transition-transform duration-150 group-hover:translate-x-0.5" name="arrow-right" size="0.75rem" />
                 </div>
               </button>
             ))}
@@ -815,8 +815,8 @@ export function BusinessView() {
 
         {/* Scan to text CTA */}
         <div
-          className="group relative mt-8 flex w-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl px-5 py-5 text-left text-white shadow-xl sm:mt-10 sm:gap-6 sm:px-8 sm:py-7"
-          style={{ background: 'linear-gradient(135deg,#0b1020,#12224e 55%,#0a2f6b)' }}
+          className="group relative mt-8 flex w-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl border border-white/12 px-5 py-6 text-left text-white shadow-(--tk-glass-elevated-shadow) sm:mt-10 sm:gap-6 sm:px-8 sm:py-7"
+          style={{ background: 'linear-gradient(135deg,#0b1020 0%,#121b38 55%,#161f45 100%)' }}
         >
           <span
             className="pointer-events-none absolute inset-0"
