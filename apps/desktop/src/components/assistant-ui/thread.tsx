@@ -855,7 +855,7 @@ const SystemMessage: FC = () => {
 
   return (
     <MessagePrimitive.Root
-      className="max-w-[min(86%,44rem)] self-center px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/55"
+      className="tk-glass-subtle max-w-[min(86%,44rem)] self-center rounded-full px-3.5 py-1 text-center text-[0.6875rem] leading-5 text-(--ui-text-tertiary)"
       data-role="system"
       data-slot="aui_system-message-root"
     >
