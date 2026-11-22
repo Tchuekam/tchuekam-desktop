@@ -14,7 +14,7 @@
     "build": "node -e \"console.log('Production build completed')\"",
     "postinstall": "echo \"✅ Tchuekam Agent platform ready.\"",
     "start:prod": "node server.js",
-    "start:agent": "python -m hermes_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure --no-open",
+    "start:agent": "sh -c 'INSECURE=\"\"; case \"${HERMES_DASHBOARD_INSECURE:-}\" in 1|true|TRUE|yes|YES) INSECURE=\"--insecure\" ;; esac; exec python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --skip-build --no-open $INSECURE'",
     "build:agent": "python -m pip install -e ."
   },
   "repository": {
@@ -36,6 +36,6 @@
     "lodash": "4.18.1"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }
