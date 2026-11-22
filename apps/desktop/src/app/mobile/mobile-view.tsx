@@ -307,3 +307,312 @@ export function MobileView() {
               <div className="flex items-center gap-2 text-xs text-(--ui-text-secondary)">
                 <IconShieldCheck className="size-4 text-cyan-400 shrink-0" />
                 <span>Zero telemetry lock-in • Local key storage</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-(--ui-text-secondary)">
+                <IconSparkles className="size-4 text-emerald-400 shrink-0" />
+                <span>Cosmic & Technical alignment algorithms</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-(--ui-text-secondary)">
+                <IconTerminal2 className="size-4 text-amber-400 shrink-0" />
+                <span>Full compatibility with TchueKAM Desktop sessions</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (7 Cols on LG): Interactive Phone Simulator */}
+          <div className="flex flex-col items-center gap-4 lg:col-span-7">
+            <div className="flex items-center justify-between w-full max-w-sm px-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-cyan-400">
+                Interactive Live Preview
+              </span>
+              <span className="text-xs text-(--ui-text-tertiary)">Tap around to test drive</span>
+            </div>
+
+            {/* Phone Chassis Frame */}
+            <div className="relative w-full max-w-sm rounded-[44px] border-[8px] border-neutral-800 bg-neutral-950 p-3 shadow-[0_25px_60px_rgba(0,0,0,0.8),0_0_40px_rgba(0,229,255,0.15)] ring-1 ring-white/10">
+              {/* Dynamic Island / Speaker Notch */}
+              <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 flex h-6 w-28 items-center justify-between rounded-full bg-black px-2 shadow-md">
+                <div className="size-2 rounded-full bg-neutral-800" />
+                <div className="size-2.5 rounded-full bg-cyan-500/80 animate-pulse" />
+              </div>
+
+              {/* Phone Screen Container */}
+              <div className="relative flex h-[620px] flex-col overflow-hidden rounded-[34px] bg-[#1a1e1b] text-white">
+                {/* Status Bar */}
+                <div className="flex items-center justify-between px-6 pt-3 pb-2 text-[0.6875rem] font-medium text-neutral-300">
+                  <span>9:41</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[0.6rem]">5G</span>
+                    <span className="text-[0.7rem]">●●●</span>
+                    <span className="rounded-sm border border-neutral-400 px-1 text-[0.55rem]">100%</span>
+                  </div>
+                </div>
+
+                {/* Mobile App Header */}
+                <div className="flex items-center justify-between border-b border-white/10 px-5 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="size-2.5 rounded-full bg-cyan-400" />
+                    <span className="font-semibold text-xs tracking-wide">TchueKAM Mobile</span>
+                  </div>
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[0.65rem] font-semibold text-emerald-300">
+                    ☀️ Yang Fire Day
+                  </span>
+                </div>
+
+                {/* Mobile Content Scroller */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-none">
+                  {mobileTab === 'decide' && (
+                    <>
+                      {/* Section Prompt */}
+                      <div>
+                        <h3 className="text-base font-bold text-white tracking-tight">
+                          What are you deciding right now?
+                        </h3>
+                        <p className="text-[0.72rem] text-[#97a091] mt-0.5">
+                          Tap a scenario to align cosmic & strategic parameters.
+                        </p>
+                      </div>
+
+                      {/* Scenario Selector Chips */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {SCENARIOS.map(sc => (
+                          <button
+                            key={sc.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('tap')
+                              setSelectedScenario(sc)
+                              setExecuted(false)
+                            }}
+                            className={cn(
+                              'flex flex-col items-start rounded-xl p-2.5 text-left transition-all duration-150',
+                              selectedScenario.id === sc.id
+                                ? 'bg-cyan-500/20 border border-cyan-400 text-white shadow-sm'
+                                : 'bg-white/5 border border-white/5 text-neutral-300 hover:bg-white/10'
+                            )}
+                          >
+                            <span className="text-[0.62rem] uppercase tracking-wider text-cyan-300">
+                              {sc.category}
+                            </span>
+                            <span className="text-xs font-semibold mt-1 leading-snug line-clamp-1">
+                              {sc.title}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Primary Alignment Card */}
+                      <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur-md space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="rounded-md bg-cyan-400/20 px-2 py-0.5 text-[0.65rem] font-bold text-cyan-300">
+                            AI ANALYSIS
+                          </span>
+                          <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[0.7rem] font-bold text-emerald-400">
+                            {selectedScenario.score} Score
+                          </span>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                            <span className="grid size-4 place-items-center rounded-full bg-emerald-500/30 text-[0.65rem]">
+                              ✓
+                            </span>
+                            <span>Recommended Path</span>
+                          </div>
+                          <p className="mt-1 text-xs text-[#a9b4a4] leading-relaxed">
+                            {selectedScenario.summary}
+                          </p>
+                        </div>
+
+                        {/* Metrics Triplets */}
+                        <div className="grid grid-cols-3 gap-2 rounded-xl bg-black/30 p-2.5 text-center">
+                          <div>
+                            <div className="text-[0.6rem] uppercase tracking-wider text-neutral-400">Timing</div>
+                            <div className="text-xs font-bold text-emerald-400">{selectedScenario.timing}</div>
+                          </div>
+                          <div>
+                            <div className="text-[0.6rem] uppercase tracking-wider text-neutral-400">Harmony</div>
+                            <div className="text-xs font-bold text-cyan-300">{selectedScenario.harmony}</div>
+                          </div>
+                          <div>
+                            <div className="text-[0.6rem] uppercase tracking-wider text-neutral-400">Risk</div>
+                            <div className="text-xs font-bold text-amber-300">{selectedScenario.risk}</div>
+                          </div>
+                        </div>
+
+                        {/* Execution Advice Box */}
+                        {executed && (
+                          <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3 text-xs text-emerald-200 animate-in fade-in slide-in-from-bottom-2">
+                            <span className="font-bold text-emerald-400">Action Plan:</span>{' '}
+                            {selectedScenario.actionAdvice}
+                          </div>
+                        )}
+
+                        {/* Execution Action Button */}
+                        <button
+                          type="button"
+                          disabled={executing}
+                          onClick={handleExecuteScenario}
+                          className={cn(
+                            'flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-xs tracking-wide transition-all',
+                            executing
+                              ? 'bg-cyan-500/50 text-black cursor-wait'
+                              : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300 active:scale-98 shadow-md'
+                          )}
+                        >
+                          {executing ? (
+                            <>
+                              <IconRefresh className="size-3.5 animate-spin" />
+                              <span>{executionStep ?? 'Executing…'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <IconPlayerPlay className="size-3.5 fill-current" />
+                              <span>Execute Scenario →</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {mobileTab === 'chat' && (
+                    <div className="flex flex-col gap-3 py-2">
+                      <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/20 p-3 text-xs text-neutral-200">
+                        <span className="font-semibold text-cyan-400">TchueKAM Mobile Agent:</span> Hello! I am your
+                        personal AI consultant on mobile. What would you like to build or automate today?
+                      </div>
+
+                      <div className="flex flex-col gap-2 pt-2">
+                        <span className="text-[0.68rem] uppercase tracking-wider text-neutral-400">Quick prompts:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('tap')
+                            setSimReply({
+                              prompt: 'Draft a non-disclosure agreement clause for contractors',
+                              reply:
+                                'Draft Confidentiality & IP Clause ready: mutual 3-year term, carve-outs for prior IP, and [to confirm] governing jurisdiction.'
+                            })
+                          }}
+                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
+                        >
+                          💬 &quot;Draft a non-disclosure agreement clause for contractors&quot;
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('tap')
+                            setSimReply({
+                              prompt: 'Review quarterly burn rate and runway projections',
+                              reply:
+                                'Finance Summary template opened: enter net monthly burn and cash balance [to confirm] to project 12/18/24-month runway scenarios.'
+                            })
+                          }}
+                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
+                        >
+                          📊 &quot;Review quarterly burn rate and runway projections&quot;
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('tap')
+                            setSimReply({
+                              prompt: 'Schedule an automated cron audit for midnight',
+                              reply:
+                                'Scheduled task template ready: daily 00:00 UTC workspace health + summary delivery via /cron on connected nodes.'
+                            })
+                          }}
+                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
+                        >
+                          ⚡ &quot;Schedule an automated cron audit for midnight&quot;
+                        </button>
+                      </div>
+                      {simReply && (
+                        <div className="mt-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-2.5 text-[0.72rem] text-neutral-200">
+                          <div className="font-semibold text-emerald-300">{simReply.prompt}</div>
+                          <div className="mt-1 text-neutral-300">{simReply.reply}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {mobileTab === 'tools' && (
+                    <div className="flex flex-col gap-2.5 py-2">
+                      <div className="text-xs font-semibold text-white">Installed Mobile Capabilities</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <span className="text-cyan-400 font-bold block">Document Scanner</span>
+                          <span className="text-[0.68rem] text-neutral-400">OCR & PDF Export</span>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <span className="text-emerald-400 font-bold block">Voice Agent</span>
+                          <span className="text-[0.68rem] text-neutral-400">Local STT / TTS</span>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <span className="text-purple-400 font-bold block">Business Hub</span>
+                          <span className="text-[0.68rem] text-neutral-400">Contracts & Decks</span>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <span className="text-amber-400 font-bold block">Encrypted Vault</span>
+                          <span className="text-[0.68rem] text-neutral-400">AES-256 Storage</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Bottom Tab Bar */}
+                <div className="flex items-center justify-around border-t border-white/10 bg-black/60 py-2.5 px-3 backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('tap')
+                      setMobileTab('decide')
+                    }}
+                    className={cn(
+                      'flex flex-col items-center gap-0.5 text-[0.65rem] font-semibold transition-colors',
+                      mobileTab === 'decide' ? 'text-cyan-400' : 'text-neutral-400 hover:text-neutral-200'
+                    )}
+                  >
+                    <span>🧭</span>
+                    <span>Decide</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('tap')
+                      setMobileTab('chat')
+                    }}
+                    className={cn(
+                      'flex flex-col items-center gap-0.5 text-[0.65rem] font-semibold transition-colors',
+                      mobileTab === 'chat' ? 'text-cyan-400' : 'text-neutral-400 hover:text-neutral-200'
+                    )}
+                  >
+                    <span>💬</span>
+                    <span>Chat</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('tap')
+                      setMobileTab('tools')
+                    }}
+                    className={cn(
+                      'flex flex-col items-center gap-0.5 text-[0.65rem] font-semibold transition-colors',
+                      mobileTab === 'tools' ? 'text-cyan-400' : 'text-neutral-400 hover:text-neutral-200'
+                    )}
+                  >
+                    <span>⚙️</span>
+                    <span>Tools</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
