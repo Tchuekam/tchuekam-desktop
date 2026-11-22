@@ -656,9 +656,9 @@ function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
 }
 
 // Shared "user bubble" base. Both the read-only message and the inline
-// edit composer render the same bubble surface (rounded glass card,
-// shadow-composer); they only differ in border weight, cursor, and
-// padding-right (the read-only view reserves room for the restore icon).
+// edit composer render the same bubble surface (rounded frosted glass card,
+// specular top edge + soft ambient shadow); they only differ in border weight,
+// cursor, and padding-right (the read-only view reserves room for the restore icon).
 const USER_BUBBLE_BASE_CLASS =
   'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border bg-(--dt-user-bubble) px-3 py-2 text-left shadow-composer'
 
