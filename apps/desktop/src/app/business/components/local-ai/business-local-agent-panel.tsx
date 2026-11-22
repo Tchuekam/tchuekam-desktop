@@ -494,18 +494,18 @@ export function BusinessLocalAiInlineCard() {
   }
 
   return (
-    <div className="mt-3 rounded-2xl border border-primary/25 bg-card/90 p-3.5 shadow-xs backdrop-blur-sm">
+    <div className="tk-glass-subtle mt-3 rounded-2xl border-(--tk-indigo-border) p-3.5">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Codicon className="text-primary" name="chip" size="0.9rem" />
-          <span className="text-xs font-bold">
+          <Codicon className="text-(--tk-indigo-text)" name="chip" size="0.9rem" />
+          <span className="text-xs font-semibold">
             Business Hub Local AI {status?.activeModelName ? `· ${status.activeModelName}` : ''}
           </span>
         </div>
         <div className="flex items-center gap-2">
           {!status?.installed && (
             <button
-              className="text-[0.6875rem] font-semibold text-primary hover:underline"
+              className="text-[0.6875rem] font-semibold text-(--tk-indigo-text) hover:underline"
               onClick={() => $businessLocalAiModalOpen.set(true)}
               type="button"
             >
@@ -527,20 +527,22 @@ export function BusinessLocalAiInlineCard() {
           <div
             className={cn(
               'rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap',
-              msg.role === 'user' ? 'bg-muted/70 font-medium text-foreground' : 'bg-primary/5 text-foreground'
+              msg.role === 'user'
+                ? 'bg-muted/70 font-medium text-foreground'
+                : 'border border-(--tk-indigo-border) bg-(--tk-indigo-soft) text-foreground'
             )}
             key={msg.id}
           >
             <div>{msg.content}</div>
             {msg.role === 'assistant' && (msg.durationMs || msg.tokensPerSec) && (
-              <div className="mt-1 text-[0.625rem] text-muted-foreground">
+              <div className="mt-1 text-[0.625rem] tabular-nums text-muted-foreground">
                 {(msg.durationMs ? `${(msg.durationMs / 1000).toFixed(1)}s` : '') +
                   (msg.tokensPerSec ? ` · ${msg.tokensPerSec} tok/s` : '')}
               </div>
             )}
           </div>
         ))}
-        {busy && <div className="px-1 text-xs text-muted-foreground">Thinking locally...</div>}
+        {busy && <div className="px-1 text-xs text-(--tk-cyan-text)">Thinking locally...</div>}
       </div>
     </div>
   )
