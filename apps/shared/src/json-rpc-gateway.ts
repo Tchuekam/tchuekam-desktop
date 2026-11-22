@@ -49,6 +49,7 @@ type PendingCall = {
 export interface GatewayClientOptions {
   closedErrorMessage?: string
   connectErrorMessage?: string
+  connectTimeoutMs?: number
   createRequestId?: (nextId: number) => GatewayRequestId
   requestIdPrefix?: string
   requestTimeoutMs?: number
@@ -57,12 +58,14 @@ export interface GatewayClientOptions {
 }
 
 const ANY = '*'
+const DEFAULT_CONNECT_TIMEOUT_MS = 15_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 
 export class JsonRpcGatewayClient {
   private nextId = 0
   private pending = new Map<GatewayRequestId, PendingCall>()
   private socket: WebSocketLike | null = null
+  private connectTimer: ReturnType<typeof setTimeout> | null = null
   private state: ConnectionState = 'idle'
   private readonly eventHandlers = new Map<string, Set<(event: GatewayEvent) => void>>()
   private readonly stateHandlers = new Set<(state: ConnectionState) => void>()
@@ -73,6 +76,7 @@ export class JsonRpcGatewayClient {
     this.options = {
       closedErrorMessage: options.closedErrorMessage ?? 'WebSocket closed',
       connectErrorMessage: options.connectErrorMessage ?? 'WebSocket connection failed',
+      connectTimeoutMs: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
       createRequestId:
         options.createRequestId ?? ((nextId: number) => `${options.requestIdPrefix ?? 'r'}${nextId}`),
       notConnectedErrorMessage: options.notConnectedErrorMessage ?? 'gateway not connected',
@@ -86,6 +90,13 @@ export class JsonRpcGatewayClient {
     return this.state
   }
 
+  private clearConnectTimer(): void {
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer)
+      this.connectTimer = null
+    }
+  }
+
   async connect(wsUrl: string): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN || this.state === 'connecting') {
       return
@@ -97,25 +108,70 @@ export class JsonRpcGatewayClient {
     this.socket = socket
 
     socket.addEventListener('message', message => {
+      if (this.socket !== socket) {
+        return
+      }
+
       this.handleMessage(message.data)
     })
 
     socket.addEventListener('close', () => {
+      if (this.socket !== socket) {
+        return
+      }
+
+      this.clearConnectTimer()
+      this.socket = null
       this.setState('closed')
       this.rejectAllPending(new Error(this.options.closedErrorMessage))
     })
 
     await new Promise<void>((resolve, reject) => {
+      let settled = false
+
+      const finishError = (message: string) => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+        this.clearConnectTimer()
+        socket.removeEventListener('open', onOpen)
+        socket.removeEventListener('error', onError)
+
+        if (this.socket === socket) {
+          this.socket = null
+          this.setState('error')
+        }
+
+        reject(new Error(message))
+      }
+
       const onOpen = () => {
+        if (settled || this.socket !== socket) {
+          return
+        }
+
+        settled = true
+        this.clearConnectTimer()
         socket.removeEventListener('error', onError)
         this.setState('open')
         resolve()
       }
 
-      const onError = () => {
-        socket.removeEventListener('open', onOpen)
-        this.setState('error')
-        reject(new Error(this.options.connectErrorMessage))
+      const onError = () => finishError(this.options.connectErrorMessage)
+
+      this.clearConnectTimer()
+      if (this.options.connectTimeoutMs > 0) {
+        this.connectTimer = setTimeout(() => {
+          try {
+            socket.close()
+          } catch {
+            // Ignore close errors on stalled connecting socket
+          }
+
+          finishError('WebSocket connection timed out')
+        }, this.options.connectTimeoutMs)
       }
 
       socket.addEventListener('open', onOpen, { once: true })
@@ -124,8 +180,18 @@ export class JsonRpcGatewayClient {
   }
 
   close(): void {
-    this.socket?.close()
+    this.clearConnectTimer()
+    const socket = this.socket
     this.socket = null
+
+    try {
+      socket?.close()
+    } catch {
+      // Ignore socket close error
+    }
+
+    this.setState('closed')
+    this.rejectAllPending(new Error(this.options.closedErrorMessage))
   }
 
   on<P = unknown>(type: GatewayEventName, handler: (event: GatewayEvent<P>) => void): () => void {
