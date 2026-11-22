@@ -262,10 +262,10 @@ function DeferStreamingText({ children }: { children: ReactNode }) {
 // Headings shrink to chat scale rather than the prose default (h1≈xl). Kept
 // table-driven so adding/tweaking levels is one row.
 const HEADING_SIZES: Record<'h1' | 'h2' | 'h3' | 'h4', string> = {
-  h1: 'text-[1rem] tracking-tight',
-  h2: 'text-[0.9375rem] tracking-tight',
-  h3: 'text-[0.875rem]',
-  h4: 'text-[0.8125rem]'
+  h1: 'text-[1.1875rem] tracking-[-0.02em] mt-4 mb-1.5',
+  h2: 'text-[1.03125rem] tracking-[-0.015em] mt-3.5 mb-1',
+  h3: 'text-[0.9375rem] tracking-[-0.01em] mt-2.5 mb-0.5',
+  h4: 'text-[0.875rem] mt-2 mb-0.5'
 }
 
 const MarkdownTextImpl = () => {
@@ -282,7 +282,7 @@ const MarkdownTextImpl = () => {
     () =>
       ({
         h1: ({ className, ...props }: ComponentProps<'h1'>) => (
-          <h1 className={cn('my-1 font-semibold', HEADING_SIZES.h1, className)} {...props} />
+          <h1 className={cn('font-semibold text-foreground', HEADING_SIZES.h1, className)} {...props} />
         ),
         h2: ({ className, ...props }: ComponentProps<'h2'>) => (
           <h2 className={cn('my-1 font-semibold', HEADING_SIZES.h2, className)} {...props} />
