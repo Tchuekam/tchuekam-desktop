@@ -80,7 +80,11 @@ export function ComposerControls({
       ) : (
         <Button
           aria-label={busy ? (busyAction === 'queue' ? 'Queue message' : 'Stop') : 'Send'}
-          className={PRIMARY_ICON_BTN}
+          className={cn(
+            isStop
+              ? 'size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full border border-destructive/40 bg-destructive/90 p-0 text-white shadow-xs transition-all duration-150 hover:bg-destructive active:scale-95 disabled:opacity-35'
+              : PRIMARY_ICON_BTN
+          )}
           disabled={disabled || !canSubmit}
           title={busy ? (busyAction === 'queue' ? 'Queue message' : 'Stop') : 'Send'}
           type="submit"
@@ -89,7 +93,7 @@ export function ComposerControls({
             busyAction === 'queue' ? (
               <Layers3 size={16} />
             ) : (
-              <span className="block size-3 rounded-[0.1875rem] bg-current" />
+              <span className="block size-2.5 rounded-[0.1875rem] bg-current" />
             )
           ) : (
             <Codicon name="arrow-up" size="1rem" />
@@ -111,6 +115,17 @@ function ConversationPill({
 }: ConversationProps & { disabled: boolean }) {
   const speaking = status === 'speaking'
   const listening = status === 'listening' && !muted
+
+  const shortStatus =
+    status === 'speaking'
+      ? 'Speaking'
+      : status === 'transcribing'
+        ? 'Transcribing'
+        : status === 'thinking'
+          ? 'Thinking'
+          : muted
+            ? 'Muted'
+            : 'Listening'
 
   const label =
     status === 'speaking'
