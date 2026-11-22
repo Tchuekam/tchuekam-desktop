@@ -1,4 +1,5 @@
 import { $terminalTakeover } from '@/app/right-sidebar/store'
+import { IS_DESKTOP } from '@/lib/platform'
 
 import type { DocumentLanguage } from '../types'
 
@@ -266,6 +267,23 @@ export async function runDocumentAiOperation(
 ): Promise<AiOperationResult> {
   assertTerminalTakeoverInactive()
 
+  // Desktop-only: prefer the dedicated Business Hub local AI agent first
+  if (IS_DESKTOP && typeof window !== 'undefined' && window.hermesDesktop?.businessAi?.runOperation) {
+    try {
+      const localRes = await window.hermesDesktop.businessAi.runOperation(req)
+
+      if (localRes?.ok && localRes.output) {
+        return {
+          grounded: true,
+          output: enforceGroundingRule(localRes.output),
+          suggestions: localRes.suggestions
+        }
+      }
+    } catch {
+      // Fall through to backend API / deterministic fallback
+    }
+  }
+
   try {
     if (typeof window !== 'undefined' && window.hermesDesktop?.api) {
       const response = await window.hermesDesktop.api<{
@@ -384,7 +402,28 @@ export async function extractDocumentFromFile(file: File): Promise<OcrExtraction
 
   const dataUrl = await readFileAsDataUrl(file)
 
-  // 1. Try backend OCR endpoint (/api/business/ocr)
+  // 1. Desktop-only: try local offline OCR (RapidOCR / pypdf) first
+  if (IS_DESKTOP && typeof window !== 'undefined' && window.hermesDesktop?.businessAi?.runOcr) {
+    try {
+      const ocrRes = await window.hermesDesktop.businessAi.runOcr({
+        dataUrl,
+        fileName,
+        mimeType
+      })
+
+      if (ocrRes?.ok && ocrRes.text && ocrRes.text.trim()) {
+        return {
+          extractedText: ocrRes.text.trim(),
+          fileName,
+          mimeType
+        }
+      }
+    } catch {
+      // Fall through to backend OCR / local PDF parser
+    }
+  }
+
+  // 2. Try backend OCR endpoint (/api/business/ocr)
   try {
     if (typeof window !== 'undefined' && window.hermesDesktop?.api) {
       const res = await window.hermesDesktop.api<{
