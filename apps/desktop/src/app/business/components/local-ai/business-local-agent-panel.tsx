@@ -667,7 +667,7 @@ export function BusinessLocalAiWorkspaceDrawer({
               >
                 <div>{msg.content}</div>
                 {msg.role === 'assistant' && (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[0.625rem] text-muted-foreground">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[0.625rem] tabular-nums text-muted-foreground">
                     {(msg.durationMs || msg.tokensPerSec) && (
                       <span>
                         {msg.durationMs ? `${(msg.durationMs / 1000).toFixed(1)}s` : ''}
@@ -676,7 +676,7 @@ export function BusinessLocalAiWorkspaceDrawer({
                     )}
                     {onApplyText && (
                       <button
-                        className="rounded bg-primary/10 px-2 py-0.5 font-semibold text-primary hover:bg-primary/20"
+                        className="rounded-md bg-(--tk-indigo-soft) px-2 py-0.5 font-semibold text-(--tk-indigo-text) hover:brightness-105"
                         onClick={() => onApplyText(msg.content)}
                         type="button"
                       >
@@ -684,7 +684,7 @@ export function BusinessLocalAiWorkspaceDrawer({
                       </button>
                     )}
                     <button
-                      className="rounded border border-border/70 px-2 py-0.5 font-medium hover:text-foreground"
+                      className="rounded-md border border-(--tk-glass-border) px-2 py-0.5 font-medium hover:text-foreground"
                       onClick={() => {
                         void navigator.clipboard?.writeText?.(msg.content)
                         notify({ kind: 'info', message: 'Copied to clipboard.', title: 'Copied' })
@@ -697,7 +697,7 @@ export function BusinessLocalAiWorkspaceDrawer({
                 )}
               </div>
             ))}
-            {busy && <div className="px-1 text-xs text-muted-foreground">Generating locally...</div>}
+            {busy && <div className="px-1 text-xs text-(--tk-cyan-text)">Generating locally...</div>}
           </div>
         )}
 
@@ -710,7 +710,7 @@ export function BusinessLocalAiWorkspaceDrawer({
         >
           <input
             aria-label="Ask Business Hub Local Agent"
-            className="h-8 flex-1 rounded-xl border border-border/70 bg-background/90 px-3 text-xs focus:border-primary focus:outline-none"
+            className="h-8 flex-1 rounded-xl border border-(--tk-glass-border) bg-background/85 px-3 text-xs focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
             disabled={busy}
             onChange={event => setInput(event.target.value)}
             placeholder={
@@ -721,7 +721,7 @@ export function BusinessLocalAiWorkspaceDrawer({
             value={input}
           />
           <button
-            className="inline-flex h-8 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+            className="tk-btn-primary inline-flex h-8 items-center gap-1 rounded-xl px-3 text-xs font-semibold text-white disabled:opacity-50"
             disabled={busy || !input.trim()}
             type="submit"
           >
