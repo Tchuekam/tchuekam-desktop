@@ -278,13 +278,21 @@ function ToolEntry({ part }: ToolEntryProps) {
   return (
     <div
       className={cn(
-        'min-w-0 max-w-full overflow-hidden text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)',
-        open && 'rounded-[0.625rem] border border-(--ui-stroke-tertiary)'
+        'min-w-0 max-w-full overflow-hidden text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary) transition-[background-color,border-color,box-shadow] duration-150',
+        open &&
+          cn(
+            'tk-glass-subtle rounded-xl shadow-xs',
+            view.status === 'error'
+              ? 'border-destructive/35'
+              : isPending
+                ? 'border-(--tk-cyan-border)'
+                : 'border-(--tk-glass-border)'
+          )
       )}
       data-slot="tool-block"
       ref={enterRef}
     >
-      <div className={cn(open && 'border-b border-(--ui-stroke-tertiary) px-2 py-1.5')}>
+      <div className={cn(open && 'border-b border-(--tk-glass-border) bg-(--ui-bg-tertiary)/45 px-3 py-2')}>
         <DisclosureRow
           onToggle={hasExpandableContent ? () => setToolDisclosureOpen(disclosureId, !open) : undefined}
           open={open}
