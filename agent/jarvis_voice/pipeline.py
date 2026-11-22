@@ -248,3 +248,253 @@ class JarvisVoiceSession:
                         entry_history = entry.get("history")
                         if isinstance(entry_history, list):
                             history = list(entry_history)
+                else:
+                    entry_history = entry.get("history")
+                    if isinstance(entry_history, list):
+                        history = list(entry_history)
+                if entry.get("agent") is not None:
+                    agent = entry.get("agent")
+        except Exception:
+            pass
+
+        if not history:
+            try:
+                from hermes_state import SessionDB
+
+                db = SessionDB()
+                try:
+                    raw_msgs = db.get_messages_as_conversation(self.session_id)
+                    if isinstance(raw_msgs, list):
+                        for m in raw_msgs:
+                            if isinstance(m, dict) and m.get("role") in {"user", "assistant", "tool"}:
+                                history.append({
+                                    "role": m["role"],
+                                    "content": m.get("content") or "",
+                                })
+                finally:
+                    db.close()
+            except Exception:
+                pass
+
+        if agent is None:
+            try:
+                from tui_gateway import server as gw_server
+
+                key = (
+                    str(session_entry.get("session_key") or self.session_id)
+                    if isinstance(session_entry, dict)
+                    else self.session_id
+                )
+                agent = gw_server._make_agent(self.session_id, key, session_id=key)
+            except Exception:
+                from run_agent import AIAgent
+
+                agent = AIAgent(quiet_mode=True, session_id=self.session_id, platform="desktop")
+
+        return agent, history
+
+    async def _tts_consumer(self, clause_queue: asyncio.Queue[Optional[str]], gen: int) -> None:
+        from tools.tts_tool import stream_kokoro_pcm, text_to_speech_tool
+
+        tts_started = False
+        try:
+            while True:
+                clause = await clause_queue.get()
+                if clause is None:
+                    break
+                if gen != self._generation_id or self._closed:
+                    break
+
+                spoken = sanitize_text_for_speech(clause)
+                if not spoken:
+                    continue
+
+                if not tts_started:
+                    tts_started = True
+                    self._speaking = True
+                    await self._set_state("speaking")
+                    await self.send_json({
+                        "type": "tts_start",
+                        "generation_id": gen,
+                        "sample_rate": 24000,
+                        "provider": "kokoro",
+                    })
+
+                streamed_any = False
+                try:
+                    tts_cfg = {"kokoro": {}}
+                    if self.voice:
+                        tts_cfg["kokoro"]["voice"] = self.voice
+                    async for pcm_chunk, _sr in stream_kokoro_pcm(spoken, tts_config=tts_cfg):
+                        if gen != self._generation_id or self._closed:
+                            return
+                        if pcm_chunk:
+                            streamed_any = True
+                            await self.send_bytes(pcm_chunk)
+                except Exception as exc:
+                    logger.debug("Kokoro stream failed (%s); falling back to file TTS", exc)
+
+                if not streamed_any and gen == self._generation_id and not self._closed:
+                    res_json = await asyncio.to_thread(text_to_speech_tool, spoken, None, True)
+                    try:
+                        res = json.loads(res_json)
+                    except Exception:
+                        res = {}
+                    fpath = res.get("file_path")
+                    if res.get("success") and fpath and os.path.isfile(fpath):
+                        try:
+                            pcm_fallback = _load_audio_file_as_pcm16_24k(fpath)
+                            if pcm_fallback and gen == self._generation_id:
+                                for off in range(0, len(pcm_fallback), 16384):
+                                    if gen != self._generation_id or self._closed:
+                                        return
+                                    await self.send_bytes(pcm_fallback[off : off + 16384])
+                        finally:
+                            try:
+                                os.unlink(fpath)
+                            except OSError:
+                                pass
+        finally:
+            self._speaking = False
+            if tts_started and gen == self._generation_id and not self._closed:
+                await self.send_json({"type": "tts_end", "generation_id": gen})
+
+    async def _run_text_turn(self, text: str, gen: int) -> None:
+        clause_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        chunker = StreamingClauseChunker()
+        tts_task = asyncio.create_task(self._tts_consumer(clause_queue, gen))
+
+        try:
+            await self._set_state("thinking")
+            agent, history = await asyncio.to_thread(self._load_or_make_agent_and_history)
+            with self._agent_lock:
+                self._active_agent = agent
+
+            def _on_intel(payload: Dict[str, Any]) -> None:
+                if gen != self._generation_id or self._closed:
+                    return
+                try:
+                    self.loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(self.send_json({"type": "intelligence", **payload}))
+                    )
+                except Exception:
+                    pass
+
+            agent.intelligence_callback = _on_intel
+
+            def _on_delta(delta: str) -> None:
+                if not delta or gen != self._generation_id or self._closed:
+                    return
+                try:
+                    self.loop.call_soon_threadsafe(
+                        lambda d=delta: asyncio.create_task(
+                            self.send_json({"type": "assistant_delta", "delta": d, "generation_id": gen})
+                        )
+                    )
+                    for clause in chunker.push(delta):
+                        self.loop.call_soon_threadsafe(clause_queue.put_nowait, clause)
+                except Exception:
+                    pass
+
+            result = await asyncio.to_thread(
+                agent.run_conversation,
+                user_message=text,
+                conversation_history=history or None,
+                stream_callback=_on_delta,
+            )
+
+            # Update shared tui_gateway history if that session exists in-memory
+            try:
+                from tui_gateway import server as gw_server
+
+                sessions = getattr(gw_server, "_sessions", {})
+                entry = sessions.get(self.session_id) if isinstance(sessions, dict) else None
+                if not isinstance(entry, dict) and isinstance(sessions, dict):
+                    for cand in sessions.values():
+                        if isinstance(cand, dict) and cand.get("session_key") == self.session_id:
+                            entry = cand
+                            break
+                if isinstance(entry, dict) and isinstance(result, dict) and isinstance(result.get("messages"), list):
+                    lock = entry.get("history_lock")
+                    if lock is not None:
+                        with lock:
+                            entry["history"] = list(result["messages"])
+                    else:
+                        entry["history"] = list(result["messages"])
+            except Exception:
+                pass
+
+            if gen != self._generation_id or self._closed:
+                return
+
+            final_text = str((result or {}).get("final_response") or "").strip()
+            tail = chunker.flush()
+            if tail:
+                await clause_queue.put(tail)
+            elif final_text and not getattr(agent, "_current_streamed_assistant_text", ""):
+                # Non-streaming path (or buffered local response): speak full response cleanly
+                ns_chunker = StreamingClauseChunker()
+                for clause in ns_chunker.push(final_text):
+                    await clause_queue.put(clause)
+                rem = ns_chunker.flush()
+                if rem:
+                    await clause_queue.put(rem)
+
+            await clause_queue.put(None)
+            await tts_task
+
+            if gen == self._generation_id and not self._closed:
+                route = getattr(agent, "_active_mbowagpt_route", None)
+                await self.send_json({
+                    "type": "assistant_final",
+                    "text": final_text,
+                    "generation_id": gen,
+                    "model": getattr(agent, "model", ""),
+                    "provider": getattr(agent, "provider", ""),
+                    "specialist": getattr(route, "display_name", None),
+                })
+                await self._set_state("listening")
+
+        except asyncio.CancelledError:
+            await clause_queue.put(None)
+            tts_task.cancel()
+            return
+        except Exception as exc:
+            logger.exception("Voice text turn failed")
+            await clause_queue.put(None)
+            await self.send_json({"type": "error", "error": str(exc)})
+            await self._set_state("listening")
+        finally:
+            with self._agent_lock:
+                self._active_agent = None
+
+    async def close(self) -> None:
+        self._closed = True
+        self.interrupt(reason="disconnect")
+        if self._active_turn_task is not None and not self._active_turn_task.done():
+            self._active_turn_task.cancel()
+        if self._unsub_connectivity is not None:
+            try:
+                self._unsub_connectivity()
+            except Exception:
+                pass
+            self._unsub_connectivity = None
+
+
+def _load_audio_file_as_pcm16_24k(file_path: str) -> bytes:
+    """Read a WAV/audio file into mono 24kHz Int16 PCM bytes cleanly."""
+    try:
+        import numpy as np
+        import soundfile as sf
+
+        data, sr = sf.read(file_path, dtype="float32", always_2d=True)
+        mono = data.mean(axis=1)
+        if sr != 24000 and len(mono) > 1:
+            target_len = max(1, int(round(len(mono) * 24000 / sr)))
+            xp = np.linspace(0.0, 1.0, len(mono), dtype=np.float32)
+            x_new = np.linspace(0.0, 1.0, target_len, dtype=np.float32)
+            mono = np.interp(x_new, xp, mono)
+        pcm16 = (np.clip(mono, -1.0, 1.0) * 32767.0).astype(np.int16)
+        return pcm16.tobytes()
+    except Exception:
+        return b""
