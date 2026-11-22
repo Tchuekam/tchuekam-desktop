@@ -148,12 +148,132 @@ function stageOne(spec) {
   console.log(`[stage-native-deps] ${path.relative(APP_ROOT, spec.to)}: ${copied} files`)
 }
 
+const SKIP_RUNTIME_DIRS = new Set([
+  'node_modules',
+  'test',
+  'tests',
+  '__tests__',
+  'docs',
+  'doc',
+  '.github',
+  'example',
+  'examples',
+])
+
+function shouldSkipRuntimeFile(filename) {
+  const lower = filename.toLowerCase()
+  return (
+    lower.endsWith('.d.ts') ||
+    lower.endsWith('.d.cts') ||
+    lower.endsWith('.d.mts') ||
+    lower.endsWith('.map') ||
+    /^readme(\.|$)/.test(lower) ||
+    /^changelog(\.|$)/.test(lower) ||
+    /^history(\.|$)/.test(lower)
+  )
+}
+
+function copyFilteredPackageDir(srcDir, dstDir, nodeFs) {
+  ensureDir(dstDir)
+  for (const entry of nodeFs.readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = path.join(srcDir, entry.name)
+    const dstPath = path.join(dstDir, entry.name)
+    if (entry.isDirectory()) {
+      if (SKIP_RUNTIME_DIRS.has(entry.name)) continue
+      copyFilteredPackageDir(srcPath, dstPath, nodeFs)
+    } else if (entry.isSymbolicLink()) {
+      const target = nodeFs.realpathSync(srcPath)
+      const stat = nodeFs.statSync(target)
+      if (stat.isDirectory()) {
+        if (SKIP_RUNTIME_DIRS.has(entry.name)) continue
+        copyFilteredPackageDir(target, dstPath, nodeFs)
+      } else if (!shouldSkipRuntimeFile(entry.name)) {
+        nodeFs.copyFileSync(target, dstPath)
+      }
+    } else if (entry.isFile()) {
+      if (shouldSkipRuntimeFile(entry.name)) continue
+      nodeFs.copyFileSync(srcPath, dstPath)
+    }
+  }
+}
+
+function resolvePackageFrom(pkgName, startDir, nodeFs) {
+  const pkgParts = pkgName.split('/')
+  let dir = path.resolve(startDir)
+  const repoRootResolved = path.resolve(REPO_ROOT)
+  while (true) {
+    const candidate = path.join(dir, 'node_modules', ...pkgParts)
+    const pkgJsonPath = path.join(candidate, 'package.json')
+    if (nodeFs.existsSync(pkgJsonPath)) {
+      return {
+        pkgDir: candidate,
+        realDir: nodeFs.realpathSync(candidate),
+        isHoisted: dir === repoRootResolved,
+        pkgJson: JSON.parse(nodeFs.readFileSync(pkgJsonPath, 'utf8')),
+      }
+    }
+    if (dir === repoRootResolved) break
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
+}
+
+function stageRuntimePackages(entryPackages) {
+  const nodeFs = require('node:fs')
+  const stageNodeModules = path.join(STAGE_ROOT, 'node_modules')
+  ensureDir(stageNodeModules)
+
+  const queue = entryPackages.map((name) => ({
+    name,
+    searchFrom: REPO_ROOT,
+    parentDestParts: [],
+  }))
+  const visitedDestKeys = new Set()
+
+  while (queue.length > 0) {
+    const { name, searchFrom, parentDestParts } = queue.shift()
+    const resolved = resolvePackageFrom(name, searchFrom, nodeFs)
+    if (!resolved) {
+      throw new Error(
+        `[stage-native-deps] Missing required runtime dependency "${name}" (searched from ${searchFrom}). Run npm install at the repo root.`
+      )
+    }
+
+    const nameParts = name.split('/')
+    const destParts = resolved.isHoisted
+      ? nameParts
+      : [...parentDestParts, 'node_modules', ...nameParts]
+    const destKey = destParts.join('/')
+    if (visitedDestKeys.has(destKey)) continue
+    visitedDestKeys.add(destKey)
+
+    const destDir = path.join(stageNodeModules, ...destParts)
+    copyFilteredPackageDir(resolved.realDir, destDir, nodeFs)
+
+    const deps = Object.keys(resolved.pkgJson.dependencies || {})
+    for (const depName of deps) {
+      queue.push({
+        name: depName,
+        searchFrom: resolved.pkgDir,
+        parentDestParts: destParts,
+      })
+    }
+  }
+
+  console.log(
+    `[stage-native-deps] staged ${visitedDestKeys.size} runtime package(s) for ${entryPackages.join(', ')}`
+  )
+}
+
 function main() {
   rmrf(STAGE_ROOT)
   ensureDir(STAGE_ROOT)
   for (const spec of NATIVE_DEPS) {
     stageOne(spec)
   }
+  stageRuntimePackages(['electron-updater'])
 }
 
 main()
