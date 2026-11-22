@@ -863,33 +863,38 @@ export function BusinessView() {
                 'linear-gradient(150deg, rgba(226,232,240,0.92), rgba(71,85,105,0.55))'
               ].map((bg, i) => (
                 <span
-                  className="size-16 rounded-xl border-2 border-white/15 shadow-xl backdrop-blur-xs"
-                  key={c}
+                  className="size-16 rounded-xl border border-white/20 shadow-xl backdrop-blur-xs"
+                  key={i}
                   style={{
-                    background: `linear-gradient(150deg,${c},rgba(0,0,0,.35))`,
+                    background: bg,
                     marginLeft: i ? '-1.25rem' : 0,
-                    transform: `rotate(${(i - 1) * 8}deg)`
+                    transform: `rotate(${(i - 1) * 7}deg)`
                   }}
                 />
               ))}
             </span>
-            <Codicon name="arrow-right" size="1.4rem" />
-            <span className="grid h-20 w-16 place-items-center gap-1 rounded-2xl bg-white text-[#0a2f6b] shadow-xl">
-              <Codicon name="file" size="1.5rem" />
+            <Codicon className="text-sky-300" name="arrow-right" size="1.35rem" />
+            <span className="grid h-20 w-16 place-items-center gap-1 rounded-2xl border border-white/20 bg-white/95 text-[#0f172a] shadow-xl">
+              <Codicon name="file" size="1.45rem" />
               <b className="text-[0.625rem] font-bold">Text</b>
             </span>
           </span>
         </div>
 
         {/* Feature grid */}
-        <h2 className="mb-4 mt-10 text-lg font-bold tracking-tight">What the workspace does here</h2>
+        <h2 className="mb-4 mt-10 text-lg font-semibold tracking-tight">What the workspace does here</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(f => (
-            <div className="rounded-2xl border border-border/80 bg-card/85 p-5 shadow-2xs backdrop-blur-sm transition-all hover:border-primary/30" key={f.title}>
+            <div
+              className="tk-glass-subtle tk-surface-hover rounded-2xl p-5 hover:border-(--tk-indigo-border)"
+              key={f.title}
+            >
               <span
                 className={cn(
-                  'mb-3.5 grid size-9 place-items-center rounded-xl shadow-2xs',
-                  f.gold ? 'bg-[#C98A2B]/12 text-[#B57E23]' : 'bg-primary/10 text-primary'
+                  'mb-3.5 grid size-9 place-items-center rounded-xl',
+                  f.gold
+                    ? 'bg-(--tk-cyan-soft) text-(--tk-cyan-text)'
+                    : 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
                 )}
               >
                 <Codicon name={f.icon} size="1.05rem" />
