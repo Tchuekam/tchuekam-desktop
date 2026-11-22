@@ -1,9 +1,29 @@
-let autoUpdater = null
-try {
-  autoUpdater = require('electron-updater').autoUpdater
-} catch {
-  // electron-updater is not present or optional in this environment
+function loadAutoUpdater() {
+  try {
+    return require('electron-updater').autoUpdater
+  } catch {
+    // Workspace dev mode resolves root node_modules; packaged builds stage runtime deps in resources/native-deps.
+  }
+
+  if (typeof process.resourcesPath === 'string' && process.resourcesPath) {
+    const nodePath = require('node:path')
+    const stagedPath = nodePath.join(
+      process.resourcesPath,
+      'native-deps',
+      'node_modules',
+      'electron-updater'
+    )
+    try {
+      return require(stagedPath).autoUpdater
+    } catch (err) {
+      console.warn('[auto-updater] Failed to load staged electron-updater:', err)
+    }
+  }
+
+  return null
 }
+
+const autoUpdater = loadAutoUpdater()
 
 const { app, dialog, BrowserWindow } = require('electron')
 
