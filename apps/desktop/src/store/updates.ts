@@ -235,6 +235,14 @@ export async function applyUpdates(opts: DesktopUpdateApplyOptions = {}): Promis
         message: result.command ?? 'hermes update',
         command: result.command ?? 'hermes update'
       })
+    } else if (!result?.ok) {
+      $updateApply.set({
+        ...$updateApply.get(),
+        applying: false,
+        stage: 'error',
+        error: result?.error ?? 'apply-failed',
+        message: result?.message ?? 'Update failed.'
+      })
     }
 
     return result
