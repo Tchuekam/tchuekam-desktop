@@ -87,18 +87,18 @@ function AttachmentPill({ attachment, onRemove }: { attachment: ComposerAttachme
           </span>
         )}
         <span className="min-w-0">
-          <span className="block truncate text-[0.72rem] font-medium leading-4 text-foreground/90">
+          <span className="block truncate text-[0.75rem] font-medium leading-4 text-foreground/92">
             {attachment.label}
           </span>
           {detail && (
-            <span className="block truncate font-mono text-[0.6rem] leading-3 text-muted-foreground/65">{detail}</span>
+            <span className="block truncate font-mono text-[0.625rem] leading-3 text-muted-foreground/75">{detail}</span>
           )}
         </span>
       </button>
       {onRemove && (
         <button
           aria-label={`Remove ${attachment.label}`}
-          className="absolute -right-1 -top-1 grid size-3.5 place-items-center rounded-full border border-border/70 bg-background text-muted-foreground opacity-0 shadow-xs transition hover:bg-accent hover:text-foreground group-hover/attachment:opacity-100 focus-visible:opacity-100"
+          className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border border-(--tk-glass-border) bg-background text-muted-foreground opacity-0 shadow-xs transition hover:border-(--tk-indigo-border) hover:bg-(--tk-indigo-soft) hover:text-foreground group-hover/attachment:opacity-100 focus-visible:opacity-100"
           onClick={() => onRemove(attachment.id)}
           type="button"
         >
