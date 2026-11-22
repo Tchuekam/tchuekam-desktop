@@ -355,3 +355,360 @@ export interface AnalyticsModelEntry {
   sessions: number
 }
 
+export interface AnalyticsResponse {
+  by_model: AnalyticsModelEntry[]
+  daily: AnalyticsDailyEntry[]
+  period_days: number
+  skills: {
+    summary: AnalyticsSkillsSummary
+    top_skills: AnalyticsSkillEntry[]
+  }
+  totals: AnalyticsTotals
+}
+
+export interface AnalyticsSkillEntry {
+  last_used_at: null | number
+  manage_count: number
+  percentage: number
+  skill: string
+  total_count: number
+  view_count: number
+}
+
+export interface AnalyticsSkillsSummary {
+  distinct_skills_used: number
+  total_skill_actions: number
+  total_skill_edits: number
+  total_skill_loads: number
+}
+
+export interface AnalyticsTotals {
+  total_actual_cost: number
+  total_api_calls: null | number
+  total_cache_read: null | number
+  total_estimated_cost: number
+  total_input: null | number
+  total_output: null | number
+  total_reasoning: null | number
+  total_sessions: number
+}
+
+export interface CronJob {
+  deliver?: null | string
+  enabled: boolean
+  id: string
+  last_error?: null | string
+  last_run_at?: null | string
+  name?: null | string
+  next_run_at?: null | string
+  prompt?: null | string
+  schedule?: CronJobSchedule
+  schedule_display?: null | string
+  script?: null | string
+  state?: null | string
+}
+
+export interface CronJobCreatePayload {
+  deliver?: string
+  name?: string
+  prompt: string
+  schedule: string
+}
+
+export interface CronJobSchedule {
+  display?: string
+  expr?: string
+  kind?: string
+}
+
+export interface CronJobUpdates {
+  deliver?: string
+  enabled?: boolean
+  name?: string
+  prompt?: string
+  schedule?: string
+}
+
+export interface ProfileCreatePayload {
+  clone_from_default?: boolean
+  name: string
+  no_skills?: boolean
+}
+
+export interface ProfileInfo {
+  has_env: boolean
+  is_default: boolean
+  model: null | string
+  name: string
+  path: string
+  provider: null | string
+  skill_count: number
+}
+
+export interface ProfileSetupCommand {
+  command: string
+}
+
+export interface ProfileSoul {
+  content: string
+  exists: boolean
+}
+
+export interface ProfilesResponse {
+  profiles: ProfileInfo[]
+}
+
+export interface SkillInfo {
+  category: string
+  description: string
+  enabled: boolean
+  name: string
+}
+
+export interface ToolsetInfo {
+  configured: boolean
+  description: string
+  enabled: boolean
+  label: string
+  name: string
+  tools: string[]
+}
+
+export interface ToolEnvVar {
+  key: string
+  prompt: string
+  url: string | null
+  default: string | null
+  is_set: boolean
+}
+
+export interface ToolProvider {
+  name: string
+  badge: string
+  tag: string
+  env_vars: ToolEnvVar[]
+  post_setup: string | null
+  requires_nous_auth: boolean
+  /** True when this is the provider currently written to config (mirrors the
+   *  CLI `hermes tools` active-provider detection). */
+  is_active: boolean
+}
+
+export interface ToolsetConfig {
+  name: string
+  has_category: boolean
+  providers: ToolProvider[]
+  /** Name of the currently active provider, or null if none is configured. */
+  active_provider: string | null
+}
+
+export interface SessionSearchResult {
+  model: string | null
+  role: string | null
+  session_id: string
+  session_started: number | null
+  snippet: string
+  source: string | null
+}
+
+export interface SessionSearchResponse {
+  results: SessionSearchResult[]
+}
+
+export interface LogsResponse {
+  file: string
+  lines: string[]
+}
+
+export interface PlatformStatus {
+  error_code?: string
+  error_message?: string
+  state: string
+  updated_at: string
+}
+
+export interface StatusResponse {
+  active_sessions: number
+  config_path: string
+  config_version: number
+  env_path: string
+  gateway_exit_reason: string | null
+  gateway_health_url: string | null
+  gateway_pid: number | null
+  gateway_platforms: Record<string, PlatformStatus>
+  gateway_running: boolean
+  gateway_state: string | null
+  gateway_updated_at: string | null
+  hermes_home: string
+  latest_config_version: number
+  release_date: string
+  version: string
+}
+
+export interface ActionResponse {
+  name: string
+  ok: boolean
+  pid: number
+}
+
+export interface ActionStatusResponse {
+  exit_code: number | null
+  lines: string[]
+  name: string
+  pid: number | null
+  running: boolean
+}
+
+export interface AuxiliaryTaskAssignment {
+  base_url: string
+  model: string
+  provider: string
+  task: string
+}
+
+export interface AuxiliaryModelsResponse {
+  main: { model: string; provider: string }
+  tasks: AuxiliaryTaskAssignment[]
+}
+
+export interface ModelAssignmentRequest {
+  model: string
+  provider: string
+  scope: 'main' | 'auxiliary'
+  task?: string
+}
+
+export interface ModelAssignmentResponse {
+  /** Toolset keys auto-routed through the Nous Tool Gateway as a result of
+   *  switching the main provider to Nous. Empty unless provider === 'nous'
+   *  and the user is a paid subscriber with unconfigured tools. */
+  gateway_tools?: string[]
+  model?: string
+  ok: boolean
+  provider?: string
+  reset?: boolean
+  scope?: string
+  tasks?: string[]
+}
+
+export type IntelligenceMode = 'hybrid' | 'local' | 'online'
+export type ConnectivityState = 'online' | 'degraded' | 'offline'
+
+export interface MbowaGPTModelStatus {
+  description: string
+  display_name: string
+  id: string
+  ready: boolean
+  recommended_filename: string
+  recommended_installed: boolean
+  recommended_size_mb: number
+  resolved_path: string | null
+  resolved_weights: string | null
+  role_title: string
+}
+
+export interface LocalRuntimeStatus {
+  active_port: number | null
+  active_role: string | null
+  active_served_model: string | null
+  active_weights: string | null
+  binary_path: string | null
+  download?: {
+    downloaded_bytes?: number
+    error?: string
+    model_id?: string
+    percent?: number
+    status?: string
+    total_bytes?: number
+  } | null
+  hardware: {
+    cpu_count: number
+    gpu_layers: number
+    ram_gb: number
+    recommended_ctx_size: number
+    recommended_threads: number
+  }
+  installed_ggufs: string[]
+  models: MbowaGPTModelStatus[]
+  ollama_models: string[]
+  ready: boolean
+  running: boolean
+}
+
+export interface AutonomyDomainSummary {
+  description: string
+  id: string
+  ready: boolean
+  recommended_tools: string[]
+  sample_skills: string[]
+  skill_count: number
+  specialist: string
+  title: string
+}
+
+export interface AutonomyStatusSummary {
+  active_plan?: {
+    completed_steps: number
+    failed_steps: number
+    objective: string
+    plan_id: string
+    status: string
+    total_steps: number
+    verified: boolean
+  } | null
+  identity: {
+    creator: string
+    name: string
+    title: string
+    uptime_seconds: number
+  }
+  self_conscious: boolean
+  skills_ecosystem: {
+    all_domains_ready: boolean
+    domains: AutonomyDomainSummary[]
+    domains_covered: number
+    domains_total: number
+    total_skills: number
+  }
+  tool_health: {
+    available_toolsets_count: number
+    circuit_open_tools: string[]
+    fallbacks_used: number
+    success_rate: number
+    total_calls: number
+    total_registered: number
+    total_successes: number
+    unavailable_toolsets_count: number
+  }
+  verified_deliverables_count: number
+}
+
+export interface IntelligenceStatusResponse {
+  active_tier: 'cloud' | 'local'
+  autonomy?: AutonomyStatusSummary | null
+  connectivity: ConnectivityState
+  consecutive_failures: number
+  degraded: boolean
+  last_checked_at: number
+  last_error: string
+  last_provider: string
+  local_runtime: LocalRuntimeStatus
+  mode: IntelligenceMode
+  offline: boolean
+  online: boolean
+  voice: {
+    duplex_ws_path?: string
+    kokoro_ready: boolean
+    whisper_local_ready: boolean
+  }
+}
+
+export interface IntelligenceRouteEvent {
+  display_name?: string
+  model: string
+  offline?: boolean
+  provider: string
+  reason?: string
+  specialist_key?: string
+  tier?: 'cloud' | 'local'
+}
