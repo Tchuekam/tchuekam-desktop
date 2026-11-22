@@ -227,9 +227,9 @@ function ConversationIndicator({
   const normalized = Math.max(0, Math.min(level, 1))
 
   return (
-    <span aria-hidden="true" className="flex h-3 items-center gap-0.5">
+    <span aria-hidden="true" className="flex h-3.5 items-center gap-[0.15rem]">
       {bars.map((weight, index) => {
-        const height = listening ? 0.3 + Math.min(0.7, normalized * weight) : 0.3
+        const height = listening ? 0.28 + Math.min(0.72, normalized * weight) : 0.28
 
         return <span className="w-0.5 rounded-full bg-current" key={index} style={{ height: `${height * 100}%` }} />
       })}
