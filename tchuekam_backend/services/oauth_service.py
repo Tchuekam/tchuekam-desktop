@@ -4,9 +4,10 @@ Service d'authentification OAuth2 extensible (Google, GitHub, Apple, Microsoft, 
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import quote, urlparse
 from sqlalchemy.orm import Session
 
-from tchuekam_backend.core.config import settings
+from tchuekam_backend.core.config import _is_production, settings
 from tchuekam_backend.repositories.user_repository import UserRepository
 from tchuekam_backend.repositories.oauth_repository import OAuthRepository
 from tchuekam_backend.repositories.rbac_repository import RbacRepository
@@ -48,7 +49,7 @@ class MockGoogleOAuthProvider(BaseOAuthProvider):
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
         client_id = settings.GOOGLE_CLIENT_ID or "mock-google-client-id"
-        return f"https://accounts.google.com/o/oauth2/v2/auth?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=openid%20email%20profile&state={state}"
+        return f"https://accounts.google.com/o/oauth2/v2/auth?client_id={quote(client_id, safe='')}&redirect_uri={quote(redirect_uri, safe='')}&response_type=code&scope=openid%20email%20profile&state={quote(state, safe='')}"
 
     def get_user_info_from_code(self, code: str, redirect_uri: str) -> Dict[str, Any]:
         # En mode de test/demo ou production sans mock, on traite les informations utilisateur
@@ -66,7 +67,7 @@ class MockGitHubOAuthProvider(BaseOAuthProvider):
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
         client_id = settings.GITHUB_CLIENT_ID or "mock-github-client-id"
-        return f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope=user:email&state={state}"
+        return f"https://github.com/login/oauth/authorize?client_id={quote(client_id, safe='')}&redirect_uri={quote(redirect_uri, safe='')}&scope=user:email&state={quote(state, safe='')}"
 
     def get_user_info_from_code(self, code: str, redirect_uri: str) -> Dict[str, Any]:
         return {
@@ -83,7 +84,7 @@ class MockAppleOAuthProvider(BaseOAuthProvider):
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
         client_id = settings.APPLE_CLIENT_ID or "mock-apple-client-id"
-        return f"https://appleid.apple.com/auth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=name%20email&state={state}"
+        return f"https://appleid.apple.com/auth/authorize?client_id={quote(client_id, safe='')}&redirect_uri={quote(redirect_uri, safe='')}&response_type=code&scope=name%20email&state={quote(state, safe='')}"
 
     def get_user_info_from_code(self, code: str, redirect_uri: str) -> Dict[str, Any]:
         return {
@@ -100,7 +101,7 @@ class MockMicrosoftOAuthProvider(BaseOAuthProvider):
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
         client_id = settings.MICROSOFT_CLIENT_ID or "mock-microsoft-client-id"
-        return f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=openid%20profile%20email&state={state}"
+        return f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={quote(client_id, safe='')}&redirect_uri={quote(redirect_uri, safe='')}&response_type=code&scope=openid%20profile%20email&state={quote(state, safe='')}"
 
     def get_user_info_from_code(self, code: str, redirect_uri: str) -> Dict[str, Any]:
         return {
@@ -117,7 +118,7 @@ class MockFacebookOAuthProvider(BaseOAuthProvider):
 
     def get_authorization_url(self, redirect_uri: str, state: str) -> str:
         client_id = settings.FACEBOOK_CLIENT_ID or "mock-facebook-client-id"
-        return f"https://www.facebook.com/v18.0/dialog/oauth?client_id={client_id}&redirect_uri={redirect_uri}&scope=email,public_profile&state={state}"
+        return f"https://www.facebook.com/v18.0/dialog/oauth?client_id={quote(client_id, safe='')}&redirect_uri={quote(redirect_uri, safe='')}&scope=email,public_profile&state={quote(state, safe='')}"
 
     def get_user_info_from_code(self, code: str, redirect_uri: str) -> Dict[str, Any]:
         return {
@@ -172,7 +173,26 @@ class OAuthService:
             )
         return provider, None
 
+    @staticmethod
+    def _validate_redirect_uri(redirect_uri: str) -> bool:
+        try:
+            parsed = urlparse(redirect_uri.strip())
+        except Exception:
+            return False
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        origin = f"{parsed.scheme}://{parsed.netloc}".lower()
+        allowed = {o.rstrip("/").lower() for o in settings.ALLOWED_ORIGINS}
+        if origin in allowed:
+            return True
+        host = (parsed.hostname or "").lower()
+        if not _is_production() and host in {"localhost", "127.0.0.1"}:
+            return True
+        return False
+
     def get_authorization_url(self, provider_name: str, redirect_uri: str, state: str) -> Tuple[bool, str]:
+        if not self._validate_redirect_uri(redirect_uri):
+            return False, "URL de redirection OAuth non autorisée."
         provider, error = self._resolve_provider(provider_name)
         if error or provider is None:
             return False, error or "Fournisseur OAuth indisponible."
@@ -190,6 +210,8 @@ class OAuthService:
         user_agent: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Traite le callback OAuth, crée/associe le compte utilisateur et émet les jetons JWT."""
+        if not self._validate_redirect_uri(redirect_uri):
+            return False, "URL de redirection OAuth non autorisée.", None
         provider, error = self._resolve_provider(provider_name)
         if error or provider is None:
             self.audit_repo.log(
