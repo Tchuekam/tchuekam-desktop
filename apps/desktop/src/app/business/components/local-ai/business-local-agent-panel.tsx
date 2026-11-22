@@ -244,12 +244,12 @@ export function BusinessLocalAiModal() {
 
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
           {/* Hardware & Runtime Status */}
-          <div className="grid grid-cols-1 gap-3 rounded-xl border border-border/70 bg-muted/25 p-3.5 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) p-4 sm:grid-cols-3">
             <div>
               <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                 PC Hardware
               </div>
-              <div className="mt-1 text-xs font-bold">
+              <div className="mt-1 text-xs font-bold tabular-nums">
                 {hardware ? `${(hardware.totalRamMb / 1024).toFixed(1)} GB RAM · ${hardware.cpuCount} CPU` : 'Desktop PC'}
               </div>
               <div className="text-[0.6875rem] text-muted-foreground">
@@ -261,7 +261,7 @@ export function BusinessLocalAiModal() {
               <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                 Engine State
               </div>
-              <div className="mt-1 text-xs font-bold">
+              <div className="mt-1 text-xs font-bold tabular-nums">
                 {status?.running
                   ? `Running (${status.server.memoryMb ?? '~450'} MB RAM)`
                   : status?.installed
@@ -276,7 +276,7 @@ export function BusinessLocalAiModal() {
             <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
               {status?.installed && !status.running && (
                 <button
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+                  className="tk-btn-primary inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white disabled:opacity-50"
                   disabled={busyAction !== null || isInstalling}
                   onClick={() => void handleWarmup()}
                   type="button"
@@ -287,7 +287,7 @@ export function BusinessLocalAiModal() {
               )}
               {status?.running && (
                 <button
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-semibold transition hover:border-amber-500/40 hover:text-amber-600 disabled:opacity-50"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-background/70 px-3 text-xs font-semibold transition hover:border-amber-500/40 hover:text-amber-600 disabled:opacity-50"
                   disabled={busyAction !== null}
                   onClick={() => void handleUnload()}
                   type="button"
@@ -301,10 +301,10 @@ export function BusinessLocalAiModal() {
 
           {/* Live Download Progress */}
           {isInstalling && progress && (
-            <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3.5">
+            <div className="space-y-2 rounded-xl border border-(--tk-cyan-border) bg-(--tk-cyan-soft) p-4">
               <div className="flex items-center justify-between gap-2 text-xs font-semibold">
                 <span>{progress.message}</span>
-                <span>
+                <span className="tabular-nums">
                   {typeof progress.percent === 'number' ? `${progress.percent}%` : '...'}
                   {progress.speedBps > 0 ? ` · ${formatSpeed(progress.speedBps)}` : ''}
                 </span>
