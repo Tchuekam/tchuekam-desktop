@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
+import { HAS_NATIVE_FS } from '@/lib/platform'
 import {
   addComposerAttachment,
   type ComposerAttachment,
@@ -338,6 +339,23 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
   )
 
   const pickImages = useCallback(async () => {
+    if (!HAS_NATIVE_FS) {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.multiple = true
+      input.onchange = async () => {
+        const files = Array.from(input.files ?? [])
+
+        for (const file of files) {
+          await attachImageBlob(file)
+        }
+      }
+      input.click()
+
+      return
+    }
+
     const paths = await window.hermesDesktop?.selectPaths({
       title: 'Attach images',
       defaultPath: currentCwd || undefined,
@@ -356,7 +374,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     for (const path of paths) {
       await attachImagePath(path)
     }
-  }, [attachImagePath, currentCwd])
+  }, [attachImageBlob, attachImagePath, currentCwd])
 
   const pasteClipboardImage = useCallback(async () => {
     try {
@@ -473,7 +491,9 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
           continue
         }
 
-        lastFailure = `Could not attach ${file.name || 'file'}`
+        lastFailure = !HAS_NATIVE_FS
+          ? `Only image files can be attached by drag-and-drop in the web app (${file.name || 'file'}).`
+          : `Could not attach ${file.name || 'file'}`
       }
 
       if (!attached && lastFailure) {
