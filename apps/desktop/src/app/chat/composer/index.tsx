@@ -1275,17 +1275,17 @@ export function ChatBarFallback() {
       )}
       data-slot="composer-root"
     >
-      <div className="composer-fallback-surface relative isolate h-(--composer-fallback-height) w-full rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))] shadow-composer">
+      <div className="composer-fallback-surface relative isolate h-(--composer-fallback-height) w-full rounded-[inherit] border border-(--tk-glass-border) shadow-composer">
         <div
           aria-hidden
           className={cn(
             'pointer-events-none absolute inset-0 -z-10 rounded-[inherit]',
-            'bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)]',
-            'backdrop-blur-[0.75rem] backdrop-saturate-[1.12]',
-            '[-webkit-backdrop-filter:blur(0.75rem)_saturate(1.12)]',
-            'transition-[background-color] duration-150 ease-out',
-            'group-data-[thread-scrolled-up]/composer:bg-[color-mix(in_srgb,var(--dt-card)_48%,transparent)]',
-            'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_85%,transparent)]'
+            'bg-(--tk-glass-elevated-bg)',
+            'backdrop-blur-[22px] backdrop-saturate-[1.42]',
+            '[-webkit-backdrop-filter:blur(22px)_saturate(1.42)]',
+            'transition-[background-color] duration-180 ease-out',
+            'group-data-[thread-scrolled-up]/composer:bg-(--tk-glass-bg)',
+            'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_92%,transparent)]'
           )}
         />
       </div>
