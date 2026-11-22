@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { triggerHaptic } from '@/lib/haptics'
 import { Volume2, VolumeX } from '@/lib/icons'
-import { IS_LOCKED_DEMO, IS_WEB } from '@/lib/platform'
+import { HAS_NATIVE_FS, IS_LOCKED_DEMO, IS_WEB } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
 import { $fileBrowserOpen, $sidebarOpen, toggleFileBrowserOpen, toggleSidebarOpen } from '@/store/layout'
@@ -177,7 +177,7 @@ export function TitlebarControls({
         {IS_WEB ? <SupabaseAccountMenu /> : null}
         {IS_LOCKED_DEMO ? null : <ProfilesMenuButton navigate={navigate} />}
         {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
-        <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />
+        {HAS_NATIVE_FS ? <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} /> : null}
       </div>
     </>
   )
@@ -194,7 +194,7 @@ function ProfilesMenuButton({ navigate }: { navigate: ReturnType<typeof useNavig
           title="Profiles"
           type="button"
         >
-          <Codicon name="account" />
+          <Codicon name="organization" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64" sideOffset={8}>
