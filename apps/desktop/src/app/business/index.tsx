@@ -378,7 +378,6 @@ export function BusinessView() {
               className="tk-btn-primary inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-semibold text-white active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat}
               onClick={() => createBusinessDocument('cv')}
-              style={{ background: 'linear-gradient(180deg,#3D7BFF,#0053FD)' }}
               type="button"
             >
               <Codicon name="add" size="0.9rem" />
@@ -389,17 +388,17 @@ export function BusinessView() {
 
         {takeover && (
           <p
-            className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
+            className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 backdrop-blur-xs dark:text-amber-300"
             role="status"
           >
             Terminal takeover is on, so chats open in the terminal. Turn it off to start a chat from here.
           </p>
         )}
 
-        {/* Claude-style AI Consultant Bar */}
-        <section className="mt-6 space-y-2">
+        {/* AI Consultant Bar */}
+        <section className="mt-6 space-y-2.5">
           <form
-            className="flex items-center gap-3 rounded-2xl border border-border/80 bg-card/90 p-3.5 shadow-sm backdrop-blur-sm transition-all focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10"
+            className="tk-glass-elevated flex flex-wrap items-center gap-3 rounded-2xl p-3.5 transition-all duration-200 focus-within:border-(--tk-indigo-border) focus-within:ring-4 focus-within:ring-(--tk-indigo-glow)"
             onSubmit={event => {
               event.preventDefault()
 
@@ -408,14 +407,14 @@ export function BusinessView() {
               }
             }}
           >
-            <div
-              className="grid size-9 shrink-0 place-items-center rounded-xl text-white shadow-2xs"
-              style={{ background: 'linear-gradient(145deg,#C98A2B,#8a5a12)' }}
-            >
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-linear-to-br from-(--tk-indigo) to-(--tk-cyan) text-white shadow-xs">
               <Codicon name="sparkle" size="1.05rem" />
             </div>
             <div className="min-w-0 flex-1">
-              <label className="text-[0.6875rem] font-semibold text-muted-foreground uppercase tracking-wider" htmlFor="business-consultant">
+              <label
+                className="text-[0.6875rem] font-semibold uppercase tracking-[0.06em] text-(--ui-text-secondary)"
+                htmlFor="business-consultant"
+              >
                 AI Consultant
               </label>
               <input
