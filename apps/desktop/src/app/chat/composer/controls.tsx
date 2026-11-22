@@ -170,12 +170,12 @@ function ConversationPill({
         type="button"
         variant="ghost"
       >
-        <Codicon name={muted ? 'mic-off' : 'mic'} size="1rem" />
+        <Codicon name={muted ? 'mic-off' : 'mic'} size="0.9375rem" />
       </Button>
       {(listening || speaking) && (
         <Button
           aria-label={speaking ? 'Interrupt assistant speech' : 'Stop listening and send'}
-          className="h-(--composer-control-size) shrink-0 gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="h-7 shrink-0 gap-1.5 rounded-full px-2.5 text-xs font-medium text-(--ui-text-secondary) hover:bg-(--tk-indigo-soft) hover:text-foreground"
           disabled={disabled}
           onClick={() => {
             triggerHaptic('submit')
