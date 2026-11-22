@@ -334,25 +334,21 @@ export function BusinessView() {
         {/* Executive Hero Header */}
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-(--tk-glass-border) pb-6">
           <div className="flex items-start gap-4">
-            <div
-              className="grid size-13 shrink-0 place-items-center rounded-2xl text-white shadow-lg transition-transform hover:scale-105"
-              style={{
-                background: 'linear-gradient(145deg,#3D7BFF,#0038A8)',
-                boxShadow: '0 10px 24px -10px rgba(0,83,253,.6)'
-              }}
-            >
-              <Codicon name="briefcase" size="1.5rem" />
+            <div className="tk-btn-primary grid size-13 shrink-0 place-items-center rounded-2xl text-white">
+              <Codicon name="briefcase" size="1.45rem" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-primary backdrop-blur-xs">
-                  <span className="size-1.5 rounded-full bg-primary animate-pulse" />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-2.5 py-0.5 text-[0.6875rem] font-semibold text-(--tk-indigo-text) backdrop-blur-xs">
+                  <span aria-hidden className="size-1.5 rounded-full bg-linear-to-r from-(--tk-indigo) to-(--tk-cyan)" />
                   Business Suite 2.0
                 </span>
-                <span className="text-[0.6875rem] text-muted-foreground">· Offline Grounded</span>
+                <span className="text-[0.6875rem] font-medium text-muted-foreground">· Offline Grounded</span>
               </div>
-              <h1 className="mt-1.5 text-2xl font-bold tracking-tight">Business Hub</h1>
-              <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+              <h1 className="mt-1.5 text-[1.625rem] font-semibold tracking-[-0.025em] sm:text-[1.875rem]">
+                Business Hub
+              </h1>
+              <p className="mt-1 text-sm leading-relaxed text-(--ui-text-secondary)">
                 Create, edit, preview, validate, and export professional business documents with split-screen precision.
               </p>
             </div>
@@ -362,7 +358,7 @@ export function BusinessView() {
             {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
             <button
               aria-label="Business & Personal Profiles"
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3.5 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted"
+              className="tk-glass-subtle tk-surface-hover inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold hover:border-(--tk-indigo-border) hover:bg-muted/70"
               onClick={() => setProfileOpen(true)}
               type="button"
             >
@@ -370,7 +366,7 @@ export function BusinessView() {
               Profiles
             </button>
             <button
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3.5 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              className="tk-glass-subtle tk-surface-hover inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold hover:border-(--tk-indigo-border) hover:bg-muted/70 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat}
               onClick={handleScanButton}
               type="button"
@@ -379,7 +375,7 @@ export function BusinessView() {
               Scan to text
             </button>
             <button
-              className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-semibold text-white shadow-sm transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              className="tk-btn-primary inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-semibold text-white active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat}
               onClick={() => createBusinessDocument('cv')}
               style={{ background: 'linear-gradient(180deg,#3D7BFF,#0053FD)' }}
