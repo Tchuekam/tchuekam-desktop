@@ -484,3 +484,489 @@ async def send_tts_chunks(app: FastAPI, message_queue: asyncio.Queue, callbacks:
                     callbacks.reset_state() # Reset connection state via callbacks
 
                 await asyncio.sleep(0.001)
+                log_status()
+                continue
+
+            base64_chunk = app.state.Upsampler.get_base64_chunk(chunk)
+            message_queue.put_nowait({
+                "type": "tts_chunk",
+                "content": base64_chunk
+            })
+            last_chunk_sent = time.time()
+
+            # Use connection-specific state via callbacks
+            if not callbacks.tts_chunk_sent:
+                # Use the async helper function instead of a thread
+                asyncio.create_task(_reset_interrupt_flag_async(app, callbacks))
+
+            callbacks.tts_chunk_sent = True # Set via callbacks
+
+    except asyncio.CancelledError:
+        pass # Task cancellation is expected on disconnect
+    except WebSocketDisconnect as e:
+        logger.warning(f"🖥️⚠️ {Colors.apply('WARNING').red} disconnect in send_tts_chunks: {repr(e)}")
+    except RuntimeError as e:
+        logger.error(f"🖥️💥 {Colors.apply('RUNTIME_ERROR').red} in send_tts_chunks: {repr(e)}")
+    except Exception as e:
+        logger.exception(f"🖥️💥 {Colors.apply('EXCEPTION').red} in send_tts_chunks: {repr(e)}")
+
+
+# --------------------------------------------------------------------
+# Callback class to handle transcription events
+# --------------------------------------------------------------------
+class TranscriptionCallbacks:
+    """
+    Manages state and callbacks for a single WebSocket connection's transcription lifecycle.
+
+    This class holds connection-specific state flags (like TTS status, user interruption)
+    and implements callback methods triggered by the `AudioInputProcessor` and
+    `SpeechPipelineManager`. It sends messages back to the client via the provided
+    `message_queue` and manages interaction logic like interruptions and final answer delivery.
+    It also includes a threaded worker to handle abort checks based on partial transcription.
+    """
+    def __init__(self, app: FastAPI, message_queue: asyncio.Queue):
+        """
+        Initializes the TranscriptionCallbacks instance for a WebSocket connection.
+
+        Args:
+            app: The FastAPI application instance (to access global components).
+            message_queue: An asyncio queue for sending messages back to the client.
+        """
+        self.app = app
+        self.message_queue = message_queue
+        self.final_transcription = ""
+        self.abort_text = ""
+        self.last_abort_text = ""
+
+        # Initialize connection-specific state flags here
+        self.tts_to_client: bool = False
+        self.user_interrupted: bool = False
+        self.tts_chunk_sent: bool = False
+        self.tts_client_playing: bool = False
+        self.interruption_time: float = 0.0
+
+        # These were already effectively instance variables or reset logic existed
+        self.silence_active: bool = True
+        self.is_hot: bool = False
+        self.user_finished_turn: bool = False
+        self.synthesis_started: bool = False
+        self.assistant_answer: str = ""
+        self.final_assistant_answer: str = ""
+        self.is_processing_potential: bool = False
+        self.is_processing_final: bool = False
+        self.last_inferred_transcription: str = ""
+        self.final_assistant_answer_sent: bool = False
+        self.partial_transcription: str = "" # Added for clarity
+
+        self.reset_state() # Call reset to ensure consistency
+
+        self.abort_request_event = threading.Event()
+        self.abort_worker_thread = threading.Thread(target=self._abort_worker, name="AbortWorker", daemon=True)
+        self.abort_worker_thread.start()
+
+
+    def reset_state(self):
+        """Resets connection-specific state flags and variables to their initial values."""
+        # Reset all connection-specific state flags
+        self.tts_to_client = False
+        self.user_interrupted = False
+        self.tts_chunk_sent = False
+        # Don't reset tts_client_playing here, it reflects client state reports
+        self.interruption_time = 0.0
+
+        # Reset other state variables
+        self.silence_active = True
+        self.is_hot = False
+        self.user_finished_turn = False
+        self.synthesis_started = False
+        self.assistant_answer = ""
+        self.final_assistant_answer = ""
+        self.is_processing_potential = False
+        self.is_processing_final = False
+        self.last_inferred_transcription = ""
+        self.final_assistant_answer_sent = False
+        self.partial_transcription = ""
+
+        # Keep the abort call related to the audio processor/pipeline manager
+        self.app.state.AudioInputProcessor.abort_generation()
+
+
+    def _abort_worker(self):
+        """Background thread worker to check for abort conditions based on partial text."""
+        while True:
+            was_set = self.abort_request_event.wait(timeout=0.1) # Check every 100ms
+            if was_set:
+                self.abort_request_event.clear()
+                # Only trigger abort check if the text actually changed
+                if self.last_abort_text != self.abort_text:
+                    self.last_abort_text = self.abort_text
+                    logger.debug(f"🖥️🧠 Abort check triggered by partial: '{self.abort_text}'")
+                    self.app.state.SpeechPipelineManager.check_abort(self.abort_text, False, "on_partial")
+
+    def on_partial(self, txt: str):
+        """
+        Callback invoked when a partial transcription result is available.
+
+        Updates internal state, sends the partial result to the client,
+        and signals the abort worker thread to check for potential interruptions.
+
+        Args:
+            txt: The partial transcription text.
+        """
+        self.final_assistant_answer_sent = False # New user speech invalidates previous final answer sending state
+        self.final_transcription = "" # Clear final transcription as this is partial
+        self.partial_transcription = txt
+        self.message_queue.put_nowait({"type": "partial_user_request", "content": txt})
+        self.abort_text = txt # Update text used for abort check
+        self.abort_request_event.set() # Signal the abort worker
+
+    def safe_abort_running_syntheses(self, reason: str):
+        """Placeholder for safely aborting syntheses (currently does nothing)."""
+        # TODO: Implement actual abort logic if needed, potentially interacting with SpeechPipelineManager
+        pass
+
+    def on_tts_allowed_to_synthesize(self):
+        """Callback invoked when the system determines TTS synthesis can proceed."""
+        # Access global manager state
+        if self.app.state.SpeechPipelineManager.running_generation and not self.app.state.SpeechPipelineManager.running_generation.abortion_started:
+            logger.info(f"{Colors.apply('🖥️🔊 TTS ALLOWED').blue}")
+            self.app.state.SpeechPipelineManager.running_generation.tts_quick_allowed_event.set()
+
+    def on_potential_sentence(self, txt: str):
+        """
+        Callback invoked when a potentially complete sentence is detected by the STT.
+
+        Triggers the preparation of a speech generation based on this potential sentence.
+
+        Args:
+            txt: The potential sentence text.
+        """
+        logger.debug(f"🖥️🧠 Potential sentence: '{txt}'")
+        # Access global manager state
+        self.app.state.SpeechPipelineManager.prepare_generation(txt)
+
+    def on_potential_final(self, txt: str):
+        """
+        Callback invoked when a potential *final* transcription is detected (hot state).
+
+        Logs the potential final transcription.
+
+        Args:
+            txt: The potential final transcription text.
+        """
+        logger.info(f"{Colors.apply('🖥️🧠 HOT: ').magenta}{txt}")
+
+    def on_potential_abort(self):
+        """Callback invoked if the STT detects a potential need to abort based on user speech."""
+        # Placeholder: Currently logs nothing, could trigger abort logic.
+        pass
+
+    def on_before_final(self, audio: bytes, txt: str):
+        """
+        Callback invoked just before the final STT result for a user turn is confirmed.
+
+        Sets flags indicating user finished, allows TTS if pending, interrupts microphone input,
+        releases TTS stream to client, sends final user request and any pending partial
+        assistant answer to the client, and adds user request to history.
+
+        Args:
+            audio: The raw audio bytes corresponding to the final transcription. (Currently unused)
+            txt: The transcription text (might be slightly refined in on_final).
+        """
+        logger.info(Colors.apply('🖥️🏁 =================== USER TURN END ===================').light_gray)
+        self.user_finished_turn = True
+        self.user_interrupted = False # Reset connection-specific flag (user finished, not interrupted)
+        # Access global manager state
+        if self.app.state.SpeechPipelineManager.is_valid_gen():
+            logger.info(f"{Colors.apply('🖥️🔊 TTS ALLOWED (before final)').blue}")
+            self.app.state.SpeechPipelineManager.running_generation.tts_quick_allowed_event.set()
+
+        # first block further incoming audio (Audio processor's state)
+        if not self.app.state.AudioInputProcessor.interrupted:
+            logger.info(f"{Colors.apply('🖥️🎙️ ⏸️ Microphone interrupted (end of turn)').cyan}")
+            self.app.state.AudioInputProcessor.interrupted = True
+            self.interruption_time = time.time() # Set connection-specific flag
+
+        logger.info(f"{Colors.apply('🖥️🔊 TTS STREAM RELEASED').blue}")
+        self.tts_to_client = True # Set connection-specific flag
+
+        # Send final user request (using the reliable final_transcription OR current partial if final isn't set yet)
+        user_request_content = self.final_transcription if self.final_transcription else self.partial_transcription
+        self.message_queue.put_nowait({
+            "type": "final_user_request",
+            "content": user_request_content
+        })
+
+        # Access global manager state
+        if self.app.state.SpeechPipelineManager.is_valid_gen():
+            # Send partial assistant answer (if available) to the client
+            # Use connection-specific user_interrupted flag
+            if self.app.state.SpeechPipelineManager.running_generation.quick_answer and not self.user_interrupted:
+                self.assistant_answer = self.app.state.SpeechPipelineManager.running_generation.quick_answer
+                self.message_queue.put_nowait({
+                    "type": "partial_assistant_answer",
+                    "content": self.assistant_answer
+                })
+
+        logger.info(f"🖥️🧠 Adding user request to history: '{user_request_content}'")
+        # Access global manager state
+        self.app.state.SpeechPipelineManager.history.append({"role": "user", "content": user_request_content})
+
+    def on_final(self, txt: str):
+        """
+        Callback invoked when the final transcription result for a user turn is available.
+
+        Logs the final transcription and stores it.
+
+        Args:
+            txt: The final transcription text.
+        """
+        logger.info(f"\n{Colors.apply('🖥️✅ FINAL USER REQUEST (STT Callback): ').green}{txt}")
+        if not self.final_transcription: # Store it if not already set by on_before_final logic
+             self.final_transcription = txt
+
+    def abort_generations(self, reason: str):
+        """
+        Triggers the abortion of any ongoing speech generation process.
+
+        Logs the reason and calls the SpeechPipelineManager's abort method.
+
+        Args:
+            reason: A string describing why the abortion is triggered.
+        """
+        logger.info(f"{Colors.apply('🖥️🛑 Aborting generation:').blue} {reason}")
+        # Access global manager state
+        self.app.state.SpeechPipelineManager.abort_generation(reason=f"server.py abort_generations: {reason}")
+
+    def on_silence_active(self, silence_active: bool):
+        """
+        Callback invoked when the silence detection state changes.
+
+        Updates the internal silence_active flag.
+
+        Args:
+            silence_active: True if silence is currently detected, False otherwise.
+        """
+        # logger.debug(f"🖥️🎙️ Silence active: {silence_active}") # Optional: Can be noisy
+        self.silence_active = silence_active
+
+    def on_partial_assistant_text(self, txt: str):
+        """
+        Callback invoked when a partial text result from the assistant (LLM) is available.
+
+        Updates the internal assistant answer state and sends the partial answer to the client,
+        unless the user has interrupted.
+
+        Args:
+            txt: The partial assistant text.
+        """
+        logger.info(f"{Colors.apply('🖥️💬 PARTIAL ASSISTANT ANSWER: ').green}{txt}")
+        # Use connection-specific user_interrupted flag
+        if not self.user_interrupted:
+            self.assistant_answer = txt
+            # Use connection-specific tts_to_client flag
+            if self.tts_to_client:
+                self.message_queue.put_nowait({
+                    "type": "partial_assistant_answer",
+                    "content": txt
+                })
+
+    def on_recording_start(self):
+        """
+        Callback invoked when the audio input processor starts recording user speech.
+
+        If client-side TTS is playing, it triggers an interruption: stops server-side
+        TTS streaming, sends stop/interruption messages to the client, aborts ongoing
+        generation, sends any final assistant answer generated so far, and resets relevant state.
+        """
+        logger.info(f"{Colors.ORANGE}🖥️🎙️ Recording started.{Colors.RESET} TTS Client Playing: {self.tts_client_playing}")
+        # Use connection-specific tts_client_playing flag
+        if self.tts_client_playing:
+            self.tts_to_client = False # Stop server sending TTS
+            self.user_interrupted = True # Mark connection as user interrupted
+            logger.info(f"{Colors.apply('🖥️❗ INTERRUPTING TTS due to recording start').blue}")
+
+            # Send final assistant answer *if* one was generated and not sent
+            logger.info(Colors.apply("🖥️✅ Sending final assistant answer (forced on interruption)").pink)
+            self.send_final_assistant_answer(forced=True)
+
+            # Minimal reset for interruption:
+            self.tts_chunk_sent = False # Reset chunk sending flag
+            # self.assistant_answer = "" # Optional: Clear partial answer if needed
+
+            logger.info("🖥️🛑 Sending stop_tts to client.")
+            self.message_queue.put_nowait({
+                "type": "stop_tts", # Client handles this to mute/ignore
+                "content": ""
+            })
+
+            logger.info(f"{Colors.apply('🖥️🛑 RECORDING START ABORTING GENERATION').red}")
+            self.abort_generations("on_recording_start, user interrupts, TTS Playing")
+
+            logger.info("🖥️❗ Sending tts_interruption to client.")
+            self.message_queue.put_nowait({ # Tell client to stop playback and clear buffer
+                "type": "tts_interruption",
+                "content": ""
+            })
+
+            # Reset state *after* performing actions based on the old state
+            # Be careful what exactly needs reset vs persists (like tts_client_playing)
+            # self.reset_state() # Might clear too much, like user_interrupted prematurely
+
+    def send_final_assistant_answer(self, forced=False):
+        """
+        Sends the final (or best available) assistant answer to the client.
+
+        Constructs the full answer from quick and final parts if available.
+        If `forced` and no full answer exists, uses the last partial answer.
+        Cleans the text and sends it as 'final_assistant_answer' if not already sent.
+
+        Args:
+            forced: If True, attempts to send the last partial answer if no complete
+                    final answer is available. Defaults to False.
+        """
+        final_answer = ""
+        # Access global manager state
+        if self.app.state.SpeechPipelineManager.is_valid_gen():
+            final_answer = self.app.state.SpeechPipelineManager.running_generation.quick_answer + self.app.state.SpeechPipelineManager.running_generation.final_answer
+
+        if not final_answer: # Check if constructed answer is empty
+            # If forced, try using the last known partial answer from this connection
+            if forced and self.assistant_answer:
+                 final_answer = self.assistant_answer
+                 logger.warning(f"🖥️⚠️ Using partial answer as final (forced): '{final_answer}'")
+            else:
+                logger.warning(f"🖥️⚠️ Final assistant answer was empty, not sending.")
+                return# Nothing to send
+
+        logger.debug(f"🖥️✅ Attempting to send final answer: '{final_answer}' (Sent previously: {self.final_assistant_answer_sent})")
+
+        if not self.final_assistant_answer_sent and final_answer:
+            import re
+            # Clean up the final answer text
+            cleaned_answer = re.sub(r'[\r\n]+', ' ', final_answer)
+            cleaned_answer = re.sub(r'\s+', ' ', cleaned_answer).strip()
+            cleaned_answer = cleaned_answer.replace('\\n', ' ')
+            cleaned_answer = re.sub(r'\s+', ' ', cleaned_answer).strip()
+
+            if cleaned_answer: # Ensure it's not empty after cleaning
+                logger.info(f"\n{Colors.apply('🖥️✅ FINAL ASSISTANT ANSWER (Sending): ').green}{cleaned_answer}")
+                self.message_queue.put_nowait({
+                    "type": "final_assistant_answer",
+                    "content": cleaned_answer
+                })
+                app.state.SpeechPipelineManager.history.append({"role": "assistant", "content": cleaned_answer})
+                self.final_assistant_answer_sent = True
+                self.final_assistant_answer = cleaned_answer # Store the sent answer
+            else:
+                logger.warning(f"🖥️⚠️ {Colors.YELLOW}Final assistant answer was empty after cleaning.{Colors.RESET}")
+                self.final_assistant_answer_sent = False # Don't mark as sent
+                self.final_assistant_answer = "" # Clear the stored answer
+        elif forced and not final_answer: # Should not happen due to earlier check, but safety
+             logger.warning(f"🖥️⚠️ {Colors.YELLOW}Forced send of final assistant answer, but it was empty.{Colors.RESET}")
+             self.final_assistant_answer = "" # Clear the stored answer
+
+
+# --------------------------------------------------------------------
+# Main WebSocket endpoint
+# --------------------------------------------------------------------
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    """
+    Handles the main WebSocket connection for real-time voice chat.
+
+    Accepts a connection, sets up connection-specific state via `TranscriptionCallbacks`,
+    initializes audio/message queues, and creates asyncio tasks for handling
+    incoming data, audio processing, outgoing text messages, and outgoing TTS chunks.
+    Manages the lifecycle of these tasks and cleans up on disconnect.
+
+    Args:
+        ws: The WebSocket connection instance provided by FastAPI.
+    """
+    await ws.accept()
+    logger.info("🖥️✅ Client connected via WebSocket.")
+
+    message_queue = asyncio.Queue()
+    audio_chunks = asyncio.Queue()
+
+    # Set up callback manager - THIS NOW HOLDS THE CONNECTION-SPECIFIC STATE
+    callbacks = TranscriptionCallbacks(app, message_queue)
+
+    # Assign callbacks to the AudioInputProcessor (global component)
+    # These methods within callbacks will now operate on its *instance* state
+    app.state.AudioInputProcessor.realtime_callback = callbacks.on_partial
+    app.state.AudioInputProcessor.transcriber.potential_sentence_end = callbacks.on_potential_sentence
+    app.state.AudioInputProcessor.transcriber.on_tts_allowed_to_synthesize = callbacks.on_tts_allowed_to_synthesize
+    app.state.AudioInputProcessor.transcriber.potential_full_transcription_callback = callbacks.on_potential_final
+    app.state.AudioInputProcessor.transcriber.potential_full_transcription_abort_callback = callbacks.on_potential_abort
+    app.state.AudioInputProcessor.transcriber.full_transcription_callback = callbacks.on_final
+    app.state.AudioInputProcessor.transcriber.before_final_sentence = callbacks.on_before_final
+    app.state.AudioInputProcessor.recording_start_callback = callbacks.on_recording_start
+    app.state.AudioInputProcessor.silence_active_callback = callbacks.on_silence_active
+
+    # Assign callback to the SpeechPipelineManager (global component)
+    app.state.SpeechPipelineManager.on_partial_assistant_text = callbacks.on_partial_assistant_text
+
+    # Create tasks for handling different responsibilities
+    # Pass the 'callbacks' instance to tasks that need connection-specific state
+    tasks = [
+        asyncio.create_task(process_incoming_data(ws, app, audio_chunks, callbacks)), # Pass callbacks
+        asyncio.create_task(app.state.AudioInputProcessor.process_chunk_queue(audio_chunks)),
+        asyncio.create_task(send_text_messages(ws, message_queue)),
+        asyncio.create_task(send_tts_chunks(app, message_queue, callbacks)), # Pass callbacks
+    ]
+
+    try:
+        # Wait for any task to complete (e.g., client disconnect)
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            if not task.done():
+                task.cancel()
+        # Await cancelled tasks to let them clean up if needed
+        await asyncio.gather(*pending, return_exceptions=True)
+    except Exception as e:
+        logger.error(f"🖥️💥 {Colors.apply('ERROR').red} in WebSocket session: {repr(e)}")
+    finally:
+        logger.info("🖥️🧹 Cleaning up WebSocket tasks...")
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        # Ensure all tasks are awaited after cancellation
+        # Use return_exceptions=True to prevent gather from stopping on first error during cleanup
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("🖥️❌ WebSocket session ended.")
+
+# --------------------------------------------------------------------
+# Entry point
+# --------------------------------------------------------------------
+if __name__ == "__main__":
+
+    # Run the server without SSL
+    if not USE_SSL:
+        logger.info("🖥️▶️ Starting server without SSL.")
+        uvicorn.run("server:app", host="0.0.0.0", port=8000, log_config=None)
+
+    else:
+        logger.info("🖥️🔒 Attempting to start server with SSL.")
+        # Check if cert files exist
+        cert_file = "127.0.0.1+1.pem"
+        key_file = "127.0.0.1+1-key.pem"
+        if not os.path.exists(cert_file) or not os.path.exists(key_file):
+             logger.error(f"🖥️💥 SSL cert file ({cert_file}) or key file ({key_file}) not found.")
+             logger.error("🖥️💥 Please generate them using mkcert:")
+             logger.error("🖥️💥   choco install mkcert") # Assuming Windows based on earlier check, adjust if needed
+             logger.error("🖥️💥   mkcert -install")
+             logger.error("🖥️💥   mkcert 127.0.0.1 YOUR_LOCAL_IP") # Remind user to replace with actual IP if needed
+             logger.error("🖥️💥 Exiting.")
+             sys.exit(1)
+
+        # Run the server with SSL
+        logger.info(f"🖥️▶️ Starting server with SSL (cert: {cert_file}, key: {key_file}).")
+        uvicorn.run(
+            "server:app",
+            host="0.0.0.0",
+            port=8000,
+            log_config=None,
+            ssl_certfile=cert_file,
+            ssl_keyfile=key_file,
+        )
