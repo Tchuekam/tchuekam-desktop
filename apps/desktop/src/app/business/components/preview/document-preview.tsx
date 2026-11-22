@@ -48,11 +48,11 @@ export function DocumentPreview({
     const currentSlide = slides[safeIdx]
 
     return (
-      <div className="flex h-full flex-col bg-slate-100/70 dark:bg-zinc-950/40">
-        {/* Apple Keynote Style Presentation Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card/80 px-3 py-2 text-xs backdrop-blur-md sm:px-4 sm:py-2.5">
+      <div className="flex h-full flex-col bg-[radial-gradient(60%_45%_at_50%_0%,var(--tk-indigo-soft),transparent_65%),var(--tk-stage-bg)]">
+        {/* Presentation Bar */}
+        <div className="tk-glass-elevated flex flex-wrap items-center justify-between gap-2 border-b border-(--tk-glass-border) px-3 py-2 text-xs sm:px-4 sm:py-2.5">
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-primary">
+            <div className="flex items-center gap-1.5 rounded-lg bg-(--tk-indigo-soft) px-2.5 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-(--tk-indigo-text)">
               <Codicon name="preview" size="0.8rem" />
               <span>Slide {safeIdx + 1} of {slides.length}</span>
             </div>
@@ -63,7 +63,7 @@ export function DocumentPreview({
           <div className="flex items-center gap-1.5">
             <button
               aria-label="Previous slide"
-              className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/70 bg-background/80 px-2.5 text-xs font-semibold shadow-2xs transition hover:bg-muted disabled:opacity-40"
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 text-xs font-semibold shadow-2xs transition hover:border-(--tk-indigo-border) hover:bg-muted disabled:opacity-40"
               disabled={safeIdx <= 0}
               onClick={() => onSelectSlide?.(safeIdx - 1)}
               type="button"
@@ -73,7 +73,7 @@ export function DocumentPreview({
             </button>
             <button
               aria-label="Next slide"
-              className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/70 bg-background/80 px-2.5 text-xs font-semibold shadow-2xs transition hover:bg-muted disabled:opacity-40"
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 text-xs font-semibold shadow-2xs transition hover:border-(--tk-indigo-border) hover:bg-muted disabled:opacity-40"
               disabled={safeIdx >= slides.length - 1}
               onClick={() => onSelectSlide?.(safeIdx + 1)}
               type="button"
@@ -87,7 +87,7 @@ export function DocumentPreview({
         <div className="flex flex-1 flex-col items-center justify-center overflow-auto p-3 sm:p-6">
           {currentSlide && (
             <div
-              className="flex aspect-video w-full max-w-2xl flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white p-4 text-slate-900 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] transition-all sm:p-8"
+              className="flex aspect-video w-full max-w-2xl flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white p-4 text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.08),0_20px_50px_-16px_rgba(15,23,42,0.22)] dark:shadow-[0_2px_6px_rgba(0,0,0,0.4),0_24px_56px_-14px_rgba(0,0,0,0.72)] transition-all sm:p-8"
               style={{ borderTop: `6px solid ${accentColor}` }}
             >
               <div>
@@ -159,27 +159,27 @@ export function DocumentPreview({
   const cvData = doc.type === 'cv' ? (doc.data as CVData) : null
 
   return (
-    <div className="flex h-full flex-col bg-slate-100/70 dark:bg-zinc-950/40">
-      {/* Apple-style Live Sheet Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card/80 px-3 py-2 text-xs backdrop-blur-md sm:px-4 sm:py-2.5">
+    <div className="flex h-full flex-col bg-[radial-gradient(60%_45%_at_50%_0%,var(--tk-indigo-soft),transparent_65%),var(--tk-stage-bg)]">
+      {/* Live Sheet Toolbar */}
+      <div className="tk-glass-elevated flex flex-wrap items-center justify-between gap-2 border-b border-(--tk-glass-border) px-3 py-2 text-xs sm:px-4 sm:py-2.5">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2 py-0.5 text-[0.6875rem] font-semibold text-primary">
+          <div className="flex items-center gap-1.5 rounded-lg bg-(--tk-indigo-soft) px-2.5 py-0.5 text-[0.6875rem] font-semibold text-(--tk-indigo-text)">
             <Codicon name="file-pdf" size="0.85rem" />
             <span>A4 Document Preview</span>
           </div>
-          <span className="rounded-md border border-border/60 bg-background/60 px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
+          <span className="rounded-lg border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
             {template?.name ?? doc.templateId}
           </span>
         </div>
 
-        {/* Apple Segmented Zoom Control */}
-        <div className="inline-flex rounded-lg bg-muted/60 p-0.5 border border-border/40">
+        {/* Segmented Zoom Control */}
+        <div className="inline-flex rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) p-0.5">
           {([75, 100, 125] as const).map(level => (
             <button
               className={cn(
-                'rounded-md px-2 py-0.5 text-[0.6875rem] font-semibold transition-all duration-150',
+                'rounded-lg px-2.5 py-0.5 text-[0.6875rem] font-semibold tabular-nums transition-all duration-150',
                 zoom === level
-                  ? 'bg-card text-foreground shadow-2xs'
+                  ? 'bg-card text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               key={level}
@@ -196,7 +196,7 @@ export function DocumentPreview({
       <div className="flex flex-1 flex-col items-center overflow-auto p-3 sm:p-6">
         <div
           className={cn(
-            'w-full max-w-[650px] min-h-[842px] rounded-xl border border-slate-200/90 dark:border-white/10 bg-white text-slate-900 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] transition-all origin-top',
+            'w-full max-w-[650px] min-h-[842px] rounded-xl border border-slate-200/90 dark:border-white/10 bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.08),0_20px_50px_-16px_rgba(15,23,42,0.22)] dark:shadow-[0_2px_6px_rgba(0,0,0,0.4),0_24px_56px_-14px_rgba(0,0,0,0.72)] transition-all origin-top',
             fontClass
           )}
           data-testid="live-document-preview"

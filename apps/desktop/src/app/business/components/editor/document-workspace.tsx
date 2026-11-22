@@ -363,12 +363,12 @@ export function DocumentWorkspace({
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-foreground pt-(--titlebar-height)">
       {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
-      {/* Apple-style Studio Navigation & Command Bar */}
-      <header className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/70 bg-card/85 px-3 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
-        <div className="flex items-center gap-3">
+      {/* Studio Navigation & Command Bar */}
+      <header className="tk-glass-elevated flex flex-wrap items-center justify-between gap-2.5 border-b border-(--tk-glass-border) px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             aria-label="Back to Business Hub"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-semibold text-(--ui-text-secondary) transition-all hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground"
             onClick={onBack}
             type="button"
           >
@@ -379,7 +379,7 @@ export function DocumentWorkspace({
           <div className="relative flex items-center">
             <input
               aria-label="Document Title"
-              className="h-8 min-w-0 flex-1 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-foreground transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 sm:min-w-[14rem] sm:flex-initial"
+              className="h-8 min-w-0 flex-1 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-semibold text-foreground transition-all focus:border-(--tk-indigo) focus:bg-background focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow) sm:min-w-[14rem] sm:flex-initial"
               onChange={e =>
                 updateBusinessDocument(doc.id, current => ({
                   ...current,
@@ -390,17 +390,17 @@ export function DocumentWorkspace({
             />
           </div>
 
-          {/* Apple-style Autosave Pill Indicator */}
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/60 px-2.5 py-1 text-[0.6875rem] font-medium">
+          {/* Autosave Pill Indicator */}
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-1 text-[0.6875rem] font-medium">
             <span
               className={cn(
                 'size-1.5 rounded-full transition-colors',
                 autosave === 'saving'
-                  ? 'bg-amber-500 animate-pulse'
+                  ? 'bg-(--tk-cyan) animate-pulse'
                   : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
               )}
             />
-            <span className="text-muted-foreground">
+            <span className="text-(--ui-text-secondary)">
               {autosave === 'saving' ? 'Saving changes...' : 'Saved'}
             </span>
           </div>
@@ -411,7 +411,7 @@ export function DocumentWorkspace({
           {availableTemplates.length > 0 && (
             <select
               aria-label="Template"
-              className="h-8 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="h-8 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-foreground transition focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
               onChange={e =>
                 updateBusinessDocument(doc.id, current => ({
                   ...current,
@@ -430,7 +430,7 @@ export function DocumentWorkspace({
 
           <select
             aria-label="Document Language"
-            className="h-8 rounded-xl border border-border/70 bg-background/80 px-2.5 text-xs font-medium text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="h-8 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 text-xs font-medium text-foreground transition focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
             onChange={e =>
               updateBusinessDocument(doc.id, current => ({
                 ...current,
@@ -444,7 +444,7 @@ export function DocumentWorkspace({
           </select>
 
           <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-(--ui-text-secondary) transition hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
             disabled={!canUseAi || aiBusy !== null}
             onClick={handleTranslateDocument}
             title="Switch language and translate summary"
@@ -454,11 +454,11 @@ export function DocumentWorkspace({
             <span>AI Translate</span>
           </button>
 
-          {/* Apple-style Unified Undo/Redo Segment */}
-          <div className="inline-flex items-center rounded-xl border border-border/70 bg-background/80 p-0.5">
+          {/* Unified Undo/Redo Segment */}
+          <div className="inline-flex items-center rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) p-0.5">
             <button
               aria-label="Undo"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
+              className="rounded-lg p-1.5 text-(--ui-text-secondary) transition hover:bg-muted hover:text-foreground disabled:opacity-30"
               disabled={!canUndoDocument(doc.id)}
               onClick={() => void undoDocumentChange(doc.id)}
               title="Undo (⌘Z / Ctrl+Z)"
@@ -466,10 +466,10 @@ export function DocumentWorkspace({
             >
               <Codicon name="discard" size="0.85rem" />
             </button>
-            <span className="h-3.5 w-px bg-border/80" />
+            <span className="h-3.5 w-px bg-(--tk-glass-border)" />
             <button
               aria-label="Redo"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
+              className="rounded-lg p-1.5 text-(--ui-text-secondary) transition hover:bg-muted hover:text-foreground disabled:opacity-30"
               disabled={!canRedoDocument(doc.id)}
               onClick={() => void redoDocumentChange(doc.id)}
               title="Redo (⌘⇧Z / Ctrl+Y)"
@@ -481,7 +481,7 @@ export function DocumentWorkspace({
 
           <button
             aria-label="Duplicate Document"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-(--ui-text-secondary) transition hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground"
             onClick={handleDuplicate}
             type="button"
           >
@@ -495,8 +495,8 @@ export function DocumentWorkspace({
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition',
                 drawerOpen
-                  ? 'border-primary/50 bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background/80 text-foreground hover:border-primary/40 hover:bg-muted'
+                  ? 'border-(--tk-indigo-border) bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
+                  : 'border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) text-foreground hover:border-(--tk-indigo-border) hover:bg-muted/70'
               )}
               disabled={!canUseAi}
               onClick={() => $businessLocalAiDrawerOpen.set(!drawerOpen)}
@@ -508,7 +508,7 @@ export function DocumentWorkspace({
           ) : null}
 
           <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-(--ui-text-secondary) transition hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
             disabled={!canUseAi}
             onClick={handleAskInChat}
             type="button"
@@ -520,11 +520,16 @@ export function DocumentWorkspace({
           {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
         </div>
 
-        {/* Right Controls: Apple Export Buttons */}
+        {/* Right Controls: Export Buttons */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {supportedFormats.map(fmt => (
+          {supportedFormats.map((fmt, index) => (
             <button
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 active:scale-[0.98]"
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold transition active:scale-[0.98]',
+                index === 0
+                  ? 'tk-btn-primary text-white'
+                  : 'border border-(--tk-indigo-border) bg-(--tk-indigo-soft) text-(--tk-indigo-text) hover:brightness-105'
+              )}
               key={fmt}
               onClick={() => handleExport(fmt)}
               type="button"
@@ -538,7 +543,7 @@ export function DocumentWorkspace({
 
       {/* Export & Validation Status Strip */}
       {(lastExportInfo || validation.warnings.length > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs backdrop-blur-xs sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-2 text-xs backdrop-blur-sm sm:px-6">
           {lastExportInfo ? (
             <span className="flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400" role="status">
               <Codicon name="check" size="0.85rem" />
@@ -548,7 +553,7 @@ export function DocumentWorkspace({
             <span />
           )}
           {validation.warnings.length > 0 && (
-            <span className="flex items-center gap-1 text-[0.6875rem] text-amber-600 dark:text-amber-400">
+            <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-300">
               <Codicon name="warning" size="0.75rem" />
               Note: {validation.warnings[0]}
             </span>
@@ -561,12 +566,12 @@ export function DocumentWorkspace({
       ) : null}
 
       {/* Mobile Editor / Preview Switcher (<1024px) */}
-      <div className="flex items-center gap-1 border-b border-border/60 bg-muted/30 px-3 py-1.5 lg:hidden">
+      <div className="flex items-center gap-1 border-b border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-1.5 lg:hidden">
         <button
           className={cn(
             'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
             mobilePane === 'editor'
-              ? 'bg-card text-foreground shadow-2xs'
+              ? 'bg-card text-foreground shadow-xs'
               : 'text-muted-foreground hover:text-foreground'
           )}
           onClick={() => setMobilePane('editor')}
@@ -578,7 +583,7 @@ export function DocumentWorkspace({
           className={cn(
             'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
             mobilePane === 'preview'
-              ? 'bg-card text-foreground shadow-2xs'
+              ? 'bg-card text-foreground shadow-xs'
               : 'text-muted-foreground hover:text-foreground'
           )}
           onClick={() => setMobilePane('preview')}

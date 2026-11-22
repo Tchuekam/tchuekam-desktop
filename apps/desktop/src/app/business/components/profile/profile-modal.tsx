@@ -97,15 +97,15 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
   }
 
   const inputClass =
-    'w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20'
+    'w-full rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/60 shadow-[inset_0_1px_0_var(--tk-specular-edge)] transition-all focus:border-(--tk-indigo) focus:bg-background focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)'
 
-  const labelClass = 'mb-1.5 block text-[0.6875rem] font-semibold text-muted-foreground tracking-wide'
+  const labelClass = 'mb-1.5 block text-[0.6875rem] font-semibold text-(--ui-text-secondary) tracking-[0.02em]'
 
   return (
     <div
       aria-label="Business & Personal Profiles"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2.5 backdrop-blur-md transition-opacity duration-200 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2.5 backdrop-blur-md transition-opacity duration-200 sm:p-4"
       onClick={e => {
         if (e.target === e.currentTarget) {
           onClose()
@@ -113,11 +113,11 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
       }}
       role="dialog"
     >
-      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/95 text-foreground shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="tk-glass-elevated flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl text-foreground animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex items-center justify-between gap-2 border-b border-(--tk-glass-border) bg-(--ui-bg-tertiary)/35 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary">
+            <div className="grid size-9 place-items-center rounded-xl bg-(--tk-indigo-soft) text-(--tk-indigo-text)">
               <Codicon name="settings-gear" size="1.1rem" />
             </div>
             <div>
@@ -137,14 +137,14 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
           </button>
         </div>
 
-        {/* Apple-style Segmented Control */}
-        <div className="border-b border-border/60 bg-muted/10 px-4 py-2 sm:px-6 sm:py-2.5">
-          <div className="inline-flex w-full flex-col gap-1 rounded-xl border border-border/40 bg-muted/60 p-1 sm:flex-row">
+        {/* Segmented Control */}
+        <div className="border-b border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-4 py-2 sm:px-6 sm:py-2.5">
+          <div className="inline-flex w-full flex-col gap-1 rounded-xl border border-(--tk-glass-border) bg-(--ui-bg-tertiary)/60 p-1 sm:flex-row">
             <button
               className={cn(
                 'flex flex-1 items-center justify-center gap-2 rounded-lg py-1.5 text-xs font-semibold transition-all duration-150',
                 tab === 'business'
-                  ? 'bg-card text-foreground shadow-2xs'
+                  ? 'bg-card text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               onClick={() => setTab('business')}
@@ -544,16 +544,16 @@ export function ProfileModal({ onClose, open }: ProfileModalProps) {
           </div>
 
           {/* Modal Footer */}
-          <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-border/60 bg-muted/20 px-4 py-3 sm:px-6 sm:py-3.5">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-(--tk-glass-border) bg-(--ui-bg-tertiary)/35 px-4 py-3 sm:px-6 sm:py-3.5">
             <button
-              className="rounded-xl border border-border/70 bg-card px-4 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              className="rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-4 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
               onClick={onClose}
               type="button"
             >
               Cancel
             </button>
             <button
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 active:scale-[0.98]"
+              className="tk-btn-primary inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-semibold text-white active:scale-[0.98]"
               type="submit"
             >
               <Codicon name="check" size="0.85rem" />

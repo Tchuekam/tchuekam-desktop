@@ -116,10 +116,13 @@ function DocLines({ variant }: { variant: 'cv' | 'invoice' | 'deck' }) {
 
   if (variant === 'deck') {
     return (
-      <div className="absolute inset-x-4 top-3 -bottom-6 overflow-hidden rounded-t-xl bg-card border border-border/60 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)]">
-        <div className="h-[42%]" style={{ background: 'linear-gradient(135deg,#0053FD,#0038A8)' }} />
+      <div className="absolute inset-x-4 top-3 -bottom-6 overflow-hidden rounded-t-xl border border-(--tk-glass-border) bg-card/95 shadow-[0_10px_28px_-12px_rgba(15,23,42,0.22)] transition-transform duration-200 ease-out group-hover:-translate-y-1 dark:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.65)]">
+        <div
+          className="h-[42%]"
+          style={{ background: 'linear-gradient(135deg, var(--tk-indigo), var(--tk-cyan))' }}
+        />
         <div className="space-y-1.5 p-3">
-          <span className="block h-1.5 w-1/2 rounded-full bg-primary/80" />
+          <span className="block h-1.5 w-1/2 rounded-full bg-(--tk-indigo)/80" />
           <span className={cn(bar, 'w-11/12')} />
           <span className={cn(bar, 'w-4/5')} />
         </div>
@@ -127,10 +130,10 @@ function DocLines({ variant }: { variant: 'cv' | 'invoice' | 'deck' }) {
     )
   }
 
-  const head = variant === 'invoice' ? 'bg-[#C98A2B]' : 'bg-primary'
+  const head = variant === 'invoice' ? 'bg-(--tk-cyan)' : 'bg-(--tk-indigo)'
 
   return (
-    <div className="absolute inset-x-4 top-3 -bottom-6 rounded-t-xl bg-card border border-border/60 p-3.5 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)]">
+    <div className="absolute inset-x-4 top-3 -bottom-6 rounded-t-xl border border-(--tk-glass-border) bg-card/95 p-3.5 shadow-[0_10px_28px_-12px_rgba(15,23,42,0.22)] transition-transform duration-200 ease-out group-hover:-translate-y-1 dark:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.65)]">
       <span className={cn('mb-2 block h-1.5 w-2/5 rounded-full', head)} />
       <div className="space-y-1.5">
         <span className={cn(bar, 'w-11/12')} />
@@ -241,6 +244,7 @@ export function BusinessView() {
       })
       .finally(() => {
         setScanning(false)
+
         if (scanFileInputRef.current) {
           scanFileInputRef.current.value = ''
         }
@@ -312,8 +316,9 @@ export function BusinessView() {
   })
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-background text-foreground pt-(--titlebar-height)">
-      <div className="mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:px-6 md:px-8 md:pb-24 md:pt-[calc(var(--titlebar-height)+0.75rem)]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-background text-foreground pt-(--titlebar-height)">
+      <div aria-hidden className="tk-ambient-halo pointer-events-none absolute inset-x-0 top-0 z-0 h-80" />
+      <div className="relative z-1 mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:px-6 md:px-8 md:pb-24 md:pt-[calc(var(--titlebar-height)+0.75rem)]">
         <input
           accept=".pdf,.jpg,.jpeg,.png"
           aria-label="Upload file for Scan to text"
@@ -326,28 +331,24 @@ export function BusinessView() {
         <ProfileModal onClose={() => setProfileOpen(false)} open={profileOpen} />
         {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
 
-        {/* Apple-style Hero Header */}
-        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/50 pb-6">
+        {/* Executive Hero Header */}
+        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-(--tk-glass-border) pb-6">
           <div className="flex items-start gap-4">
-            <div
-              className="grid size-13 shrink-0 place-items-center rounded-2xl text-white shadow-lg transition-transform hover:scale-105"
-              style={{
-                background: 'linear-gradient(145deg,#3D7BFF,#0038A8)',
-                boxShadow: '0 10px 24px -10px rgba(0,83,253,.6)'
-              }}
-            >
-              <Codicon name="briefcase" size="1.5rem" />
+            <div className="tk-btn-primary grid size-13 shrink-0 place-items-center rounded-2xl text-white">
+              <Codicon name="briefcase" size="1.45rem" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-primary backdrop-blur-xs">
-                  <span className="size-1.5 rounded-full bg-primary animate-pulse" />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-2.5 py-0.5 text-[0.6875rem] font-semibold text-(--tk-indigo-text) backdrop-blur-xs">
+                  <span aria-hidden className="size-1.5 rounded-full bg-linear-to-r from-(--tk-indigo) to-(--tk-cyan)" />
                   Business Suite 2.0
                 </span>
-                <span className="text-[0.6875rem] text-muted-foreground">· Offline Grounded</span>
+                <span className="text-[0.6875rem] font-medium text-muted-foreground">· Offline Grounded</span>
               </div>
-              <h1 className="mt-1.5 text-2xl font-bold tracking-tight">Business Hub</h1>
-              <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+              <h1 className="mt-1.5 text-[1.625rem] font-semibold tracking-[-0.025em] sm:text-[1.875rem]">
+                Business Hub
+              </h1>
+              <p className="mt-1 text-sm leading-relaxed text-(--ui-text-secondary)">
                 Create, edit, preview, validate, and export professional business documents with split-screen precision.
               </p>
             </div>
@@ -357,7 +358,7 @@ export function BusinessView() {
             {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
             <button
               aria-label="Business & Personal Profiles"
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3.5 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted"
+              className="tk-glass-subtle tk-surface-hover inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold hover:border-(--tk-indigo-border) hover:bg-muted/70"
               onClick={() => setProfileOpen(true)}
               type="button"
             >
@@ -365,7 +366,7 @@ export function BusinessView() {
               Profiles
             </button>
             <button
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3.5 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              className="tk-glass-subtle tk-surface-hover inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold hover:border-(--tk-indigo-border) hover:bg-muted/70 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat}
               onClick={handleScanButton}
               type="button"
@@ -374,10 +375,9 @@ export function BusinessView() {
               Scan to text
             </button>
             <button
-              className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-semibold text-white shadow-sm transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              className="tk-btn-primary inline-flex h-9 items-center gap-2 rounded-xl px-4 text-xs font-semibold text-white active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat}
               onClick={() => createBusinessDocument('cv')}
-              style={{ background: 'linear-gradient(180deg,#3D7BFF,#0053FD)' }}
               type="button"
             >
               <Codicon name="add" size="0.9rem" />
@@ -388,17 +388,17 @@ export function BusinessView() {
 
         {takeover && (
           <p
-            className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
+            className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 backdrop-blur-xs dark:text-amber-300"
             role="status"
           >
             Terminal takeover is on, so chats open in the terminal. Turn it off to start a chat from here.
           </p>
         )}
 
-        {/* Claude-style AI Consultant Bar */}
-        <section className="mt-6 space-y-2">
+        {/* AI Consultant Bar */}
+        <section className="mt-6 space-y-2.5">
           <form
-            className="flex items-center gap-3 rounded-2xl border border-border/80 bg-card/90 p-3.5 shadow-sm backdrop-blur-sm transition-all focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10"
+            className="tk-glass-elevated flex flex-wrap items-center gap-3 rounded-2xl p-3.5 transition-all duration-200 focus-within:border-(--tk-indigo-border) focus-within:ring-4 focus-within:ring-(--tk-indigo-glow)"
             onSubmit={event => {
               event.preventDefault()
 
@@ -407,18 +407,18 @@ export function BusinessView() {
               }
             }}
           >
-            <div
-              className="grid size-9 shrink-0 place-items-center rounded-xl text-white shadow-2xs"
-              style={{ background: 'linear-gradient(145deg,#C98A2B,#8a5a12)' }}
-            >
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-linear-to-br from-(--tk-indigo) to-(--tk-cyan) text-white shadow-xs">
               <Codicon name="sparkle" size="1.05rem" />
             </div>
             <div className="min-w-0 flex-1">
-              <label className="text-[0.6875rem] font-semibold text-muted-foreground uppercase tracking-wider" htmlFor="business-consultant">
+              <label
+                className="text-[0.6875rem] font-semibold uppercase tracking-[0.06em] text-(--ui-text-secondary)"
+                htmlFor="business-consultant"
+              >
                 AI Consultant
               </label>
               <input
-                className="w-full bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed"
+                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed"
                 disabled={!canStartChat}
                 id="business-consultant"
                 onChange={event => setQuestion(event.target.value)}
@@ -429,7 +429,7 @@ export function BusinessView() {
             {question && (
               <button
                 aria-label="Clear question"
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onClick={() => setQuestion('')}
                 type="button"
               >
@@ -438,7 +438,7 @@ export function BusinessView() {
             )}
             {IS_DESKTOP ? (
               <button
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-cyan-border) bg-(--tk-cyan-soft) px-3 text-xs font-semibold text-(--tk-cyan-text) transition-colors hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canStartChat || !question.trim()}
                 onClick={() => void askBusinessLocalAgent(question.trim())}
                 type="button"
@@ -448,9 +448,8 @@ export function BusinessView() {
               </button>
             ) : null}
             <button
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white shadow-xs transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              className="tk-btn-primary inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat || !question.trim()}
-              style={{ background: 'linear-gradient(180deg,#B57E23,#8a5a12)' }}
               type="submit"
             >
               Open in chat
@@ -460,11 +459,11 @@ export function BusinessView() {
           {IS_DESKTOP ? <BusinessLocalAiInlineCard /> : null}
 
           {/* Quick Consultation Chips */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <span className="text-[0.6875rem] font-medium text-muted-foreground">Quick queries:</span>
             {CONSULTANT_SUGGESTIONS.map(prompt => (
               <button
-                className="rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[0.6875rem] text-muted-foreground transition hover:border-primary/40 hover:bg-card hover:text-foreground disabled:opacity-40"
+                className="rounded-lg border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-1 text-[0.7rem] text-(--ui-text-secondary) backdrop-blur-xs transition-all duration-150 hover:border-(--tk-indigo-border) hover:bg-[color-mix(in_srgb,var(--tk-indigo-soft)_65%,transparent)] hover:text-foreground disabled:opacity-40"
                 disabled={!canStartChat}
                 key={prompt}
                 onClick={() => setQuestion(prompt)}
@@ -477,15 +476,15 @@ export function BusinessView() {
         </section>
 
         {/* Quick Creation / Interactive Builders */}
-        <div className="mb-4 mt-9 flex items-center justify-between gap-3">
+        <div className="mb-4 mt-10 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold tracking-tight">Interactive builders</h2>
-            <span className="rounded-full bg-[#1F8A65]/12 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-[#17694D] dark:text-emerald-400">
+            <h2 className="text-lg font-semibold tracking-tight">Interactive builders</h2>
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[0.6875rem] font-semibold text-emerald-700 dark:text-emerald-400">
               Live Editor + Export
             </span>
           </div>
           <button
-            className="text-xs font-semibold text-primary transition hover:underline disabled:opacity-40"
+            className="text-xs font-semibold text-(--tk-indigo-text) transition-colors hover:underline disabled:opacity-40"
             disabled={!canStartChat}
             onClick={() => startChat(NEW_DOCUMENT_PROMPT)}
             type="button"
@@ -497,7 +496,7 @@ export function BusinessView() {
         <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
           {BUILDERS.map(b => (
             <div
-              className="group flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-2xs transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg"
+              className="tk-glass tk-surface-hover group flex flex-col overflow-hidden rounded-2xl hover:-translate-y-0.5 hover:border-(--tk-indigo-border) hover:shadow-(--tk-glass-elevated-shadow)"
               key={b.id}
             >
               <button
@@ -507,16 +506,23 @@ export function BusinessView() {
                 onClick={() => handleOpenBuilder(b.id)}
                 type="button"
               >
-                <div className="relative h-[135px] w-full overflow-hidden bg-gradient-to-br from-primary/[0.08] to-transparent">
+                <div
+                  className={cn(
+                    'relative h-[135px] w-full overflow-hidden bg-gradient-to-br to-transparent',
+                    b.accent === 'gold'
+                      ? 'from-[color-mix(in_srgb,var(--tk-cyan)_11%,transparent)]'
+                      : 'from-[color-mix(in_srgb,var(--tk-indigo)_11%,transparent)]'
+                  )}
+                >
                   <DocLines variant={b.id === 'invoice' ? 'invoice' : b.id === 'deck' ? 'deck' : 'cv'} />
                 </div>
                 <div className="flex items-start gap-2.5 p-3.5">
                   <span
                     className={cn(
-                      'grid size-8 shrink-0 place-items-center rounded-xl shadow-2xs',
+                      'grid size-8 shrink-0 place-items-center rounded-xl',
                       b.accent === 'gold'
-                        ? 'bg-[#C98A2B]/12 text-[#B57E23]'
-                        : 'bg-primary/10 text-primary'
+                        ? 'bg-(--tk-cyan-soft) text-(--tk-cyan-text)'
+                        : 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
                     )}
                   >
                     <Codicon name={b.icon} size="1rem" />
@@ -526,15 +532,15 @@ export function BusinessView() {
                     <span className="mt-0.5 block text-[0.6875rem] text-muted-foreground">{b.sub}</span>
                   </span>
                   <Codicon
-                    className="mt-1 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary"
+                    className="mt-1 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-(--tk-indigo-text)"
                     name="chevron-right"
                     size="0.85rem"
                   />
                 </div>
               </button>
-              <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2">
+              <div className="flex items-center justify-between border-t border-(--tk-glass-border) bg-(--ui-bg-tertiary)/40 px-3.5 py-2">
                 <button
-                  className="text-[0.6875rem] font-semibold text-primary transition hover:underline disabled:opacity-40"
+                  className="text-[0.6875rem] font-semibold text-(--tk-indigo-text) transition hover:underline disabled:opacity-40"
                   disabled={!canStartChat}
                   onClick={() => handleOpenBuilder(b.id)}
                   type="button"
@@ -557,10 +563,10 @@ export function BusinessView() {
 
         {/* Recent Documents Section */}
         <section className="mt-10">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-bold tracking-tight">Recent Documents</h2>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+              <h2 className="text-lg font-semibold tracking-tight">Recent Documents</h2>
+              <span className="rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-0.5 text-xs font-semibold tabular-nums text-(--ui-text-secondary)">
                 {documents.length}
               </span>
             </div>
@@ -569,16 +575,16 @@ export function BusinessView() {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <input
-                    className="h-7 w-36 rounded-lg border border-border/70 bg-card/80 px-2 pl-6 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:w-48 transition-all"
+                    className="h-8 w-40 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 pl-7 text-xs text-foreground placeholder:text-muted-foreground/60 transition-all focus:w-52 focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
                     onChange={e => setDocSearch(e.target.value)}
                     placeholder="Search docs..."
                     value={docSearch}
                   />
-                  <Codicon className="absolute left-1.5 top-1.5 text-muted-foreground" name="search" size="0.75rem" />
+                  <Codicon className="absolute left-2 top-2 text-muted-foreground" name="search" size="0.75rem" />
                 </div>
                 <select
                   aria-label="Filter documents by type"
-                  className="h-7 rounded-lg border border-border/70 bg-card/80 px-2 text-xs font-medium text-muted-foreground focus:outline-none"
+                  className="h-8 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 text-xs font-medium text-(--ui-text-secondary) focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
                   onChange={e => setDocTypeFilter(e.target.value)}
                   value={docTypeFilter}
                 >
@@ -598,18 +604,23 @@ export function BusinessView() {
           </div>
 
           {documents.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground backdrop-blur-xs">
-              No saved documents yet. Choose a builder above or select a template below to create your first document.
+            <div className="tk-glass-subtle flex flex-col items-center gap-3 rounded-2xl border-dashed p-10 text-center">
+              <span className="grid size-11 place-items-center rounded-xl bg-(--tk-indigo-soft) text-(--tk-indigo-text)">
+                <Codicon name="file-text" size="1.25rem" />
+              </span>
+              <p className="max-w-md text-xs leading-relaxed text-(--ui-text-secondary)">
+                No saved documents yet. Choose a builder above or select a template below to create your first document.
+              </p>
             </div>
           ) : filteredDocuments.length === 0 ? (
-            <div className="rounded-2xl border border-border/60 bg-card/40 p-6 text-center text-xs text-muted-foreground">
+            <div className="tk-glass-subtle rounded-2xl p-6 text-center text-xs text-muted-foreground">
               No documents matched your search filter.
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {filteredDocuments.map(doc => (
                 <div
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card/90 px-4 py-3 shadow-2xs backdrop-blur-sm transition-all hover:border-primary/30"
+                  className="tk-glass-subtle tk-surface-hover flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5 hover:border-(--tk-indigo-border)"
                   key={doc.id}
                 >
                   <div className="min-w-0 flex-1">
@@ -618,7 +629,7 @@ export function BusinessView() {
                         <input
                           aria-label={`Rename input for ${doc.title}`}
                           autoFocus
-                          className="h-7 rounded-lg border border-primary bg-background px-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          className="h-8 rounded-xl border border-(--tk-indigo) bg-background px-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
                           onChange={e => setRenameDraft(e.target.value)}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
@@ -632,7 +643,7 @@ export function BusinessView() {
                           value={renameDraft}
                         />
                         <button
-                          className="rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground shadow-2xs transition hover:brightness-105"
+                          className="tk-btn-primary rounded-xl px-3 py-1 text-xs font-semibold text-white"
                           onClick={() => handleCommitRename(doc.id)}
                           type="button"
                         >
@@ -640,7 +651,7 @@ export function BusinessView() {
                         </button>
                         <button
                           aria-label="Cancel rename"
-                          className="rounded-lg border border-border/70 bg-background px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+                          className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                           onClick={() => setRenamingId(null)}
                           type="button"
                         >
@@ -650,20 +661,20 @@ export function BusinessView() {
                     ) : (
                       <div className="flex flex-wrap items-center gap-2">
                         <button
-                          className="truncate text-sm font-semibold hover:text-primary hover:underline transition"
+                          className="truncate text-sm font-semibold transition-colors hover:text-(--tk-indigo-text) hover:underline"
                           onClick={() => openBusinessDocument(doc.id)}
                           type="button"
                         >
                           {doc.title}
                         </button>
-                        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[0.625rem] font-bold uppercase text-primary">
+                        <span className="rounded-md bg-(--tk-indigo-soft) px-1.5 py-0.5 text-[0.625rem] font-bold uppercase text-(--tk-indigo-text)">
                           {doc.type}
                         </span>
                         <span
                           className={cn(
                             'rounded-md px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase',
                             doc.status === 'final'
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-400'
                               : 'bg-muted text-muted-foreground'
                           )}
                         >
@@ -671,7 +682,7 @@ export function BusinessView() {
                         </span>
                       </div>
                     )}
-                    <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">
+                    <div className="mt-1 text-[0.6875rem] tabular-nums text-muted-foreground">
                       Template: {doc.templateId} · Language: {doc.language.toUpperCase()} · Updated{' '}
                       {new Date(doc.updatedAt).toLocaleDateString()}
                     </div>
@@ -680,7 +691,7 @@ export function BusinessView() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       aria-label={`Open ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold shadow-2xs transition hover:border-primary/40 hover:bg-muted"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-semibold transition hover:border-(--tk-indigo-border) hover:bg-muted"
                       onClick={() => openBusinessDocument(doc.id)}
                       type="button"
                     >
@@ -688,7 +699,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Duplicate ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-(--tk-indigo-border) hover:bg-muted hover:text-foreground"
                       onClick={() => duplicateBusinessDocument(doc.id)}
                       type="button"
                     >
@@ -696,7 +707,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Rename ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-(--tk-indigo-border) hover:bg-muted hover:text-foreground"
                       onClick={() => {
                         setRenamingId(doc.id)
                         setRenameDraft(doc.title)
@@ -707,7 +718,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Export ${doc.title} PDF`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-semibold text-primary transition hover:border-primary/40 hover:bg-primary/10"
+                      className="rounded-xl border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-2.5 py-1 text-xs font-semibold text-(--tk-indigo-text) transition hover:brightness-105"
                       onClick={() => handleExportRecent(doc)}
                       type="button"
                     >
@@ -715,7 +726,7 @@ export function BusinessView() {
                     </button>
                     <button
                       aria-label={`Delete ${doc.title}`}
-                      className="rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
+                      className="rounded-xl border border-(--tk-glass-border) bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
                       onClick={() => handleDeleteRecent(doc.id, doc.title)}
                       type="button"
                     >
@@ -732,13 +743,13 @@ export function BusinessView() {
         <section className="mt-10">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold tracking-tight">Template Gallery</h2>
+              <h2 className="text-lg font-semibold tracking-tight">Template Gallery</h2>
               <p className="text-xs text-muted-foreground">
                 8 specialized CV layouts plus OHADA invoices, contracts, investor plans, and 16:9 pitch decks.
               </p>
             </div>
-            {/* Apple Segmented Filter */}
-            <div className="inline-flex max-w-full flex-wrap rounded-xl border border-border/40 bg-muted/60 p-1 backdrop-blur-sm">
+            {/* Segmented Filter */}
+            <div className="tk-glass-subtle inline-flex max-w-full flex-wrap rounded-xl p-1">
               {(
                 [
                   ['all', 'All Templates'],
@@ -752,7 +763,7 @@ export function BusinessView() {
                   className={cn(
                     'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150',
                     templateFilter === id
-                      ? 'bg-card text-foreground shadow-2xs'
+                      ? 'bg-card text-foreground shadow-xs'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   key={id}
@@ -768,7 +779,7 @@ export function BusinessView() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {visibleTemplates.map(tpl => (
               <button
-                className="flex flex-col justify-between rounded-2xl border border-border/80 bg-card/85 p-4 text-left shadow-2xs backdrop-blur-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:opacity-50"
+                className="tk-glass-subtle tk-surface-hover group flex flex-col justify-between rounded-2xl p-4 text-left hover:-translate-y-0.5 hover:border-(--tk-indigo-border) hover:shadow-(--tk-glass-shadow) disabled:opacity-50"
                 disabled={!canStartChat}
                 key={tpl.id}
                 onClick={() =>
@@ -781,21 +792,21 @@ export function BusinessView() {
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className="inline-block size-3 rounded-full shadow-2xs"
+                      className="inline-block size-3 rounded-full ring-2 ring-inset ring-black/10 dark:ring-white/15"
                       style={{ backgroundColor: tpl.accentColor }}
                     />
-                    <span className="text-[0.625rem] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground">
                       {tpl.documentType} · {tpl.fontFamily}
                     </span>
                   </div>
-                  <div className="mt-2 text-xs font-bold text-foreground">{tpl.name}</div>
+                  <div className="mt-2.5 text-xs font-semibold text-foreground">{tpl.name}</div>
                   <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
                     {tpl.description}
                   </p>
                 </div>
-                <div className="mt-4 flex items-center gap-1 text-[0.6875rem] font-semibold text-primary">
+                <div className="mt-4 flex items-center gap-1 text-[0.6875rem] font-semibold text-(--tk-indigo-text)">
                   <span>Use template</span>
-                  <Codicon name="arrow-right" size="0.75rem" />
+                  <Codicon className="transition-transform duration-150 group-hover:translate-x-0.5" name="arrow-right" size="0.75rem" />
                 </div>
               </button>
             ))}
@@ -804,24 +815,28 @@ export function BusinessView() {
 
         {/* Scan to text CTA */}
         <div
-          className="group relative mt-8 flex w-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl px-5 py-5 text-left text-white shadow-xl sm:mt-10 sm:gap-6 sm:px-8 sm:py-7"
-          style={{ background: 'linear-gradient(135deg,#0b1020,#12224e 55%,#0a2f6b)' }}
+          className="group relative mt-8 flex w-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl border border-white/12 px-5 py-6 text-left text-white shadow-(--tk-glass-elevated-shadow) sm:mt-10 sm:gap-6 sm:px-8 sm:py-7"
+          style={{ background: 'linear-gradient(135deg,#0b1020 0%,#121b38 55%,#161f45 100%)' }}
         >
           <span
             className="pointer-events-none absolute inset-0"
-            style={{ background: 'radial-gradient(50% 120% at 88% 10%,rgba(61,123,255,.5),transparent 55%)' }}
+            style={{
+              background:
+                'radial-gradient(50% 110% at 88% 12%,rgba(99,102,241,0.34),transparent 58%),radial-gradient(40% 90% at 65% 100%,rgba(56,189,248,0.18),transparent 62%)'
+            }}
           />
           <div className="relative z-10 flex-1">
-            <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide backdrop-blur-xs">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide backdrop-blur-xs">
+              <span aria-hidden className="size-1.5 rounded-full bg-sky-400" />
               OCR & Document Extraction
             </span>
-            <span className="mt-3 block text-xl font-bold tracking-tight">Turn photos and PDFs into text</span>
-            <span className="mt-2 block max-w-lg text-sm text-white/75 leading-relaxed">
+            <span className="mt-3 block text-xl font-semibold tracking-tight">Turn photos and PDFs into text</span>
+            <span className="mt-2 block max-w-lg text-sm leading-relaxed text-slate-200/80">
               Upload a PDF, JPG, or PNG to extract text directly into an editable workspace, convert it into an invoice or CV draft, or open in chat. Unclear text is marked [illegible], never guessed.
             </span>
             <div className="mt-5 flex flex-wrap gap-2.5">
               <button
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-[#0a2f6b] shadow-md transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-[#0f172a] shadow-md transition hover:bg-slate-100 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canStartChat || scanning}
                 onClick={handleScanButton}
                 type="button"
@@ -830,7 +845,7 @@ export function BusinessView() {
                 {scanning ? 'Scanning…' : 'Select PDF / Image to Scan'}
               </button>
               <button
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-xs transition hover:bg-white/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-xs transition hover:bg-white/18 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canStartChat}
                 onClick={() => startChat(SCAN_TO_TEXT_PROMPT)}
                 type="button"
@@ -842,35 +857,44 @@ export function BusinessView() {
           </div>
           <span className="relative z-10 hidden shrink-0 items-center gap-3 sm:flex">
             <span className="flex">
-              {['#f2a65a', '#5a8cf2', '#57b98b'].map((c, i) => (
+              {[
+                'linear-gradient(150deg, rgba(99,102,241,0.9), rgba(15,23,42,0.55))',
+                'linear-gradient(150deg, rgba(56,189,248,0.85), rgba(15,23,42,0.55))',
+                'linear-gradient(150deg, rgba(226,232,240,0.92), rgba(71,85,105,0.55))'
+              ].map((bg, i) => (
                 <span
-                  className="size-16 rounded-xl border-2 border-white/15 shadow-xl backdrop-blur-xs"
-                  key={c}
+                  className="size-16 rounded-xl border border-white/20 shadow-xl backdrop-blur-xs"
+                  key={i}
                   style={{
-                    background: `linear-gradient(150deg,${c},rgba(0,0,0,.35))`,
+                    background: bg,
                     marginLeft: i ? '-1.25rem' : 0,
-                    transform: `rotate(${(i - 1) * 8}deg)`
+                    transform: `rotate(${(i - 1) * 7}deg)`
                   }}
                 />
               ))}
             </span>
-            <Codicon name="arrow-right" size="1.4rem" />
-            <span className="grid h-20 w-16 place-items-center gap-1 rounded-2xl bg-white text-[#0a2f6b] shadow-xl">
-              <Codicon name="file" size="1.5rem" />
+            <Codicon className="text-sky-300" name="arrow-right" size="1.35rem" />
+            <span className="grid h-20 w-16 place-items-center gap-1 rounded-2xl border border-white/20 bg-white/95 text-[#0f172a] shadow-xl">
+              <Codicon name="file" size="1.45rem" />
               <b className="text-[0.625rem] font-bold">Text</b>
             </span>
           </span>
         </div>
 
         {/* Feature grid */}
-        <h2 className="mb-4 mt-10 text-lg font-bold tracking-tight">What the workspace does here</h2>
+        <h2 className="mb-4 mt-10 text-lg font-semibold tracking-tight">What the workspace does here</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(f => (
-            <div className="rounded-2xl border border-border/80 bg-card/85 p-5 shadow-2xs backdrop-blur-sm transition-all hover:border-primary/30" key={f.title}>
+            <div
+              className="tk-glass-subtle tk-surface-hover rounded-2xl p-5 hover:border-(--tk-indigo-border)"
+              key={f.title}
+            >
               <span
                 className={cn(
-                  'mb-3.5 grid size-9 place-items-center rounded-xl shadow-2xs',
-                  f.gold ? 'bg-[#C98A2B]/12 text-[#B57E23]' : 'bg-primary/10 text-primary'
+                  'mb-3.5 grid size-9 place-items-center rounded-xl',
+                  f.gold
+                    ? 'bg-(--tk-cyan-soft) text-(--tk-cyan-text)'
+                    : 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
                 )}
               >
                 <Codicon name={f.icon} size="1.05rem" />

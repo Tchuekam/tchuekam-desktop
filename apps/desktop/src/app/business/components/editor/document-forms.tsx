@@ -61,13 +61,13 @@ export interface DocumentFormsProps {
 }
 
 const INPUT_CLASS =
-  'h-8 w-full rounded-xl border border-border/70 bg-background/80 px-3 text-xs text-foreground placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20'
+  'h-9 w-full rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs text-foreground placeholder:text-muted-foreground/60 shadow-[inset_0_1px_0_var(--tk-specular-edge)] transition-all duration-150 focus:border-(--tk-indigo) focus:bg-background focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)'
 
 const TEXTAREA_CLASS =
-  'w-full rounded-xl border border-border/70 bg-background/80 p-3 text-xs text-foreground placeholder:text-muted-foreground/60 transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed'
+  'w-full rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) p-3 text-xs text-foreground placeholder:text-muted-foreground/60 shadow-[inset_0_1px_0_var(--tk-specular-edge)] transition-all duration-150 focus:border-(--tk-indigo) focus:bg-background focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow) leading-relaxed'
 
-const LABEL_CLASS = 'mb-1.5 block text-[0.6875rem] font-semibold text-muted-foreground tracking-wide'
-const SECTION_CARD = 'rounded-2xl border border-border/70 bg-card/85 p-3.5 shadow-xs backdrop-blur-sm space-y-3 sm:p-5 sm:space-y-3.5'
+const LABEL_CLASS = 'mb-1.5 block text-[0.6875rem] font-semibold text-(--ui-text-secondary) tracking-[0.02em]'
+const SECTION_CARD = 'tk-glass-subtle rounded-2xl p-4 sm:p-5 space-y-3.5'
 
 const PLAN_SECTION_LABELS: Array<{ key: BusinessPlanSectionKey; labelEn: string; labelFr: string }> = [
   { key: 'executiveSummary', labelEn: '1. Executive Summary', labelFr: '1. Résumé Exécutif' },
