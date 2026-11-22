@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { deleteEnvVar, getToolsetConfig, revealEnvVar, selectToolsetProvider, setEnvVar } from '@/hermes'
 import { Check, ExternalLink, Eye, EyeOff, Loader2, Save, Trash2 } from '@/lib/icons'
+import { IS_LOCKED_DEMO } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import type { ToolEnvVar, ToolProvider, ToolsetConfig } from '@/types/hermes'
@@ -249,6 +250,14 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
 
     return null
   }, [cfg, loading, providers.length])
+
+  if (IS_LOCKED_DEMO) {
+    return (
+      <p className="px-1 py-3 text-xs text-muted-foreground">
+        Toolset configuration is managed on the host in demo mode.
+      </p>
+    )
+  }
 
   if (loading) {
     return (
