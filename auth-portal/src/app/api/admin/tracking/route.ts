@@ -1,42 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseAdmin, isAdminIdentity } from '@/lib/supabaseAdmin'
+import type { User } from '@supabase/supabase-js'
+import { getSupabaseAdmin, isAdminUser } from '@/lib/supabaseAdmin'
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, private' }
+
 export async function GET(req: NextRequest) {
   try {
+    const ip = getClientIp(req)
+    const rl = checkRateLimit(`admin-tracking:${ip}`, 30, 60_000)
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before retrying.' },
+        { status: 429, headers: NO_STORE_HEADERS }
+      )
+    }
+
     const authHeader = req.headers.get('authorization') || ''
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
 
     if (!token) {
-      return NextResponse.json({ error: 'Missing Authorization token' }, { status: 401 })
+      return NextResponse.json(
+        { error: 'Missing Authorization token' },
+        { status: 401, headers: NO_STORE_HEADERS }
+      )
     }
 
     const supabaseAdmin = getSupabaseAdmin()
     const { data: callerData, error: callerError } = await supabaseAdmin.auth.getUser(token)
 
     if (callerError || !callerData?.user) {
-      return NextResponse.json({ error: 'Invalid or expired session token' }, { status: 401 })
-    }
-
-    const caller = callerData.user
-    const { data: callerProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', caller.id)
-      .maybeSingle()
-
-    if (!isAdminIdentity(caller.email, callerProfile?.role)) {
       return NextResponse.json(
-        { error: 'Admin privileges required to access global user tracking' },
-        { status: 403 }
+        { error: 'Invalid or expired session token' },
+        { status: 401, headers: NO_STORE_HEADERS }
       )
     }
 
-    const listAllAuthUsers = async () => {
-      const collected: NonNullable<
-        Awaited<ReturnType<typeof supabaseAdmin.auth.admin.listUsers>>['data']
-      >['users'] = []
+    const caller = callerData.user
+    if (!isAdminUser(caller)) {
+      return NextResponse.json(
+        { error: 'Admin privileges required to access global user tracking' },
+        { status: 403, headers: NO_STORE_HEADERS }
+      )
+    }
+
+    const listAllAuthUsers = async (): Promise<User[]> => {
+      const collected: User[] = []
       const perPage = 1000
       for (let page = 1; page <= 20; page++) {
         const res = await supabaseAdmin.auth.admin.listUsers({ page, perPage })
@@ -51,16 +62,19 @@ export async function GET(req: NextRequest) {
     const [profilesRes, eventsRes, authUsers] = await Promise.all([
       supabaseAdmin
         .from('profiles')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
         .limit(5000),
       supabaseAdmin
         .from('auth_events')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
         .limit(200),
       listAllAuthUsers(),
     ])
+
+    if (profilesRes.error) throw profilesRes.error
+    if (eventsRes.error) throw eventsRes.error
 
     const profiles = profilesRes.data || []
     const events = eventsRes.data || []
@@ -103,8 +117,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Sort newest first
-    mergedUsers.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    mergedUsers.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
 
     const now = Date.now()
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
@@ -123,13 +138,19 @@ export async function GET(req: NextRequest) {
       ).length,
     }
 
-    return NextResponse.json({
-      summary,
-      users: mergedUsers,
-      events,
-    })
+    return NextResponse.json(
+      {
+        summary,
+        users: mergedUsers,
+        events,
+      },
+      { headers: NO_STORE_HEADERS }
+    )
   } catch (err) {
     console.error('[api/admin/tracking] error:', err)
-    return NextResponse.json({ error: 'Failed to load tracking telemetry' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to load tracking telemetry' },
+      { status: 500, headers: NO_STORE_HEADERS }
+    )
   }
 }
