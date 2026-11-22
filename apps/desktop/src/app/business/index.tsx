@@ -116,10 +116,13 @@ function DocLines({ variant }: { variant: 'cv' | 'invoice' | 'deck' }) {
 
   if (variant === 'deck') {
     return (
-      <div className="absolute inset-x-4 top-3 -bottom-6 overflow-hidden rounded-t-xl bg-card border border-border/60 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)]">
-        <div className="h-[42%]" style={{ background: 'linear-gradient(135deg,#0053FD,#0038A8)' }} />
+      <div className="absolute inset-x-4 top-3 -bottom-6 overflow-hidden rounded-t-xl border border-(--tk-glass-border) bg-card/95 shadow-[0_10px_28px_-12px_rgba(15,23,42,0.22)] transition-transform duration-200 ease-out group-hover:-translate-y-1 dark:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.65)]">
+        <div
+          className="h-[42%]"
+          style={{ background: 'linear-gradient(135deg, var(--tk-indigo), var(--tk-cyan))' }}
+        />
         <div className="space-y-1.5 p-3">
-          <span className="block h-1.5 w-1/2 rounded-full bg-primary/80" />
+          <span className="block h-1.5 w-1/2 rounded-full bg-(--tk-indigo)/80" />
           <span className={cn(bar, 'w-11/12')} />
           <span className={cn(bar, 'w-4/5')} />
         </div>
@@ -127,10 +130,10 @@ function DocLines({ variant }: { variant: 'cv' | 'invoice' | 'deck' }) {
     )
   }
 
-  const head = variant === 'invoice' ? 'bg-[#C98A2B]' : 'bg-primary'
+  const head = variant === 'invoice' ? 'bg-(--tk-cyan)' : 'bg-(--tk-indigo)'
 
   return (
-    <div className="absolute inset-x-4 top-3 -bottom-6 rounded-t-xl bg-card border border-border/60 p-3.5 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)]">
+    <div className="absolute inset-x-4 top-3 -bottom-6 rounded-t-xl border border-(--tk-glass-border) bg-card/95 p-3.5 shadow-[0_10px_28px_-12px_rgba(15,23,42,0.22)] transition-transform duration-200 ease-out group-hover:-translate-y-1 dark:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.65)]">
       <span className={cn('mb-2 block h-1.5 w-2/5 rounded-full', head)} />
       <div className="space-y-1.5">
         <span className={cn(bar, 'w-11/12')} />
@@ -241,6 +244,7 @@ export function BusinessView() {
       })
       .finally(() => {
         setScanning(false)
+
         if (scanFileInputRef.current) {
           scanFileInputRef.current.value = ''
         }
@@ -312,8 +316,9 @@ export function BusinessView() {
   })
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-background text-foreground pt-(--titlebar-height)">
-      <div className="mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:px-6 md:px-8 md:pb-24 md:pt-[calc(var(--titlebar-height)+0.75rem)]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-background text-foreground pt-(--titlebar-height)">
+      <div aria-hidden className="tk-ambient-halo pointer-events-none absolute inset-x-0 top-0 z-0 h-80" />
+      <div className="relative z-1 mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:px-6 md:px-8 md:pb-24 md:pt-[calc(var(--titlebar-height)+0.75rem)]">
         <input
           accept=".pdf,.jpg,.jpeg,.png"
           aria-label="Upload file for Scan to text"
@@ -326,8 +331,8 @@ export function BusinessView() {
         <ProfileModal onClose={() => setProfileOpen(false)} open={profileOpen} />
         {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
 
-        {/* Apple-style Hero Header */}
-        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/50 pb-6">
+        {/* Executive Hero Header */}
+        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-(--tk-glass-border) pb-6">
           <div className="flex items-start gap-4">
             <div
               className="grid size-13 shrink-0 place-items-center rounded-2xl text-white shadow-lg transition-transform hover:scale-105"
