@@ -1192,19 +1192,19 @@ export function ChatBar({
                 aria-hidden
                 className={cn(
                   'pointer-events-none absolute inset-0 -z-10 rounded-[inherit]',
-                  'bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)]',
-                  'backdrop-blur-[0.75rem] backdrop-saturate-[1.12]',
-                  '[-webkit-backdrop-filter:blur(0.75rem)_saturate(1.12)]',
-                  'transition-[background-color] duration-150 ease-out',
-                  'group-data-[thread-scrolled-up]/composer:bg-[color-mix(in_srgb,var(--dt-card)_48%,transparent)]',
-                  'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_85%,transparent)]'
+                  'bg-(--tk-glass-elevated-bg)',
+                  'backdrop-blur-[22px] backdrop-saturate-[1.42]',
+                  '[-webkit-backdrop-filter:blur(22px)_saturate(1.42)]',
+                  'transition-[background-color] duration-180 ease-out',
+                  'group-data-[thread-scrolled-up]/composer:bg-(--tk-glass-bg)',
+                  'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_92%,transparent)]'
                 )}
               />
               <div
                 className={cn(
                   'relative z-1 flex min-h-0 w-full flex-col gap-(--composer-row-gap) overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y) transition-opacity duration-200 ease-out',
                   scrolledUp
-                    ? 'opacity-30 group-hover/composer:opacity-100 group-focus-within/composer:opacity-100'
+                    ? 'opacity-40 group-hover/composer:opacity-100 group-focus-within/composer:opacity-100'
                     : 'opacity-100'
                 )}
                 data-slot="composer-fade"
@@ -1212,8 +1212,8 @@ export function ChatBar({
                 <VoiceActivity state={voiceActivityState} />
                 <VoicePlaybackActivity />
                 {queueEdit && editingQueuedPrompt && (
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-[color-mix(in_srgb,var(--dt-composer-ring)_32%,transparent)] bg-accent/18 px-2 py-1">
-                    <div className="min-w-0 text-[0.7rem] text-muted-foreground/88">
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-2.5 py-1.5">
+                    <div className="min-w-0 text-[0.72rem] font-medium text-foreground/88">
                       Editing queued turn in composer
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
