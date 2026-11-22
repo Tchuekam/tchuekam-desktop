@@ -538,7 +538,10 @@ export const ToolGroupSlot: FC<PropsWithChildren<{ endIndex: number; startIndex:
               <FadeText
                 className={cn(
                   TOOL_HEADER_SUBTITLE_CLASS,
-                  displayStatus === 'warning' ? 'text-amber-700/80 dark:text-amber-300/85' : 'text-destructive/85'
+                  'inline-flex w-fit items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium',
+                  displayStatus === 'warning'
+                    ? 'bg-amber-500/12 text-amber-700 dark:text-amber-300'
+                    : 'bg-destructive/10 text-destructive'
                 )}
               >
                 {statusSummary}
@@ -556,7 +559,13 @@ export const ToolGroupSlot: FC<PropsWithChildren<{ endIndex: number; startIndex:
         {/* Body is always rendered so children stay mounted across collapse/
             expand and across the 1→2 group transition. `hidden` removes it
             from a11y/visual flow without unmounting React subtree. */}
-        <div className={cn(isGroup && 'mt-0.5 w-full overflow-hidden pr-2 pl-3')} hidden={isGroup && !open} key="body">
+        <div
+          className={cn(
+            isGroup && 'mt-1.5 ml-1.5 w-[calc(100%-0.375rem)] overflow-hidden border-l border-(--tk-glass-border) pl-3 pr-1'
+          )}
+          hidden={isGroup && !open}
+          key="body"
+        >
           {children}
         </div>
       </div>
