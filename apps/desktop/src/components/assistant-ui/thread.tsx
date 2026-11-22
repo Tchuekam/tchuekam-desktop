@@ -396,7 +396,7 @@ const ThinkingDisclosure: FC<{
           <span
             className={cn(
               'text-[length:var(--conversation-tool-font-size)] font-medium leading-(--conversation-line-height) text-(--ui-text-secondary)',
-              pending && 'shimmer text-foreground/55'
+              pending && 'shimmer text-foreground/75'
             )}
           >
             Thinking
