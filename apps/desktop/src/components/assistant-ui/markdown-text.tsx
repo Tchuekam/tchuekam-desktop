@@ -302,12 +302,15 @@ const MarkdownTextImpl = () => {
         ),
         blockquote: ({ className, ...props }: ComponentProps<'blockquote'>) => (
           <blockquote
-            className={cn('border-l-2 border-border pl-3 text-muted-foreground italic', className)}
+            className={cn(
+              'my-2.5 rounded-r-lg border-l-2 border-(--tk-indigo-border) bg-[color-mix(in_srgb,var(--tk-indigo-soft)_42%,transparent)] py-1.5 pl-3.5 pr-3 text-(--ui-text-secondary) not-italic',
+              className
+            )}
             {...props}
           />
         ),
         ul: ({ className, ...props }: ComponentProps<'ul'>) => (
-          <ul className={cn('my-1 gap-0', className)} {...props} />
+          <ul className={cn('my-1.5 gap-0', className)} {...props} />
         ),
         ol: ({ className, ...props }: ComponentProps<'ol'>) => (
           <ol className={cn('my-1 gap-0', className)} {...props} />
