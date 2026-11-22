@@ -56,7 +56,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 _CREDENTIAL_SUFFIXES = (
     "_API_KEY",
+    "_API_KEYS",
     "_TOKEN",
+    "_TOKENS",
     "_SECRET",
     "_PASSWORD",
     "_CREDENTIALS",

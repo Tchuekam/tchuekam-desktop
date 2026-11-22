@@ -8365,8 +8365,9 @@ class BusinessOcrRequest(BaseModel):
 
 
 @app.post("/api/business/ocr")
-async def api_business_ocr(req: BusinessOcrRequest, request: Request):
-    _require_rate_limit(request, "ocr", 20, 60.0)
+async def api_business_ocr(req: BusinessOcrRequest, request: Request = None):
+    if request is not None:
+        _require_rate_limit(request, "ocr", 20, 60.0)
     raw = (req.data_url or "").strip()
     if "," in raw:
         raw_b64 = raw.split(",", 1)[1].strip()
@@ -8431,8 +8432,9 @@ class BusinessAiRequest(BaseModel):
 
 
 @app.post("/api/business/ai")
-async def api_business_ai(req: BusinessAiRequest, request: Request):
-    _require_rate_limit(request, "business_ai", 30, 60.0)
+async def api_business_ai(req: BusinessAiRequest, request: Request = None):
+    if request is not None:
+        _require_rate_limit(request, "business_ai", 30, 60.0)
     if len(req.input or "") > 60_000:
         raise HTTPException(status_code=413, detail="Input text too large (max 60,000 chars).")
 

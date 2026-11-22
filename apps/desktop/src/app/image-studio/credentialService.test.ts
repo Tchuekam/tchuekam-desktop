@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import {
+  _resetMemoryKeyForTesting,
+  deleteStudioApiKey,
   getStudioApiKey,
   saveStudioApiKey,
-  deleteStudioApiKey,
   validateApiKey,
-  _resetMemoryKeyForTesting,
 } from './credentialService'
 
 // Mock the hermes backend functions
@@ -19,7 +20,8 @@ vi.mock('./open-generative-ai/packages/studio/src/muapi.js', () => ({
   getUserBalance: vi.fn(),
 }))
 
-import { revealEnvVar, setEnvVar, deleteEnvVar } from '@/hermes'
+import { deleteEnvVar, revealEnvVar, setEnvVar } from '@/hermes'
+
 // @ts-expect-error JS/JSX module without TypeScript declaration file
 import { getUserBalance } from './open-generative-ai/packages/studio/src/muapi.js'
 

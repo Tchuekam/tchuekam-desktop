@@ -18,7 +18,7 @@ for (let i = 255; i < 512; i++) {
 }
 
 function gfMul(a: number, b: number): number {
-  if (a === 0 || b === 0) return 0
+  if (a === 0 || b === 0) {return 0}
   return EXP[LOG[a] + LOG[b]]
 }
 
@@ -39,7 +39,7 @@ function rsGeneratorPoly(degree: number): number[] {
 function rsRemainder(data: number[], eccCount: number): number[] {
   const gen = rsGeneratorPoly(eccCount)
   const buf = new Array<number>(data.length + eccCount).fill(0)
-  for (let i = 0; i < data.length; i++) buf[i] = data[i]
+  for (let i = 0; i < data.length; i++) {buf[i] = data[i]}
   for (let i = 0; i < data.length; i++) {
     const coef = buf[i]
     if (coef !== 0) {
@@ -87,20 +87,20 @@ export function generateQrMatrix(text: string): QrMatrix {
   // Bit buffer: Mode 0100 (4 bits) + char count (8 bits for v1..9) + data + terminator
   const bits: number[] = []
   const pushBits = (val: number, len: number) => {
-    for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1)
+    for (let i = len - 1; i >= 0; i--) {bits.push((val >>> i) & 1)}
   }
 
   pushBits(0b0100, 4)
   pushBits(payload.length, 8)
-  for (const b of payload) pushBits(b, 8)
+  for (const b of payload) {pushBits(b, 8)}
   const capBits = spec.totalDataBytes * 8
   pushBits(0, Math.min(4, capBits - bits.length))
-  while (bits.length % 8 !== 0) bits.push(0)
+  while (bits.length % 8 !== 0) {bits.push(0)}
 
   const dataBytes: number[] = []
   for (let i = 0; i < bits.length; i += 8) {
     let byte = 0
-    for (let j = 0; j < 8; j++) byte = (byte << 1) | bits[i + j]
+    for (let j = 0; j < 8; j++) {byte = (byte << 1) | bits[i + j]}
     dataBytes.push(byte)
   }
 
@@ -124,10 +124,10 @@ export function generateQrMatrix(text: string): QrMatrix {
 
   const interleaved: number[] = []
   for (let i = 0; i < blockSize; i++) {
-    for (let b = 0; b < spec.blocks; b++) interleaved.push(dataBlocks[b][i])
+    for (let b = 0; b < spec.blocks; b++) {interleaved.push(dataBlocks[b][i])}
   }
   for (let i = 0; i < spec.eccPerBlock; i++) {
-    for (let b = 0; b < spec.blocks; b++) interleaved.push(eccBlocks[b][i])
+    for (let b = 0; b < spec.blocks; b++) {interleaved.push(eccBlocks[b][i])}
   }
 
   const n = spec.size
@@ -135,9 +135,9 @@ export function generateQrMatrix(text: string): QrMatrix {
   const reserved: boolean[][] = Array.from({ length: n }, () => new Array<boolean>(n).fill(false))
 
   const setModule = (r: number, c: number, dark: boolean, lock = true) => {
-    if (r < 0 || c < 0 || r >= n || c >= n) return
+    if (r < 0 || c < 0 || r >= n || c >= n) {return}
     modules[r][c] = dark
-    if (lock) reserved[r][c] = true
+    if (lock) {reserved[r][c] = true}
   }
 
   const drawFinder = (top: number, left: number) => {
@@ -145,7 +145,7 @@ export function generateQrMatrix(text: string): QrMatrix {
       for (let dc = -1; dc <= 7; dc++) {
         const r = top + dr
         const c = left + dc
-        if (r < 0 || c < 0 || r >= n || c >= n) continue
+        if (r < 0 || c < 0 || r >= n || c >= n) {continue}
         const inBox = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6
         const dark =
           inBox &&
@@ -165,7 +165,7 @@ export function generateQrMatrix(text: string): QrMatrix {
     for (const cc of centers) {
       const overlapsFinder =
         (cr <= 8 && cc <= 8) || (cr <= 8 && cc >= n - 9) || (cr >= n - 9 && cc <= 8)
-      if (overlapsFinder) continue
+      if (overlapsFinder) {continue}
       for (let dr = -2; dr <= 2; dr++) {
         for (let dc = -2; dc <= 2; dc++) {
           const dark = Math.max(Math.abs(dr), Math.abs(dc)) !== 1
@@ -184,24 +184,24 @@ export function generateQrMatrix(text: string): QrMatrix {
   // Dark module + format reservation
   setModule(4 * spec.version + 9, 8, true)
   for (let i = 0; i < 9; i++) {
-    if (!reserved[8][i]) reserved[8][i] = true
-    if (!reserved[i][8]) reserved[i][8] = true
+    if (!reserved[8][i]) {reserved[8][i] = true}
+    if (!reserved[i][8]) {reserved[i][8] = true}
   }
   for (let i = 0; i < 8; i++) {
     reserved[8][n - 1 - i] = true
-    if (i < 7) reserved[n - 1 - i][8] = true
+    if (i < 7) {reserved[n - 1 - i][8] = true}
   }
 
   // Place data bits in zigzag
   const bitStream: number[] = []
   for (const byte of interleaved) {
-    for (let i = 7; i >= 0; i--) bitStream.push((byte >>> i) & 1)
+    for (let i = 7; i >= 0; i--) {bitStream.push((byte >>> i) & 1)}
   }
 
   let bitIdx = 0
   let up = true
   for (let col = n - 1; col >= 1; col -= 2) {
-    if (col === 6) col--
+    if (col === 6) {col--}
     for (let step = 0; step < n; step++) {
       const r = up ? n - 1 - step : step
       for (let dc = 0; dc < 2; dc++) {
@@ -231,13 +231,13 @@ export function generateQrMatrix(text: string): QrMatrix {
     const fmt = FORMAT_BITS_L[mask]
     for (let i = 0; i < 15; i++) {
       const bit = ((fmt >>> i) & 1) === 1
-      if (i < 6) grid[i][8] = bit
-      else if (i < 8) grid[i + 1][8] = bit
-      else grid[n - 15 + i][8] = bit
+      if (i < 6) {grid[i][8] = bit}
+      else if (i < 8) {grid[i + 1][8] = bit}
+      else {grid[n - 15 + i][8] = bit}
 
-      if (i < 8) grid[8][n - 1 - i] = bit
-      else if (i < 9) grid[8][7] = bit
-      else grid[8][14 - i] = bit
+      if (i < 8) {grid[8][n - 1 - i] = bit}
+      else if (i < 9) {grid[8][7] = bit}
+      else {grid[8][14 - i] = bit}
     }
   }
 
@@ -248,9 +248,9 @@ export function generateQrMatrix(text: string): QrMatrix {
       for (let c = 1; c < n; c++) {
         if (grid[r][c] === grid[r][c - 1]) {
           run++
-          if (run === 5) score += 3
-          else if (run > 5) score += 1
-        } else run = 1
+          if (run === 5) {score += 3}
+          else if (run > 5) {score += 1}
+        } else {run = 1}
       }
     }
     for (let c = 0; c < n; c++) {
@@ -258,15 +258,15 @@ export function generateQrMatrix(text: string): QrMatrix {
       for (let r = 1; r < n; r++) {
         if (grid[r][c] === grid[r - 1][c]) {
           run++
-          if (run === 5) score += 3
-          else if (run > 5) score += 1
-        } else run = 1
+          if (run === 5) {score += 3}
+          else if (run > 5) {score += 1}
+        } else {run = 1}
       }
     }
     for (let r = 0; r < n - 1; r++) {
       for (let c = 0; c < n - 1; c++) {
         const b = grid[r][c]
-        if (b === grid[r][c + 1] && b === grid[r + 1][c] && b === grid[r + 1][c + 1]) score += 3
+        if (b === grid[r][c + 1] && b === grid[r + 1][c] && b === grid[r + 1][c + 1]) {score += 3}
       }
     }
     return score

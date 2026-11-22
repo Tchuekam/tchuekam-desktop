@@ -1,4 +1,3 @@
-import { useStore } from '@nanostores/react'
 import {
   IconCheck,
   IconCopy,
@@ -192,14 +191,14 @@ export function MobileView() {
 
               {/* 1-Click Download Button */}
               <a
-                href={downloadApkUrl}
-                onClick={handleDownloadClick}
-                download="TchueKAM-Mobile.apk"
                 className={cn(
                   'group flex h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl',
                   'bg-cyan-500 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-cyan-500/25',
                   'transition-all duration-200 hover:bg-cyan-400 hover:shadow-cyan-500/40 hover:-translate-y-0.5 active:translate-y-0'
                 )}
+                download="TchueKAM-Mobile.apk"
+                href={downloadApkUrl}
+                onClick={handleDownloadClick}
               >
                 <IconDownload className="size-5 transition-transform group-hover:scale-110" />
                 <span>Download Android APK (1-Click)</span>
@@ -248,21 +247,21 @@ export function MobileView() {
 
               <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyLink}
                   className="flex-1 gap-1.5 text-xs border-border"
+                  onClick={handleCopyLink}
+                  size="sm"
+                  variant="outline"
                 >
                   {copiedLink ? <IconCheck className="size-3.5 text-emerald-400" /> : <IconCopy className="size-3.5" />}
                   <span>{copiedLink ? 'Link Copied!' : 'Copy Mobile Link'}</span>
                 </Button>
                 <Button
-                  variant="ghost"
-                  size="sm"
                   asChild
                   className="gap-1 text-xs text-cyan-400 hover:text-cyan-300"
+                  size="sm"
+                  variant="ghost"
                 >
-                  <a href="/#/mobile" target="_blank" rel="noopener noreferrer">
+                  <a href="/#/mobile" rel="noopener noreferrer" target="_blank">
                     <span>Open Standalone</span>
                     <IconExternalLink className="size-3.5" />
                   </a>
@@ -282,10 +281,10 @@ export function MobileView() {
                   viewBox={`0 0 ${qrMatrix.size + 4} ${qrMatrix.size + 4}`}
                   xmlns="http://www.w3.org/2000/svg"
                 >
-                  <rect width={qrMatrix.size + 4} height={qrMatrix.size + 4} fill="white" />
+                  <rect fill="white" height={qrMatrix.size + 4} width={qrMatrix.size + 4} />
                   {qrMatrix.modules.map((row, r) =>
                     row.map((dark, c) =>
-                      dark ? <rect key={`${r}-${c}`} x={c + 2} y={r + 2} width={1} height={1} fill="currentColor" /> : null
+                      dark ? <rect fill="currentColor" height={1} key={`${r}-${c}`} width={1} x={c + 2} y={r + 2} /> : null
                     )
                   )}
                 </svg>
@@ -377,19 +376,19 @@ export function MobileView() {
                       <div className="grid grid-cols-2 gap-2">
                         {SCENARIOS.map(sc => (
                           <button
-                            key={sc.id}
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic('tap')
-                              setSelectedScenario(sc)
-                              setExecuted(false)
-                            }}
                             className={cn(
                               'flex flex-col items-start rounded-xl p-2.5 text-left transition-all duration-150',
                               selectedScenario.id === sc.id
                                 ? 'bg-cyan-500/20 border border-cyan-400 text-white shadow-sm'
                                 : 'bg-white/5 border border-white/5 text-neutral-300 hover:bg-white/10'
                             )}
+                            key={sc.id}
+                            onClick={() => {
+                              triggerHaptic('tap')
+                              setSelectedScenario(sc)
+                              setExecuted(false)
+                            }}
+                            type="button"
                           >
                             <span className="text-[0.62rem] uppercase tracking-wider text-cyan-300">
                               {sc.category}
@@ -450,15 +449,15 @@ export function MobileView() {
 
                         {/* Execution Action Button */}
                         <button
-                          type="button"
-                          disabled={executing}
-                          onClick={handleExecuteScenario}
                           className={cn(
                             'flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-xs tracking-wide transition-all',
                             executing
                               ? 'bg-cyan-500/50 text-black cursor-wait'
                               : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300 active:scale-98 shadow-md'
                           )}
+                          disabled={executing}
+                          onClick={handleExecuteScenario}
+                          type="button"
                         >
                           {executing ? (
                             <>
@@ -486,7 +485,7 @@ export function MobileView() {
                       <div className="flex flex-col gap-2 pt-2">
                         <span className="text-[0.68rem] uppercase tracking-wider text-neutral-400">Quick prompts:</span>
                         <button
-                          type="button"
+                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
                           onClick={() => {
                             triggerHaptic('tap')
                             setSimReply({
@@ -495,12 +494,12 @@ export function MobileView() {
                                 'Draft Confidentiality & IP Clause ready: mutual 3-year term, carve-outs for prior IP, and [to confirm] governing jurisdiction.'
                             })
                           }}
-                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
+                          type="button"
                         >
                           💬 &quot;Draft a non-disclosure agreement clause for contractors&quot;
                         </button>
                         <button
-                          type="button"
+                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
                           onClick={() => {
                             triggerHaptic('tap')
                             setSimReply({
@@ -509,12 +508,12 @@ export function MobileView() {
                                 'Finance Summary template opened: enter net monthly burn and cash balance [to confirm] to project 12/18/24-month runway scenarios.'
                             })
                           }}
-                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
+                          type="button"
                         >
                           📊 &quot;Review quarterly burn rate and runway projections&quot;
                         </button>
                         <button
-                          type="button"
+                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
                           onClick={() => {
                             triggerHaptic('tap')
                             setSimReply({
@@ -523,7 +522,7 @@ export function MobileView() {
                                 'Scheduled task template ready: daily 00:00 UTC workspace health + summary delivery via /cron on connected nodes.'
                             })
                           }}
-                          className="rounded-lg bg-white/5 border border-white/10 p-2 text-left text-xs text-neutral-300 hover:bg-white/10"
+                          type="button"
                         >
                           ⚡ &quot;Schedule an automated cron audit for midnight&quot;
                         </button>
@@ -565,43 +564,43 @@ export function MobileView() {
                 {/* Mobile Bottom Tab Bar */}
                 <div className="flex items-center justify-around border-t border-white/10 bg-black/60 py-2.5 px-3 backdrop-blur-md">
                   <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('tap')
-                      setMobileTab('decide')
-                    }}
                     className={cn(
                       'flex flex-col items-center gap-0.5 text-[0.65rem] font-semibold transition-colors',
                       mobileTab === 'decide' ? 'text-cyan-400' : 'text-neutral-400 hover:text-neutral-200'
                     )}
+                    onClick={() => {
+                      triggerHaptic('tap')
+                      setMobileTab('decide')
+                    }}
+                    type="button"
                   >
                     <span>🧭</span>
                     <span>Decide</span>
                   </button>
                   <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('tap')
-                      setMobileTab('chat')
-                    }}
                     className={cn(
                       'flex flex-col items-center gap-0.5 text-[0.65rem] font-semibold transition-colors',
                       mobileTab === 'chat' ? 'text-cyan-400' : 'text-neutral-400 hover:text-neutral-200'
                     )}
+                    onClick={() => {
+                      triggerHaptic('tap')
+                      setMobileTab('chat')
+                    }}
+                    type="button"
                   >
                     <span>💬</span>
                     <span>Chat</span>
                   </button>
                   <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('tap')
-                      setMobileTab('tools')
-                    }}
                     className={cn(
                       'flex flex-col items-center gap-0.5 text-[0.65rem] font-semibold transition-colors',
                       mobileTab === 'tools' ? 'text-cyan-400' : 'text-neutral-400 hover:text-neutral-200'
                     )}
+                    onClick={() => {
+                      triggerHaptic('tap')
+                      setMobileTab('tools')
+                    }}
+                    type="button"
                   >
                     <span>⚙️</span>
                     <span>Tools</span>

@@ -34,14 +34,14 @@ class TestToolResolution:
     """Verify get_tool_definitions returns all expected tools for eval."""
 
     def test_terminal_and_file_toolsets_resolve_all_tools(self):
-        """enabled_toolsets=['terminal', 'file'] should produce 6 tools."""
+        """enabled_toolsets=['terminal', 'file'] should produce the expected terminal + file tools."""
         from model_tools import get_tool_definitions
         tools = get_tool_definitions(
             enabled_toolsets=["terminal", "file"],
             quiet_mode=True,
         )
         names = {t["function"]["name"] for t in tools}
-        expected = {"terminal", "process", "read_file", "write_file", "search_files", "patch"}
+        expected = {"terminal", "process", "read_file", "read_document", "write_file", "search_files", "patch"}
         assert expected == names, f"Expected {expected}, got {names}"
 
     def test_terminal_tool_present(self):
@@ -91,7 +91,7 @@ class TestCwdHandling:
         monkeypatch.setenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "true")
         config = _tt_mod._get_env_config()
         assert config["cwd"] == "/workspace"
-        assert config["host_cwd"] == "/Users/someone/projects"
+        assert config["host_cwd"] == os.path.abspath("/Users/someone/projects")
         assert config["docker_mount_cwd_to_workspace"] is True
 
     def test_windows_path_replaced_for_modal(self, monkeypatch):
@@ -120,7 +120,7 @@ class TestCwdHandling:
         monkeypatch.delenv("TERMINAL_CWD", raising=False)
         config = _tt_mod._get_env_config()
         assert config["cwd"] == "/workspace"
-        assert config["host_cwd"] == "/home/user/project"
+        assert config["host_cwd"] == os.path.abspath("/home/user/project")
 
     def test_local_backend_uses_getcwd(self, monkeypatch):
         """Local backend should use os.getcwd(), not /root."""

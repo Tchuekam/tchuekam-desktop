@@ -49,7 +49,7 @@ class TestResolveEffectiveFallbackChain:
         providers = [(e["provider"], e["model"]) for e in chain]
         assert providers[0] == ("openrouter", "google/gemini-2.5-flash")
         assert ("deepseek", "deepseek-chat") in providers
-        assert ("groq", "llama-3.3-70b-versatile") in providers
+        assert ("groq", "openai/gpt-oss-120b") in providers
         assert ("anthropic", "claude-haiku-4-5-20251001") in providers
         assert all(p != "gemini" for p, _ in providers)
 
@@ -539,3 +539,55 @@ class TestMultiTurnStickyFallbackAndSanitization:
             )
         classified = classify_api_error(exc_info.value)
         assert classified.reason == FailoverReason.timeout
+
+    def test_aiagent_exposes_provider_rejects_reasoning_content_and_strips_mbowagpt_prefill(self):
+        from agent.agent_runtime_helpers import failover_to_local_mbowagpt
+        from run_agent import AIAgent
+
+        with (
+            patch("run_agent.get_tool_definitions", return_value=[]),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("run_agent.OpenAI"),
+        ):
+            agent = AIAgent(
+                api_key="gsk_test",
+                base_url="https://api.groq.com/openai/v1",
+                provider="groq",
+                model="openai/gpt-oss-120b",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+            )
+
+        assert agent._provider_rejects_reasoning_content() is True
+
+        # Failing over to MbowaGPT must prune trailing _thinking_prefill assistant turns
+        msgs = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "", "_thinking_prefill": True},
+        ]
+        fake_mgr = MagicMock()
+        fake_mgr.is_local_available.return_value = True
+        fake_mgr.ensure_started.return_value = MagicMock(
+            model_id="mbowagpt-fast",
+            served_model="qwen3",
+            base_url="http://127.0.0.1:18080/v1",
+            api_key="local",
+            ctx_size=8192,
+        )
+        with (
+            patch("agent.local_runtime.get_local_runtime_manager", return_value=fake_mgr),
+            patch.object(agent, "_create_openai_client", return_value=MagicMock()),
+        ):
+            assert failover_to_local_mbowagpt(agent, "Hello", msgs) is True
+        assert len(msgs) == 1
+        assert msgs[0]["role"] == "user"
+
+    def test_fetch_endpoint_model_metadata_short_circuits_when_offline(self, monkeypatch):
+        from agent import model_metadata
+
+        monkeypatch.setenv("HERMES_OFFLINE", "1")
+        with patch.object(model_metadata.requests, "get") as mock_get:
+            res = model_metadata.fetch_endpoint_model_metadata("https://api.example.com/v1")
+        assert res == {}
+        mock_get.assert_not_called()

@@ -1053,6 +1053,20 @@ def failover_to_local_mbowagpt(
                 "compressor_threshold_tokens": getattr(_cc, "threshold_tokens", int(ep.ctx_size * 0.8)) if _cc else int(ep.ctx_size * 0.8),
             }
 
+        if hasattr(agent, "_drop_trailing_empty_response_scaffolding") and isinstance(messages, list):
+            agent._drop_trailing_empty_response_scaffolding(messages)
+        if isinstance(messages, list):
+            while (
+                messages
+                and isinstance(messages[-1], dict)
+                and (
+                    messages[-1].get("_thinking_prefill")
+                    or messages[-1].get("_empty_recovery_synthetic")
+                    or messages[-1].get("_empty_terminal_sentinel")
+                )
+            ):
+                messages.pop()
+
         agent.provider = "mbowagpt"
         agent.model = route.model_id
         agent._active_mbowagpt_role = route.model_id
@@ -2206,10 +2220,13 @@ def _is_gemini_provider(agent) -> bool:
 
 def provider_rejects_reasoning_content(agent) -> bool:
     """Return True when the active provider rejects reasoning_content/reasoning_details on input."""
-    if agent._needs_thinking_reasoning_pad():
+    needs_pad_fn = getattr(agent, "_needs_thinking_reasoning_pad", None)
+    if callable(needs_pad_fn) and needs_pad_fn() is True:
         return False
-    provider = str(getattr(agent, "provider", "") or "").strip().lower()
-    base_url = str(getattr(agent, "base_url", "") or "").strip()
+    raw_provider = getattr(agent, "provider", "")
+    provider = raw_provider.strip().lower() if isinstance(raw_provider, str) else ""
+    raw_base_url = getattr(agent, "base_url", "")
+    base_url = raw_base_url.strip() if isinstance(raw_base_url, str) else ""
     dynamic_rejected = getattr(agent, "_providers_rejecting_reasoning_content", None)
     if isinstance(dynamic_rejected, set) and provider and provider in dynamic_rejected:
         return True

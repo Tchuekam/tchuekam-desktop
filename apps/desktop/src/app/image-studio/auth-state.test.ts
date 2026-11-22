@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('Image Studio Lifecycle & Production Safety (P0.1, P0.3, P0.4, P0.5)', () => {
   beforeEach(() => {

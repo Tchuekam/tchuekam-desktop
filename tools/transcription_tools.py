@@ -1079,11 +1079,29 @@ def _looks_like_cuda_lib_error(exc: BaseException) -> bool:
     return any(marker in msg for marker in _CUDA_LIB_ERROR_MARKERS)
 
 
+def _looks_like_missing_local_cache_error(exc: BaseException) -> bool:
+    """Return True if WhisperModel(..., local_files_only=True) failed only because files aren't cached yet."""
+    if isinstance(exc, FileNotFoundError):
+        return True
+    msg = str(exc).lower()
+    return any(
+        marker in msg
+        for marker in (
+            "local_files_only",
+            "cannot find the requested files",
+            "not found in cache",
+            "no such file",
+            "unable to locate",
+        )
+    )
+
+
 def _load_local_whisper_model(model_name: str):
     """Load faster-whisper locally first (offline-safe), with CUDA -> CPU int8 fallback."""
     from faster_whisper import WhisperModel
 
     # Try local cache first so offline sessions never hang probing HuggingFace
+    needs_download_fallback = False
     for device, compute_type in (("auto", "auto"), ("cpu", "int8")):
         try:
             return WhisperModel(
@@ -1092,6 +1110,12 @@ def _load_local_whisper_model(model_name: str):
                 compute_type=compute_type,
                 local_files_only=True,
             )
+        except TypeError as exc:
+            # Lightweight test doubles may not accept local_files_only=True
+            if "local_files_only" in str(exc):
+                needs_download_fallback = True
+                break
+            raise
         except Exception as exc:
             if _looks_like_cuda_lib_error(exc) and device == "auto":
                 logger.warning(
@@ -1099,9 +1123,15 @@ def _load_local_whisper_model(model_name: str):
                     exc,
                 )
                 continue
-            break
+            if _looks_like_missing_local_cache_error(exc):
+                needs_download_fallback = True
+                break
+            raise
 
-    # Fall back to standard download/load when cache is not yet populated
+    if not needs_download_fallback:
+        raise RuntimeError(f"Failed to load local faster-whisper model '{model_name}'")
+
+    # Fall back to standard download/load when cache is not yet populated or kwargs not accepted
     try:
         return WhisperModel(model_name, device="auto", compute_type="auto")
     except Exception as exc:

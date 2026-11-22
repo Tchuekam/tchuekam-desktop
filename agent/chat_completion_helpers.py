@@ -1058,7 +1058,8 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
     #     so ``_copy_reasoning_content_for_api``'s cross-provider leak
     #     guard (#15748) and ``reasoning``→``reasoning_content``
     #     promotion tiers still apply at replay time.
-    if "reasoning_content" not in msg and reasoning_text and not agent._provider_rejects_reasoning_content():
+    from agent.agent_runtime_helpers import provider_rejects_reasoning_content as _rejects_reasoning_fn
+    if "reasoning_content" not in msg and reasoning_text and not _rejects_reasoning_fn(agent):
         msg["reasoning_content"] = reasoning_text
 
     if hasattr(assistant_message, 'reasoning_details') and assistant_message.reasoning_details:
@@ -2232,10 +2233,12 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     def _call():
         import httpx as _httpx
 
+        _pool = getattr(agent, "_credential_pool", None)
+        _has_pool_backups = bool(
+            _pool is not None and len(getattr(_pool, "entries", lambda: [])()) > 1
+        )
         _has_fast_recovery = bool(
-            agent._has_pending_fallback()
-            or not getattr(agent, "_auto_fallback_checked", False)
-            or getattr(agent, "_credential_pool", None) is not None
+            agent._has_pending_fallback() or _has_pool_backups
         )
         _default_stream_retries = 0 if _has_fast_recovery else 2
         _max_stream_retries = int(os.getenv("HERMES_STREAM_RETRIES", _default_stream_retries))

@@ -17,8 +17,8 @@ import { useSkinCommand } from '@/themes/use-skin-command'
 import { formatRefValue } from '../components/assistant-ui/directive-text'
 import { getSessionMessages, listSessions } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
-import { $pinnedSessionIds, $sessionsLimit, bumpSessionsLimit, FILE_BROWSER_DEFAULT_WIDTH, FILE_BROWSER_MAX_WIDTH, FILE_BROWSER_MIN_WIDTH, pinSession, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, unpinSession } from '../store/layout'
 import { initIntelligenceListeners } from '../store/intelligence'
+import { $pinnedSessionIds, $sessionsLimit, bumpSessionsLimit, FILE_BROWSER_DEFAULT_WIDTH, FILE_BROWSER_MAX_WIDTH, FILE_BROWSER_MIN_WIDTH, pinSession, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, unpinSession } from '../store/layout'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import {
   $activeSessionId,

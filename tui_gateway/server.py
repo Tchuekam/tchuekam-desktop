@@ -524,7 +524,7 @@ _restricted_web_session: contextvars.ContextVar[bool] = contextvars.ContextVar(
 
 def _is_restricted_transport(transport: Any = None) -> bool:
     t = transport if transport is not None else current_transport()
-    return bool(getattr(t, "restricted", False))
+    return getattr(t, "restricted", False) is True
 
 
 def _transport_owner_id(transport: Any = None) -> str | None:
