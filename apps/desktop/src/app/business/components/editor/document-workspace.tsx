@@ -524,7 +524,12 @@ export function DocumentWorkspace({
         <div className="flex flex-wrap items-center gap-1.5">
           {supportedFormats.map((fmt, index) => (
             <button
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 active:scale-[0.98]"
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold transition active:scale-[0.98]',
+                index === 0
+                  ? 'tk-btn-primary text-white'
+                  : 'border border-(--tk-indigo-border) bg-(--tk-indigo-soft) text-(--tk-indigo-text) hover:brightness-105'
+              )}
               key={fmt}
               onClick={() => handleExport(fmt)}
               type="button"
@@ -538,7 +543,7 @@ export function DocumentWorkspace({
 
       {/* Export & Validation Status Strip */}
       {(lastExportInfo || validation.warnings.length > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs backdrop-blur-xs sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-2 text-xs backdrop-blur-sm sm:px-6">
           {lastExportInfo ? (
             <span className="flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400" role="status">
               <Codicon name="check" size="0.85rem" />
@@ -548,7 +553,7 @@ export function DocumentWorkspace({
             <span />
           )}
           {validation.warnings.length > 0 && (
-            <span className="flex items-center gap-1 text-[0.6875rem] text-amber-600 dark:text-amber-400">
+            <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-300">
               <Codicon name="warning" size="0.75rem" />
               Note: {validation.warnings[0]}
             </span>
@@ -561,12 +566,12 @@ export function DocumentWorkspace({
       ) : null}
 
       {/* Mobile Editor / Preview Switcher (<1024px) */}
-      <div className="flex items-center gap-1 border-b border-border/60 bg-muted/30 px-3 py-1.5 lg:hidden">
+      <div className="flex items-center gap-1 border-b border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-1.5 lg:hidden">
         <button
           className={cn(
             'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
             mobilePane === 'editor'
-              ? 'bg-card text-foreground shadow-2xs'
+              ? 'bg-card text-foreground shadow-xs'
               : 'text-muted-foreground hover:text-foreground'
           )}
           onClick={() => setMobilePane('editor')}
@@ -578,7 +583,7 @@ export function DocumentWorkspace({
           className={cn(
             'flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
             mobilePane === 'preview'
-              ? 'bg-card text-foreground shadow-2xs'
+              ? 'bg-card text-foreground shadow-xs'
               : 'text-muted-foreground hover:text-foreground'
           )}
           onClick={() => setMobilePane('preview')}
