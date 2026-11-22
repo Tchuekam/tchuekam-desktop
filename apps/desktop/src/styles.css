@@ -69,13 +69,11 @@
   --shadow-header:
     0 0.0625rem 0 color-mix(in srgb, var(--dt-foreground) 7%, transparent),
     0 0.625rem 1.5rem -1.25rem color-mix(in srgb, #000 16%, transparent);
-  --shadow-composer: 0 0.0625rem 0.125rem color-mix(in srgb, #000 4%, transparent);
-  /* Focus is a single quiet ring. The previous four-layer stack (two coloured
-   * rings + two drops) read as a glow; a neutral hairline is enough to say
-   * "this is where you type". */
+  --shadow-composer: var(--tk-glass-elevated-shadow);
   --shadow-composer-focus:
-    0 0 0 0.0625rem color-mix(in srgb, var(--dt-composer-ring) calc(40% * var(--composer-ring-strength)), transparent),
-    0 0.125rem 0.5rem color-mix(in srgb, #000 5%, transparent);
+    0 0 0 1px var(--tk-indigo-border),
+    0 0 0 4px var(--tk-indigo-glow),
+    var(--tk-glass-elevated-shadow);
 }
 
 @layer base {
