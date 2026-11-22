@@ -122,12 +122,12 @@ export function DocumentPreview({
                 </ul>
               </div>
 
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-[0.6875rem] text-slate-400">
-                <span>
+              <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-3 text-[0.6875rem] text-slate-400">
+                <span className="min-w-0 truncate">
                   {deck.tagline} · Target Raise:{' '}
                   {formatCurrency(deck.raiseAmount, deck.currency, doc.language)}
                 </span>
-                <span className="font-semibold">
+                <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
                   {safeIdx + 1} / {slides.length}
                 </span>
               </div>

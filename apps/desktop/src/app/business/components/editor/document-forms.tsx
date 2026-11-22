@@ -1712,7 +1712,7 @@ export function DocumentForms({
           <div className="flex flex-wrap gap-1.5">
             {deck.slides.map((s, idx) => (
               <button
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                className={`max-w-full truncate rounded-lg px-2.5 py-1 text-left text-xs font-semibold transition ${
                   idx === safeIdx
                     ? 'bg-primary text-primary-foreground'
                     : 'border border-border bg-background text-muted-foreground hover:text-foreground'
@@ -1721,7 +1721,7 @@ export function DocumentForms({
                 onClick={() => onSelectSlide(idx)}
                 type="button"
               >
-                {idx + 1}. {s.title.replace(/^\d+\.\s*/, '').slice(0, 16)}
+                {idx + 1}. {s.title.replace(/^\d+\.\s*/, '')}
               </button>
             ))}
           </div>
