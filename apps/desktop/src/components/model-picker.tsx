@@ -5,8 +5,8 @@ import type { ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/
 
 import type { HermesGateway } from '../hermes'
 import { getGlobalModelOptions } from '../hermes'
+import { IS_LOCKED_DEMO } from '../lib/platform'
 import { cn } from '../lib/utils'
-import { startManualOnboarding } from '../store/onboarding'
 
 import { InlineNotice } from './notifications'
 import { Button } from './ui/button'
@@ -89,8 +89,8 @@ export function ModelPickerDialog({
   // model-confirm) instead of duplicating provider UI here. Closes the picker
   // so the onboarding overlay (z-1300) isn't rendered underneath it.
   const addProvider = () => {
-    startManualOnboarding()
     onOpenChange(false)
+    window.location.hash = '#/settings?tab=keys'
   }
 
   return (
@@ -138,9 +138,11 @@ export function ModelPickerDialog({
           </label>
 
           <div className="flex items-center gap-2">
-            <Button onClick={addProvider} variant="ghost">
-              Add provider
-            </Button>
+            {!IS_LOCKED_DEMO && (
+              <Button onClick={addProvider} variant="ghost">
+                Add provider
+              </Button>
+            )}
             <Button onClick={() => onOpenChange(false)} variant="outline">
               Cancel
             </Button>
