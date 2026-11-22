@@ -274,6 +274,19 @@ def _translate_tool_result_to_gemini(
     }
 
 
+def _append_or_merge_gemini_content(
+    contents: List[Dict[str, Any]],
+    role: str,
+    parts: List[Dict[str, Any]],
+) -> None:
+    if not parts:
+        return
+    if contents and contents[-1].get("role") == role and isinstance(contents[-1].get("parts"), list):
+        contents[-1]["parts"].extend(parts)
+    else:
+        contents.append({"role": role, "parts": list(parts)})
+
+
 def _build_gemini_contents(messages: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
     system_text_parts: List[str] = []
     contents: List[Dict[str, Any]] = []
@@ -289,16 +302,15 @@ def _build_gemini_contents(messages: List[Dict[str, Any]]) -> tuple[List[Dict[st
             continue
 
         if role in {"tool", "function"}:
-            contents.append(
-                {
-                    "role": "user",
-                    "parts": [
-                        _translate_tool_result_to_gemini(
-                            msg,
-                            tool_name_by_call_id=tool_name_by_call_id,
-                        )
-                    ],
-                }
+            _append_or_merge_gemini_content(
+                contents,
+                "user",
+                [
+                    _translate_tool_result_to_gemini(
+                        msg,
+                        tool_name_by_call_id=tool_name_by_call_id,
+                    )
+                ],
             )
             continue
 
@@ -319,7 +331,7 @@ def _build_gemini_contents(messages: List[Dict[str, Any]]) -> tuple[List[Dict[st
                     parts.append(_translate_tool_call_to_gemini(tool_call))
 
         if parts:
-            contents.append({"role": gemini_role, "parts": parts})
+            _append_or_merge_gemini_content(contents, gemini_role, parts)
 
     system_instruction = None
     joined_system = "\n".join(part for part in system_text_parts if part).strip()
@@ -901,7 +913,19 @@ class GeminiNativeClient:
             return self._stream_completion(model=model, request=request, timeout=timeout)
 
         url = f"{self.base_url}/models/{model}:generateContent"
-        response = self._http.post(url, json=request, headers=self._headers(), timeout=timeout)
+        try:
+            response = self._http.post(url, json=request, headers=self._headers(), timeout=timeout)
+        except httpx.TimeoutException as exc:
+            raise GeminiAPIError(
+                f"Gemini request timed out: {exc}",
+                code="gemini_timeout",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GeminiAPIError(
+                f"Gemini request failed: {exc}",
+                code="gemini_http_error",
+                status_code=503,
+            ) from exc
         if response.status_code != 200:
             raise gemini_http_error(response)
         try:
@@ -930,10 +954,16 @@ class GeminiNativeClient:
                     for event in _iter_sse_events(response):
                         for chunk in translate_stream_event(event, model, tool_call_indices):
                             yield chunk
+            except httpx.TimeoutException as exc:
+                raise GeminiAPIError(
+                    f"Gemini streaming request timed out: {exc}",
+                    code="gemini_stream_timeout",
+                ) from exc
             except httpx.HTTPError as exc:
                 raise GeminiAPIError(
                     f"Gemini streaming request failed: {exc}",
                     code="gemini_stream_error",
+                    status_code=503,
                 ) from exc
 
         return _generator()

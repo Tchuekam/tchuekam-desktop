@@ -524,9 +524,153 @@ def interruptible_api_call(agent, api_kwargs: dict):
 
 
 
+_LOW_TPM_CORE_TOOLS = frozenset({
+    "terminal",
+    "read_file",
+    "read_document",
+    "write_file",
+    "patch",
+    "search_files",
+    "web_search",
+    "web_extract",
+    "todo",
+    "memory",
+    "clarify",
+    "execute_code",
+    "delegate_task",
+})
+
+
+def _compact_payload_for_low_tpm(
+    agent,
+    api_messages: list,
+    tools_for_api: list | None,
+) -> tuple[list, list | None]:
+    """Slim down verbose tool schemas and system prompt for low-TPM & local MbowaGPT providers."""
+    provider = str(getattr(agent, "provider", "") or "").strip().lower()
+    base_url = str(getattr(agent, "base_url", "") or "").strip().lower()
+
+    if provider == "mbowagpt":
+        try:
+            from agent.connectivity import get_connectivity_monitor
+            from agent.mbowagpt_router import (
+                build_compact_local_system_prompt,
+                filter_tools_for_local_runtime,
+            )
+
+            role_id = (
+                getattr(agent, "_active_mbowagpt_role", None)
+                or getattr(agent, "model", None)
+                or "mbowagpt"
+            )
+            offline = get_connectivity_monitor().is_offline()
+            compacted_tools = (
+                filter_tools_for_local_runtime(
+                    tools_for_api,
+                    offline=offline,
+                    role_id=role_id,
+                    max_tools=8,
+                )
+                if isinstance(tools_for_api, list)
+                else tools_for_api
+            )
+            local_sys = build_compact_local_system_prompt(
+                role_id=role_id,
+                offline=offline,
+                platform=getattr(agent, "platform", None) or "desktop",
+            )
+            compacted_messages = api_messages
+            if (
+                isinstance(api_messages, list)
+                and api_messages
+                and isinstance(api_messages[0], dict)
+                and api_messages[0].get("role") == "system"
+            ):
+                compacted_messages = [
+                    {**api_messages[0], "content": local_sys},
+                    *api_messages[1:],
+                ]
+            elif isinstance(api_messages, list):
+                compacted_messages = [{"role": "system", "content": local_sys}, *api_messages]
+            return compacted_messages, compacted_tools
+        except Exception:
+            pass
+
+    force_compact = bool(getattr(agent, "_compact_payload_for_low_tpm", False))
+    is_groq = provider == "groq" or "groq.com" in base_url
+    if not (is_groq or force_compact):
+        return api_messages, tools_for_api
+
+    est_tokens = estimate_request_context_tokens(
+        {"messages": api_messages, "tools": tools_for_api or []}
+    )
+    if not force_compact and est_tokens <= 5500:
+        return api_messages, tools_for_api
+
+    compacted_tools = tools_for_api
+    if isinstance(tools_for_api, list) and tools_for_api:
+        filtered = [
+            t for t in tools_for_api
+            if isinstance(t, dict)
+            and ((t.get("function") or {}).get("name") in _LOW_TPM_CORE_TOOLS)
+        ]
+        if not filtered:
+            filtered = tools_for_api[:8]
+        slim_tools = []
+        for t in filtered[:10]:
+            fn = t.get("function")
+            if not isinstance(fn, dict):
+                slim_tools.append(t)
+                continue
+            desc = str(fn.get("description") or "").strip()
+            first_line = desc.split("\n", 1)[0].split(". ", 1)[0][:100]
+            params = fn.get("parameters")
+            slim_params = params
+            if isinstance(params, dict) and isinstance(params.get("properties"), dict):
+                slim_props = {}
+                for pk, pv in params["properties"].items():
+                    if isinstance(pv, dict):
+                        pv_copy = {k: v for k, v in pv.items() if k != "description"}
+                        pdesc = str(pv.get("description") or "").strip()
+                        if pdesc:
+                            pv_copy["description"] = pdesc.split("\n", 1)[0][:60]
+                        slim_props[pk] = pv_copy
+                    else:
+                        slim_props[pk] = pv
+                slim_params = {**params, "properties": slim_props}
+            slim_tools.append({
+                **t,
+                "function": {
+                    **fn,
+                    "description": first_line,
+                    **({"parameters": slim_params} if slim_params is not None else {}),
+                },
+            })
+        compacted_tools = slim_tools
+
+    compacted_messages = api_messages
+    max_sys_chars = 2800 if is_groq else 3600
+    if (
+        isinstance(api_messages, list)
+        and api_messages
+        and isinstance(api_messages[0], dict)
+        and api_messages[0].get("role") == "system"
+    ):
+        sys_content = api_messages[0].get("content")
+        if isinstance(sys_content, str) and len(sys_content) > max_sys_chars:
+            compacted_messages = [
+                {**api_messages[0], "content": sys_content[:max_sys_chars]},
+                *api_messages[1:],
+            ]
+
+    return compacted_messages, compacted_tools
+
+
 def build_api_kwargs(agent, api_messages: list) -> dict:
     """Build the keyword arguments dict for the active API mode."""
-    tools_for_api = agent.tools
+    api_messages, tools_for_api = _compact_payload_for_low_tpm(
+        agent, api_messages, agent.tools
+    )
 
     if agent.api_mode == "anthropic_messages":
         _transport = agent._get_transport()
@@ -712,9 +856,14 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
         # (e.g. DeepSeek, Kimi). The legacy path below already does this, but
         # registered providers with profiles were bypassing the strip.
         api_messages = agent._prepare_messages_for_non_vision_model(api_messages)
+        _wire_model = (
+            getattr(agent, "_local_served_model", None) or agent.model
+            if (agent.provider or "").strip().lower() == "mbowagpt"
+            else agent.model
+        )
 
         return _ct.build_kwargs(
-            model=agent.model,
+            model=_wire_model,
             messages=api_messages,
             tools=tools_for_api,
             base_url=agent.base_url,
@@ -744,9 +893,14 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
 
     # Strip image parts for non-vision models (no-op when vision-capable).
     _msgs_for_chat = agent._prepare_messages_for_non_vision_model(api_messages)
+    _wire_model = (
+        getattr(agent, "_local_served_model", None) or agent.model
+        if (agent.provider or "").strip().lower() == "mbowagpt"
+        else agent.model
+    )
 
     return _ct.build_kwargs(
-        model=agent.model,
+        model=_wire_model,
         messages=_msgs_for_chat,
         tools=tools_for_api,
         base_url=agent.base_url,
@@ -757,7 +911,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
         reasoning_config=agent.reasoning_config,
         request_overrides=agent.request_overrides,
         session_id=getattr(agent, "session_id", None),
-        model_lower=(agent.model or "").lower(),
+        model_lower=(_wire_model or "").lower(),
         is_openrouter=_is_or,
         is_nous=_is_nous,
         is_qwen_portal=_is_qwen,
@@ -904,7 +1058,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
     #     so ``_copy_reasoning_content_for_api``'s cross-provider leak
     #     guard (#15748) and ``reasoning``→``reasoning_content``
     #     promotion tiers still apply at replay time.
-    if "reasoning_content" not in msg and reasoning_text:
+    if "reasoning_content" not in msg and reasoning_text and not agent._provider_rejects_reasoning_content():
         msg["reasoning_content"] = reasoning_text
 
     if hasattr(assistant_message, 'reasoning_details') and assistant_message.reasoning_details:
@@ -1151,6 +1305,8 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         # entries with different routing) the pool is preserved.
         _existing_pool = getattr(agent, "_credential_pool", None)
         if _existing_pool is not None:
+            if isinstance(getattr(agent, "_primary_runtime", None), dict):
+                agent._primary_runtime.setdefault("credential_pool", _existing_pool)
             _pool_provider = (getattr(_existing_pool, "provider", "") or "").strip().lower()
             if _pool_provider and _pool_provider != fb_provider:
                 logger.info(
@@ -1159,6 +1315,22 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
                     fb_provider, fb_model, _pool_provider,
                 )
                 agent._credential_pool = None
+        if getattr(agent, "_credential_pool", None) is None and not fb_api_key_hint:
+            try:
+                from agent.credential_pool import load_pool
+                _fb_pool = load_pool(fb_provider)
+                if (
+                    _fb_pool is not None
+                    and _fb_pool.has_credentials()
+                    and len(getattr(_fb_pool, "entries", []) or []) > 1
+                ):
+                    agent._credential_pool = _fb_pool
+                    logger.info(
+                        "Fallback to %s/%s: attached multi-key credential pool (%d entries)",
+                        fb_provider, fb_model, len(_fb_pool.entries),
+                    )
+            except Exception:
+                pass
 
         # Honor per-provider / per-model request_timeout_seconds for the
         # fallback target (same knob the primary client uses).  None = use
@@ -1683,16 +1855,29 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             else float(os.getenv("HERMES_API_TIMEOUT", 1800.0))
         )
         # Read timeout: config wins here too.  Otherwise use
-        # HERMES_STREAM_READ_TIMEOUT (default 120s) for cloud providers.
+        # HERMES_STREAM_READ_TIMEOUT (default 120s, or 25s when fast fallback/pool
+        # recovery is available) for cloud providers.
+        _has_fast_recovery = bool(
+            agent._has_pending_fallback()
+            or not getattr(agent, "_auto_fallback_checked", False)
+            or getattr(agent, "_credential_pool", None) is not None
+        )
         if _provider_timeout_cfg is not None:
             _stream_read_timeout = _provider_timeout_cfg
         else:
-            _stream_read_timeout = float(os.getenv("HERMES_STREAM_READ_TIMEOUT", 120.0))
+            _default_stream_read_timeout = 25.0 if _has_fast_recovery else 120.0
+            _stream_read_timeout = float(
+                os.getenv("HERMES_STREAM_READ_TIMEOUT", _default_stream_read_timeout)
+            )
             # Local providers (Ollama, llama.cpp, vLLM) can take minutes for
             # prefill on large contexts before producing the first token.
             # Auto-increase the httpx read timeout unless the user explicitly
             # overrode HERMES_STREAM_READ_TIMEOUT.
-            if _stream_read_timeout == 120.0 and agent.base_url and is_local_endpoint(agent.base_url):
+            if (
+                "HERMES_STREAM_READ_TIMEOUT" not in os.environ
+                and agent.base_url
+                and is_local_endpoint(agent.base_url)
+            ):
                 _stream_read_timeout = _base_timeout
                 logger.debug(
                     "Local provider detected (%s) — stream read timeout raised to %.0fs",
@@ -1700,7 +1885,11 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 )
         # Cap connect/pool at 60s even when provider timeout is higher.
         # connect/pool cover TCP handshake, not model inference.
-        _conn_cap = min(_base_timeout, 60.0) if _provider_timeout_cfg is not None else 30.0
+        _conn_cap = (
+            min(_base_timeout, 60.0)
+            if _provider_timeout_cfg is not None
+            else (10.0 if _has_fast_recovery else 30.0)
+        )
         stream_kwargs = {
             **api_kwargs,
             "stream": True,
@@ -2043,7 +2232,13 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     def _call():
         import httpx as _httpx
 
-        _max_stream_retries = int(os.getenv("HERMES_STREAM_RETRIES", 2))
+        _has_fast_recovery = bool(
+            agent._has_pending_fallback()
+            or not getattr(agent, "_auto_fallback_checked", False)
+            or getattr(agent, "_credential_pool", None) is not None
+        )
+        _default_stream_retries = 0 if _has_fast_recovery else 2
+        _max_stream_retries = int(os.getenv("HERMES_STREAM_RETRIES", _default_stream_retries))
 
         try:
             for _stream_attempt in range(_max_stream_retries + 1):

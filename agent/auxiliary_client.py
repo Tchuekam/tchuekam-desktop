@@ -3475,6 +3475,24 @@ def resolve_provider_client(
         return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
                 else (client, final_model))
 
+    # ── MbowaGPT Local Intelligence Runtime ──────────────────────────
+    if provider == "mbowagpt":
+        try:
+            from openai import OpenAI as _OpenAI
+            from agent.local_runtime import MBOWAGPT_AUTO_MODEL_ID, canonicalize_mbowagpt_model, get_local_runtime_manager
+
+            req_role = canonicalize_mbowagpt_model(model or "mbowagpt")
+            if req_role == MBOWAGPT_AUTO_MODEL_ID:
+                req_role = "mbowagpt"
+            ep = get_local_runtime_manager().ensure_started(req_role)
+            client = _OpenAI(api_key=ep.api_key, base_url=ep.base_url)
+            final_model = ep.served_model if ep.backend == "ollama" else (model or ep.model_id)
+            return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
+                    else (client, final_model))
+        except Exception as exc:
+            logger.warning("resolve_provider_client: mbowagpt unavailable (%s)", exc)
+            return None, None
+
     # ── OpenRouter ───────────────────────────────────────────
     if provider == "openrouter":
         client, default = _try_openrouter(explicit_api_key=explicit_api_key)

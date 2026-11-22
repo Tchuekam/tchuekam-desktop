@@ -1080,27 +1080,35 @@ def _looks_like_cuda_lib_error(exc: BaseException) -> bool:
 
 
 def _load_local_whisper_model(model_name: str):
-    """Load faster-whisper with graceful CUDA → CPU fallback.
-
-    faster-whisper's ``device="auto"`` picks CUDA when the ctranslate2 wheel
-    ships CUDA shared libs, even on hosts where the NVIDIA runtime
-    (``libcublas.so.12`` / ``libcudnn*``) isn't installed — common on WSL2
-    without CUDA-on-WSL, headless servers, and CPU-only developer machines.
-    On those hosts the load itself sometimes succeeds and the dlopen failure
-    only surfaces at first ``transcribe()`` call.
-
-    We try ``auto`` first (fast CUDA path when it works), and on any CUDA
-    library load failure fall back to CPU + int8.
-    """
+    """Load faster-whisper locally first (offline-safe), with CUDA -> CPU int8 fallback."""
     from faster_whisper import WhisperModel
+
+    # Try local cache first so offline sessions never hang probing HuggingFace
+    for device, compute_type in (("auto", "auto"), ("cpu", "int8")):
+        try:
+            return WhisperModel(
+                model_name,
+                device=device,
+                compute_type=compute_type,
+                local_files_only=True,
+            )
+        except Exception as exc:
+            if _looks_like_cuda_lib_error(exc) and device == "auto":
+                logger.warning(
+                    "faster-whisper CUDA load failed (%s) — falling back to CPU (int8).",
+                    exc,
+                )
+                continue
+            break
+
+    # Fall back to standard download/load when cache is not yet populated
     try:
         return WhisperModel(model_name, device="auto", compute_type="auto")
     except Exception as exc:
         if not _looks_like_cuda_lib_error(exc):
             raise
         logger.warning(
-            "faster-whisper CUDA load failed (%s) — falling back to CPU (int8). "
-            "Install the NVIDIA CUDA runtime (libcublas/libcudnn) to use GPU.",
+            "faster-whisper CUDA load failed (%s) — falling back to CPU (int8).",
             exc,
         )
         return WhisperModel(model_name, device="cpu", compute_type="int8")
@@ -1165,6 +1173,79 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error("Local transcription failed: %s", e, exc_info=True)
         return {"success": False, "transcript": "", "error": f"Local transcription failed: {e}"}
+
+
+def transcribe_pcm_bytes(
+    pcm_16k_int16: bytes,
+    language: Optional[str] = None,
+    model_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Transcribe raw 16kHz mono 16-bit signed PCM directly with local faster-whisper."""
+    global _local_model, _local_model_name
+
+    if not pcm_16k_int16 or len(pcm_16k_int16) < 1600:
+        return {"success": False, "transcript": "", "error": "empty transcript"}
+
+    if not _HAS_FASTER_WHISPER:
+        if not _try_lazy_install_stt():
+            return {"success": False, "transcript": "", "error": "faster-whisper not installed"}
+
+    try:
+        import numpy as np
+
+        stt_cfg = _load_stt_config()
+        local_cfg = stt_cfg.get("local", {}) if isinstance(stt_cfg, dict) else {}
+        resolved_model = _normalize_local_model(
+            model_name or local_cfg.get("model", DEFAULT_LOCAL_MODEL)
+        )
+        if _local_model is None or _local_model_name != resolved_model:
+            _local_model = _load_local_whisper_model(resolved_model)
+            _local_model_name = resolved_model
+
+        usable = len(pcm_16k_int16) - (len(pcm_16k_int16) % 2)
+        audio_f32 = (
+            np.frombuffer(pcm_16k_int16[:usable], dtype=np.int16).astype(np.float32)
+            / 32768.0
+        )
+
+        forced_lang = (
+            (None if not language or language == "auto" else language)
+            or local_cfg.get("language")
+            or os.getenv(LOCAL_STT_LANGUAGE_ENV)
+            or None
+        )
+        kwargs: Dict[str, Any] = {
+            "beam_size": 3,
+            "vad_filter": True,
+        }
+        if forced_lang:
+            kwargs["language"] = forced_lang
+
+        try:
+            segments, info = _local_model.transcribe(audio_f32, **kwargs)
+            transcript = " ".join(seg.text.strip() for seg in segments if seg.text)
+        except Exception as exc:
+            if not _looks_like_cuda_lib_error(exc):
+                raise
+            from faster_whisper import WhisperModel
+            _local_model = WhisperModel(resolved_model, device="cpu", compute_type="int8", local_files_only=True)
+            _local_model_name = resolved_model
+            segments, info = _local_model.transcribe(audio_f32, **kwargs)
+            transcript = " ".join(seg.text.strip() for seg in segments if seg.text)
+
+        transcript = transcript.strip()
+        if not transcript:
+            return {"success": False, "transcript": "", "error": "empty transcript"}
+
+        return {
+            "success": True,
+            "transcript": transcript,
+            "provider": "local",
+            "language": getattr(info, "language", None),
+        }
+    except Exception as exc:
+        logger.warning("transcribe_pcm_bytes failed: %s", exc)
+        return {"success": False, "transcript": "", "error": str(exc)}
 
 
 def _prepare_local_audio(file_path: str, work_dir: str) -> tuple[Optional[str], Optional[str]]:
@@ -1770,6 +1851,19 @@ def transcribe_audio(
 
     provider = _get_provider(stt_config)
     strict_provider = bool(isinstance(stt_config, dict) and stt_config.get("strict_provider"))
+    if (
+        not strict_provider
+        and provider not in {"local", "local_command"}
+        and _HAS_FASTER_WHISPER
+    ):
+        try:
+            from agent.connectivity import get_connectivity_monitor
+            _mon = get_connectivity_monitor()
+            if _mon.get_mode() == "local" or _mon.is_offline(force_probe=False):
+                logger.info("Offline / local intelligence active; routing STT directly via local faster-whisper")
+                provider = "local"
+        except Exception:
+            pass
     effective_fallback = (
         not strict_provider
         and (allow_fallback or not bool(os.environ.get("PYTEST_CURRENT_TEST")))

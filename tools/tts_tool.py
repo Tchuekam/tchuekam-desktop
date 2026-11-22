@@ -238,6 +238,7 @@ PROVIDER_MAX_TEXT_LENGTH: Dict[str, int] = {
     "neutts": 2000,       # local model, quality falls off on long text
     "kittentts": 2000,    # local 25MB model
     "piper": 5000,        # local VITS model, phoneme-based; practical cap
+    "kokoro": 5000,       # local Kokoro-ONNX v1.0 neural voice engine
 }
 
 # ElevenLabs caps vary by model_id. https://elevenlabs.io/docs/overview/models
@@ -384,6 +385,7 @@ BUILTIN_TTS_PROVIDERS = frozenset({
     "neutts",
     "kittentts",
     "piper",
+    "kokoro",
 })
 
 DEFAULT_COMMAND_TTS_TIMEOUT_SECONDS = 120
@@ -1876,6 +1878,189 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
 
 
 # ===========================================================================
+# Provider: Kokoro-ONNX (local neural EN/FR streaming & batch TTS)
+# ===========================================================================
+
+_kokoro_lock = threading.Lock()
+_kokoro_instance: Any = None
+_kokoro_loaded_paths: Optional[tuple[str, str]] = None
+
+DEFAULT_KOKORO_VOICE_EN = "bm_george"
+DEFAULT_KOKORO_VOICE_FR = "ff_siwis"
+_FRENCH_HINT_RE = re.compile(
+    r"[àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]|\b(?:bonjour|bonsoir|salut|merci|comment|pourquoi|avec|dans|pour|une|est|sont|votre|notre|nous|vous|je|tu|c'est|qu'il|d'un)\b",
+    re.I,
+)
+
+
+def _get_kokoro_models_dir(tts_config: Optional[Dict[str, Any]] = None) -> Path:
+    cfg_dir = ""
+    if isinstance(tts_config, dict):
+        k_cfg = tts_config.get("kokoro", {})
+        if isinstance(k_cfg, dict):
+            cfg_dir = str(k_cfg.get("models_dir") or "").strip()
+    env_dir = (os.getenv("HERMES_KOKORO_MODELS_DIR") or "").strip()
+    candidates: list[Path] = []
+    if cfg_dir:
+        candidates.append(Path(cfg_dir).expanduser())
+    if env_dir:
+        candidates.append(Path(env_dir).expanduser())
+    try:
+        from hermes_constants import get_hermes_home
+        candidates.append(Path(get_hermes_home()) / "models" / "kokoro")
+    except Exception:
+        pass
+    localappdata = os.getenv("LOCALAPPDATA")
+    if localappdata:
+        candidates.append(Path(localappdata) / "hermes" / "models" / "kokoro")
+    candidates.append(Path.home() / ".hermes" / "models" / "kokoro")
+
+    for d in candidates:
+        if (d / "voices-v1.0.bin").is_file() and (
+            (d / "kokoro-v1.0.int8.onnx").is_file() or (d / "kokoro-v1.0.onnx").is_file()
+        ):
+            return d
+    return candidates[0]
+
+
+def _resolve_kokoro_paths(tts_config: Optional[Dict[str, Any]] = None) -> Optional[tuple[str, str]]:
+    models_dir = _get_kokoro_models_dir(tts_config)
+    voices_path = models_dir / "voices-v1.0.bin"
+    if not voices_path.is_file():
+        return None
+    for onnx_name in ("kokoro-v1.0.int8.onnx", "kokoro-v1.0.onnx"):
+        model_path = models_dir / onnx_name
+        if model_path.is_file():
+            return str(model_path), str(voices_path)
+    return None
+
+
+def _check_kokoro_available(tts_config: Optional[Dict[str, Any]] = None) -> bool:
+    try:
+        import importlib.util
+        if importlib.util.find_spec("kokoro_onnx") is None:
+            return False
+        return _resolve_kokoro_paths(tts_config) is not None
+    except Exception:
+        return False
+
+
+def _get_kokoro_instance(tts_config: Optional[Dict[str, Any]] = None) -> Any:
+    global _kokoro_instance, _kokoro_loaded_paths
+    paths = _resolve_kokoro_paths(tts_config)
+    if paths is None:
+        raise RuntimeError(
+            "Kokoro-ONNX models not found. Expected kokoro-v1.0.int8.onnx and voices-v1.0.bin in ~/.hermes/models/kokoro/"
+        )
+    with _kokoro_lock:
+        if _kokoro_instance is not None and _kokoro_loaded_paths == paths:
+            return _kokoro_instance
+        from kokoro_onnx import Kokoro
+        logger.info("[Kokoro] Loading offline neural voice engine from %s", paths[0])
+        _kokoro_instance = Kokoro(paths[0], paths[1])
+        _kokoro_loaded_paths = paths
+        return _kokoro_instance
+
+
+def _pick_kokoro_voice_and_lang(
+    text: str,
+    tts_config: Optional[Dict[str, Any]],
+    kokoro_instance: Any,
+) -> tuple[str, str, float]:
+    k_cfg = (tts_config or {}).get("kokoro", {}) if isinstance(tts_config, dict) else {}
+    if not isinstance(k_cfg, dict):
+        k_cfg = {}
+    is_fr = bool(_FRENCH_HINT_RE.search(text or ""))
+    configured_voice = str(k_cfg.get("voice") or "").strip()
+    configured_fr = str(k_cfg.get("voice_fr") or DEFAULT_KOKORO_VOICE_FR).strip()
+    if is_fr:
+        lang = "fr-fr"
+        voice = configured_fr or DEFAULT_KOKORO_VOICE_FR
+    else:
+        lang = "en-us"
+        voice = configured_voice or DEFAULT_KOKORO_VOICE_EN
+
+    try:
+        available = kokoro_instance.get_voices()
+        if available and voice not in available:
+            voice = available[0]
+    except Exception:
+        pass
+    try:
+        speed = float(k_cfg.get("speed") or 1.05)
+    except (TypeError, ValueError):
+        speed = 1.05
+    speed = max(0.6, min(1.8, speed))
+    return voice, lang, speed
+
+
+def _write_wav_from_float32(wav_path: str, samples: Any, sample_rate: int) -> None:
+    import numpy as np
+    import wave
+
+    arr = np.asarray(samples, dtype=np.float32).reshape(-1)
+    pcm16 = (np.clip(arr, -1.0, 1.0) * 32767.0).astype("<i2")
+    with wave.open(wav_path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(int(sample_rate))
+        wf.writeframes(pcm16.tobytes())
+
+
+def _generate_kokoro_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
+    """Generate offline speech with Kokoro-ONNX (~24kHz) without cloud calls."""
+    kokoro = _get_kokoro_instance(tts_config)
+    voice, lang, speed = _pick_kokoro_voice_and_lang(text, tts_config, kokoro)
+    samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang)
+
+    wav_path = output_path if output_path.lower().endswith(".wav") else (output_path.rsplit(".", 1)[0] + ".wav")
+    _write_wav_from_float32(wav_path, samples, sample_rate)
+
+    if wav_path != output_path:
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            conv_cmd = [ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path]
+            subprocess.run(conv_cmd, check=True, timeout=30)
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
+            return output_path
+        # No ffmpeg — return WAV path cleanly so extension matches real file header
+        return wav_path
+    return output_path
+
+
+async def stream_kokoro_pcm(
+    text: str,
+    tts_config: Optional[Dict[str, Any]] = None,
+):
+    """Async generator yielding ``(int16_pcm_bytes, sample_rate)`` chunks with ultra-low latency."""
+    import numpy as np
+
+    cfg = tts_config if tts_config is not None else _load_tts_config()
+    kokoro = _get_kokoro_instance(cfg)
+    voice, lang, speed = _pick_kokoro_voice_and_lang(text, cfg, kokoro)
+    async for samples, sample_rate in kokoro.create_stream(text, voice=voice, speed=speed, lang=lang):
+        arr = np.asarray(samples, dtype=np.float32).reshape(-1)
+        if arr.size == 0:
+            continue
+        pcm16 = (np.clip(arr, -1.0, 1.0) * 32767.0).astype("<i2")
+        yield pcm16.tobytes(), int(sample_rate)
+
+
+def _cleanup_empty_audio_file(path_str: str) -> None:
+    """Remove 0-byte leftover audio files so stale empty MP3/WAV files never remain in cache."""
+    if not path_str:
+        return
+    try:
+        if os.path.isfile(path_str) and os.path.getsize(path_str) == 0:
+            os.remove(path_str)
+    except OSError:
+        pass
+
+
+# ===========================================================================
 # Provider Circuit Breaker & Multi-Provider Fallback Chain
 # ===========================================================================
 _tts_circuit_lock = threading.Lock()
@@ -2064,6 +2249,9 @@ def _get_available_fallback_tts_providers(
     if get_env_value("MISTRAL_API_KEY") and importlib.util.find_spec("mistralai") is not None:
         _add("mistral")
 
+    if _check_kokoro_available(tts_config):
+        _add("kokoro")
+
     if _check_piper_available():
         _add("piper")
 
@@ -2117,6 +2305,8 @@ def _run_fallback_tts_provider(
         return _generate_minimax_tts(fb_text, file_str, tts_config)
     if fb_provider == "mistral":
         return _generate_mistral_tts(fb_text, file_str, tts_config)
+    if fb_provider == "kokoro":
+        return _generate_kokoro_tts(fb_text, file_str, tts_config)
     if fb_provider == "piper":
         return _generate_piper_tts(fb_text, file_str, tts_config)
     if fb_provider == "kittentts":
@@ -2176,6 +2366,22 @@ def text_to_speech_tool(
     # so a user's ``tts.providers.openai.command`` can't override the real
     # OpenAI handler.
     command_provider_config = _resolve_command_provider_config(provider, tts_config)
+
+    # Fast-route to local neural Kokoro TTS when offline or local intelligence mode is active
+    if (
+        not strict_provider
+        and command_provider_config is None
+        and provider not in {"kokoro", "piper", "kittentts", "neutts", "system"}
+        and _check_kokoro_available(tts_config)
+    ):
+        try:
+            from agent.connectivity import get_connectivity_monitor
+            _mon = get_connectivity_monitor()
+            if _mon.get_mode() == "local" or _mon.is_offline(force_probe=False):
+                logger.info("Offline / local mode active; routing TTS from '%s' to local Kokoro-ONNX", provider)
+                provider = "kokoro"
+        except Exception:
+            pass
 
     # Truncate very long text with a warning. The cap is per-provider
     # (OpenAI 4096, xAI 15k, MiniMax 10k, ElevenLabs model-aware, etc.).
@@ -2381,6 +2587,17 @@ def text_to_speech_tool(
                     logger.info("Generating speech with KittenTTS (local, ~25MB)...")
                     _generate_kittentts(text, file_str, tts_config)
 
+                elif provider == "kokoro":
+                    if not _check_kokoro_available(tts_config):
+                        if not effective_fallback:
+                            return json.dumps({
+                                "success": False,
+                                "error": "Kokoro provider selected but kokoro-onnx or local model files are unavailable."
+                            }, ensure_ascii=False)
+                        raise RuntimeError("Kokoro provider is not available locally.")
+                    logger.info("Generating speech with Kokoro-ONNX (local neural)...")
+                    file_str = _generate_kokoro_tts(text, file_str, tts_config)
+
                 elif provider == "piper":
                     try:
                         _import_piper()
@@ -2456,6 +2673,7 @@ def text_to_speech_tool(
 
         # Check the file was actually created
         if not os.path.exists(file_str) or os.path.getsize(file_str) == 0:
+            _cleanup_empty_audio_file(file_str)
             return json.dumps({
                 "success": False,
                 "error": f"TTS generation produced no output (provider: {provider})"
@@ -2490,7 +2708,7 @@ def text_to_speech_tool(
                 voice_compatible = file_str.endswith(".ogg")
         elif (
             want_opus
-            and provider in {"edge", "neutts", "minimax", "xai", "kittentts", "piper", "system"}
+            and provider in {"edge", "neutts", "minimax", "xai", "kittentts", "piper", "kokoro", "system"}
             and not file_str.endswith(".ogg")
         ):
             opus_path = _convert_to_opus(file_str)
@@ -2521,16 +2739,19 @@ def text_to_speech_tool(
         return json.dumps(response_payload, ensure_ascii=False)
 
     except ValueError as e:
+        _cleanup_empty_audio_file(file_str)
         # Configuration errors (missing API keys, etc.)
         error_msg = f"TTS configuration error ({provider}): {e}"
         logger.error("%s", error_msg)
         return tool_error(error_msg, success=False)
     except FileNotFoundError as e:
+        _cleanup_empty_audio_file(file_str)
         # Missing dependencies or files
         error_msg = f"TTS dependency missing ({provider}): {e}"
         logger.error("%s", error_msg, exc_info=True)
         return tool_error(error_msg, success=False)
     except Exception as e:
+        _cleanup_empty_audio_file(file_str)
         # Unexpected errors
         error_msg = f"TTS generation failed ({provider}): {e}"
         logger.error("%s", error_msg, exc_info=True)
@@ -2585,6 +2806,8 @@ def check_tts_requirements() -> bool:
             return True
     except ImportError:
         pass
+    if _check_kokoro_available():
+        return True
     if _check_neutts_available():
         return True
     if _check_kittentts_available():

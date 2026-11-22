@@ -133,7 +133,10 @@ def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, An
     agent.request_overrides = overrides
 
 
-def _resolve_auto_fallback_chain(primary_provider: str) -> List[Dict[str, str]]:
+def _resolve_auto_fallback_chain(
+    primary_provider: str,
+    primary_model: str = "",
+) -> List[Dict[str, str]]:
     """Build an emergency fallback provider chain from the configured env keys.
 
     Module scope is load-bearing: agent/conversation_loop.py imports this by
@@ -142,6 +145,17 @@ def _resolve_auto_fallback_chain(primary_provider: str) -> List[Dict[str, str]]:
     outside and never called locally — so that import raised ImportError on
     the first 429 and took the whole turn down instead of failing over.
     """
+    try:
+        from hermes_cli.fallback_config import resolve_effective_fallback_chain
+        resolved = resolve_effective_fallback_chain(
+            primary_provider=primary_provider,
+            primary_model=primary_model,
+        )
+        if resolved:
+            return resolved
+    except Exception:
+        pass
+
     try:
         from hermes_cli.config import load_env
         env = load_env()
@@ -157,22 +171,26 @@ def _resolve_auto_fallback_chain(primary_provider: str) -> List[Dict[str, str]]:
 
     # 1. Groq (Fast & generous rate limits)
     if primary != "groq" and (_has_key("GROQ_API_KEY") or _has_key("GROQ_API_KEYS")):
+        chain.append({"provider": "groq", "model": "openai/gpt-oss-120b"})
+        chain.append({"provider": "groq", "model": "qwen/qwen3.8-27b"})
         chain.append({"provider": "groq", "model": "llama-3.3-70b-versatile"})
 
     # 2. OpenRouter
     if primary != "openrouter" and (_has_key("OPENROUTER_API_KEY") or _has_key("OPENROUTER_API_KEYS")):
-        chain.append({"provider": "openrouter", "model": "google/gemini-2.0-flash-001"})
+        chain.append({"provider": "openrouter", "model": "google/gemini-2.5-flash"})
 
     # 3. Google Gemini
-    if primary not in {"gemini", "google-gemini-cli"} and (_has_key("GOOGLE_API_KEY") or _has_key("GEMINI_API_KEY")):
-        chain.append({"provider": "gemini", "model": "gemini-2.0-flash"})
+    if primary not in {"gemini", "google-gemini-cli"} and (
+        _has_key("GOOGLE_API_KEY") or _has_key("GEMINI_API_KEY") or _has_key("GEMINI_API_KEYS")
+    ):
+        chain.append({"provider": "gemini", "model": "gemini-2.5-flash"})
 
     # 4. OpenAI
-    if primary != "openai-api" and _has_key("OPENAI_API_KEY"):
+    if primary != "openai-api" and (_has_key("OPENAI_API_KEY") or _has_key("OPENAI_API_KEYS")):
         chain.append({"provider": "openai-api", "model": "gpt-4o-mini"})
 
     # 5. DeepSeek
-    if primary != "deepseek" and _has_key("DEEPSEEK_API_KEY"):
+    if primary != "deepseek" and (_has_key("DEEPSEEK_API_KEY") or _has_key("DEEPSEEK_API_KEYS")):
         chain.append({"provider": "deepseek", "model": "deepseek-chat"})
 
     return chain
@@ -331,6 +349,15 @@ def init_agent(
     agent.base_url = base_url or ""
     provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
     agent.provider = provider_name or ""
+    if agent.provider == "mbowagpt" or str(model or "").strip().lower().startswith("mbowagpt"):
+        agent._requested_mbowagpt_model = (model or "").strip() or "mbowagpt-auto"
+    else:
+        agent._requested_mbowagpt_model = None
+    agent._active_mbowagpt_role = None
+    agent._active_mbowagpt_route = None
+    agent._local_served_model = None
+    agent._offline_local_fallback_active = False
+    agent.intelligence_callback = None
     agent.acp_command = acp_command or command
     agent.acp_args = list(acp_args or args or [])
     if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}:
@@ -865,6 +892,31 @@ def init_agent(
                                 client_kwargs["default_headers"] = dict(_fb_headers)
                             _fb_resolved = True
                             break
+                    if not _fb_resolved:
+                        _should_try_local_boot = False
+                        try:
+                            from agent.connectivity import get_connectivity_monitor
+                            from agent.local_runtime import get_local_runtime_manager
+                            _mon = get_connectivity_monitor()
+                            _should_try_local_boot = (
+                                (_mon.get_mode() == "local" or _mon.is_offline() or not os.environ.get("PYTEST_CURRENT_TEST"))
+                                and get_local_runtime_manager().is_local_available()
+                            )
+                        except Exception:
+                            pass
+                        if _should_try_local_boot:
+                            _fb_client, _fb_model = resolve_provider_client("mbowagpt", model="mbowagpt-auto", raw_codex=True)
+                            if _fb_client is not None:
+                                agent.provider = "mbowagpt"
+                                agent.model = _fb_model or "mbowagpt-auto"
+                                agent._requested_mbowagpt_model = "mbowagpt-auto"
+                                agent._offline_local_fallback_active = True
+                                agent._fallback_activated = True
+                                client_kwargs = {
+                                    "api_key": _fb_client.api_key,
+                                    "base_url": str(_fb_client.base_url),
+                                }
+                                _fb_resolved = True
                     if not _fb_resolved:
                         raise RuntimeError(
                             f"Provider '{_explicit}' is set in config.yaml but no API key "

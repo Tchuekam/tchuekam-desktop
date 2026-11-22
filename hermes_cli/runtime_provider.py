@@ -1257,6 +1257,22 @@ def resolve_runtime_provider(
         )
         return azure_runtime
 
+    if requested_provider == "mbowagpt":
+        model_cfg = _get_model_config()
+        local_base = (
+            (explicit_base_url or "").strip().rstrip("/")
+            or str(model_cfg.get("base_url") or "").strip().rstrip("/")
+            or "http://127.0.0.1:18080/v1"
+        )
+        return {
+            "provider": "mbowagpt",
+            "api_mode": "chat_completions",
+            "base_url": local_base,
+            "api_key": (explicit_api_key or "").strip() or "local-mbowagpt",
+            "source": "local-runtime",
+            "requested_provider": requested_provider,
+        }
+
     custom_runtime = _resolve_named_custom_runtime(
         requested_provider=requested_provider,
         explicit_api_key=explicit_api_key,

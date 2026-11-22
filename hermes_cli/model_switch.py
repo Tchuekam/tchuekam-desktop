@@ -1273,6 +1273,19 @@ def list_authenticated_providers(
             live = [current_model]
         curated["lmstudio"] = live
 
+    # Always expose MbowaGPT local models whenever local runtime is available
+    try:
+        from agent.local_runtime import get_local_runtime_manager
+        from hermes_cli.models import _PROVIDER_MODELS as _PM
+
+        if "mbowagpt" not in curated and (
+            current_provider.strip().lower() == "mbowagpt"
+            or get_local_runtime_manager().is_local_available()
+        ):
+            curated["mbowagpt"] = list(_PM.get("mbowagpt", ["mbowagpt-auto", "mbowagpt", "mbowagpt-cybertrunk", "mbowagpt-relentless"]))
+    except Exception:
+        pass
+
     # --- 1. Check Hermes-mapped providers ---
     from hermes_cli.models import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
     from hermes_cli.providers import ALIASES as _PROVIDER_ALIAS_TABLE

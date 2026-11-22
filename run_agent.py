@@ -3426,6 +3426,10 @@ class AIAgent:
         self.base_url = runtime_base.rstrip("/") if isinstance(runtime_base, str) else runtime_base
         self._client_kwargs["api_key"] = self.api_key
         self._client_kwargs["base_url"] = self.base_url
+        if not getattr(self, "_fallback_activated", False) and isinstance(getattr(self, "_primary_runtime", None), dict):
+            self._primary_runtime["api_key"] = self.api_key
+            if isinstance(self._primary_runtime.get("client_kwargs"), dict):
+                self._primary_runtime["client_kwargs"]["api_key"] = self.api_key
         self._apply_client_headers_for_base_url(self.base_url)
         self._replace_primary_openai_client(reason="credential_rotation")
 

@@ -951,8 +951,11 @@ def restore_primary_runtime(agent) -> bool:
         )
 
         # ── Reset fallback chain for the new turn ──
+        if "credential_pool" in rt and getattr(agent, "_credential_pool", None) is None:
+            agent._credential_pool = rt["credential_pool"]
         agent._fallback_activated = False
         agent._fallback_index = 0
+        agent._sticky_fallback_active = False
 
         logger.info(
             "Primary runtime restored for new turn: %s (%s)",
@@ -962,6 +965,241 @@ def restore_primary_runtime(agent) -> bool:
     except Exception as e:
         logger.warning("Failed to restore primary runtime: %s", e)
         return False
+
+
+def _emit_intelligence_event(agent, event_payload: dict) -> None:
+    """Invoke optional intelligence_callback on agent safely."""
+    cb = getattr(agent, "intelligence_callback", None)
+    if callable(cb):
+        try:
+            cb(dict(event_payload))
+        except Exception as exc:
+            logger.debug("intelligence_callback failed: %s", exc)
+
+
+def attempt_emergency_local_mbowagpt(
+    agent,
+    user_message: str = "",
+    messages: list | None = None,
+    *,
+    reason: str = "cloud_exhausted",
+) -> bool:
+    """Unified one-shot emergency local failover to MbowaGPT when cloud calls fail."""
+    if (getattr(agent, "provider", "") or "").strip().lower() == "mbowagpt":
+        return False
+    if getattr(agent, "_local_emergency_fallback_attempted", False):
+        return False
+    agent._local_emergency_fallback_attempted = True
+    try:
+        from agent.connectivity import get_connectivity_monitor
+
+        mon = get_connectivity_monitor()
+        if mon.get_mode() != "hybrid":
+            return False
+        return failover_to_local_mbowagpt(
+            agent,
+            user_message,
+            messages,
+            reason=reason,
+            offline=mon.is_offline(),
+        )
+    except Exception:
+        return False
+
+
+def failover_to_local_mbowagpt(
+    agent,
+    user_message: str = "",
+    messages: list | None = None,
+    *,
+    reason: str = "offline",
+    offline: bool | None = None,
+) -> bool:
+    """Activate MbowaGPT local intelligence in-place without losing conversation state."""
+    try:
+        from agent.local_runtime import get_local_runtime_manager
+        from agent.mbowagpt_router import classify_mbowagpt_route
+
+        mgr = get_local_runtime_manager()
+        if not mgr.is_local_available():
+            return False
+
+        route = classify_mbowagpt_route(
+            user_message or "",
+            requested_model=getattr(agent, "_requested_mbowagpt_model", None) or "mbowagpt-auto",
+            history=messages,
+            active_role=getattr(agent, "_active_mbowagpt_role", None),
+        )
+        ep = mgr.ensure_started(route.model_id)
+
+        # Preserve cloud primary runtime snapshot once before switching so connectivity
+        # recovery can restore seamlessly on a future turn.
+        if not getattr(agent, "_primary_runtime", None) and (getattr(agent, "provider", "") or "").lower() != "mbowagpt":
+            _cc = getattr(agent, "context_compressor", None)
+            agent._primary_runtime = {
+                "model": agent.model,
+                "provider": agent.provider,
+                "base_url": agent.base_url,
+                "api_mode": agent.api_mode,
+                "api_key": getattr(agent, "api_key", ""),
+                "client_kwargs": dict(getattr(agent, "_client_kwargs", {}) or {}),
+                "use_prompt_caching": getattr(agent, "_use_prompt_caching", False),
+                "use_native_cache_layout": getattr(agent, "_use_native_cache_layout", False),
+                "compressor_model": getattr(_cc, "model", agent.model) if _cc else agent.model,
+                "compressor_base_url": getattr(_cc, "base_url", agent.base_url) if _cc else agent.base_url,
+                "compressor_api_key": getattr(_cc, "api_key", "") if _cc else "",
+                "compressor_provider": getattr(_cc, "provider", agent.provider) if _cc else agent.provider,
+                "compressor_context_length": getattr(_cc, "context_length", ep.ctx_size) if _cc else ep.ctx_size,
+                "compressor_threshold_tokens": getattr(_cc, "threshold_tokens", int(ep.ctx_size * 0.8)) if _cc else int(ep.ctx_size * 0.8),
+            }
+
+        agent.provider = "mbowagpt"
+        agent.model = route.model_id
+        agent._active_mbowagpt_role = route.model_id
+        agent._active_mbowagpt_route = route
+        agent._local_served_model = ep.served_model
+        agent.base_url = ep.base_url
+        agent.api_key = ep.api_key
+        agent.api_mode = "chat_completions"
+        agent._anthropic_client = None
+        if hasattr(agent, "_transport_cache"):
+            agent._transport_cache.clear()
+        agent._client_kwargs = {"api_key": ep.api_key, "base_url": ep.base_url}
+        agent.client = agent._create_openai_client(
+            dict(agent._client_kwargs),
+            reason=f"mbowagpt_{reason}",
+            shared=True,
+        )
+        cc = getattr(agent, "context_compressor", None)
+        if cc is not None:
+            cc.update_model(
+                model=ep.model_id,
+                context_length=ep.ctx_size,
+                base_url=ep.base_url,
+                api_key=ep.api_key,
+                provider="mbowagpt",
+                api_mode="chat_completions",
+            )
+        agent._fallback_activated = True
+        agent._offline_local_fallback_active = True
+        agent._sticky_fallback_active = True
+
+        try:
+            from agent.auxiliary_client import set_runtime_main
+            set_runtime_main("mbowagpt", ep.model_id, base_url=ep.base_url, api_key=ep.api_key, api_mode="chat_completions")
+        except Exception:
+            pass
+
+        _emit_intelligence_event(agent, {
+            "provider": "mbowagpt",
+            "model": route.model_id,
+            "display_name": route.display_name,
+            "specialist_key": route.specialist_key,
+            "reason": reason or route.reason,
+            "offline": bool(offline),
+            "tier": "local",
+        })
+        return True
+    except Exception as exc:
+        logger.warning("failover_to_local_mbowagpt failed: %s", exc)
+        return False
+
+
+def prepare_turn_intelligence(agent, user_message: str, messages: list | None = None) -> None:
+    """Coordinate online/offline transitions and MbowaGPT specialist routing before a turn."""
+    try:
+        from agent.connectivity import get_connectivity_monitor
+        from agent.local_runtime import get_local_runtime_manager
+        from agent.mbowagpt_router import classify_mbowagpt_route
+
+        monitor = get_connectivity_monitor()
+        mode = monitor.get_mode()
+        mgr = get_local_runtime_manager()
+
+        # Restore primary cloud runtime automatically when connectivity returns in hybrid mode
+        if (
+            getattr(agent, "_offline_local_fallback_active", False)
+            and mode == "hybrid"
+            and monitor.is_online(force_probe=True)
+        ):
+            agent._sticky_fallback_active = False
+            agent._offline_local_fallback_active = False
+            agent._local_served_model = None
+            if restore_primary_runtime(agent):
+                agent._emit_status("🌐 Connectivity restored — resuming online intelligence")
+                _emit_intelligence_event(agent, {
+                    "provider": agent.provider,
+                    "model": agent.model,
+                    "display_name": agent.model,
+                    "specialist_key": "cloud",
+                    "reason": "connectivity restored",
+                    "offline": False,
+                    "tier": "cloud",
+                })
+
+        # Seamless local-first pre-routing when offline or user forced local mode
+        current_provider = (getattr(agent, "provider", "") or "").strip().lower()
+        if current_provider != "mbowagpt" and monitor.should_use_local_first() and mgr.is_local_available():
+            if failover_to_local_mbowagpt(
+                agent,
+                user_message,
+                messages,
+                reason="local_mode" if mode == "local" else "offline",
+                offline=monitor.is_offline(),
+            ):
+                label = "Local Intelligence Mode" if mode == "local" else "Offline Mode"
+                agent._emit_status(f"🧠 {label} — running via {getattr(agent, '_active_mbowagpt_route', None) and agent._active_mbowagpt_route.display_name or 'MbowaGPT'}")
+                return
+
+        # Specialist routing whenever running on MbowaGPT
+        if (getattr(agent, "provider", "") or "").strip().lower() == "mbowagpt":
+            requested = getattr(agent, "_requested_mbowagpt_model", None) or getattr(agent, "model", "mbowagpt-auto")
+            route = classify_mbowagpt_route(
+                user_message,
+                requested_model=requested,
+                history=messages,
+                active_role=getattr(agent, "_active_mbowagpt_role", None),
+            )
+            ep = mgr.ensure_started(route.model_id)
+            needs_client_rebuild = (
+                (getattr(agent, "base_url", "") or "").rstrip("/") != ep.base_url.rstrip("/")
+                or getattr(agent, "client", None) is None
+            )
+            agent.model = route.model_id
+            agent._active_mbowagpt_role = route.model_id
+            agent._active_mbowagpt_route = route
+            agent._local_served_model = ep.served_model
+            agent.base_url = ep.base_url
+            agent.api_key = ep.api_key
+            agent.api_mode = "chat_completions"
+            if needs_client_rebuild:
+                agent._client_kwargs = {"api_key": ep.api_key, "base_url": ep.base_url}
+                agent.client = agent._create_openai_client(
+                    dict(agent._client_kwargs),
+                    reason="mbowagpt_route",
+                    shared=True,
+                )
+            cc = getattr(agent, "context_compressor", None)
+            if cc is not None and getattr(cc, "context_length", None) != ep.ctx_size:
+                cc.update_model(
+                    model=ep.model_id,
+                    context_length=ep.ctx_size,
+                    base_url=ep.base_url,
+                    api_key=ep.api_key,
+                    provider="mbowagpt",
+                    api_mode="chat_completions",
+                )
+            _emit_intelligence_event(agent, {
+                "provider": "mbowagpt",
+                "model": route.model_id,
+                "display_name": route.display_name,
+                "specialist_key": route.specialist_key,
+                "reason": route.reason,
+                "offline": monitor.is_offline(),
+                "tier": "local",
+            })
+    except Exception as exc:
+        logger.debug("prepare_turn_intelligence skipped: %s", exc)
 
 # Which error types indicate a transient transport failure worth
 # one more attempt with a rebuilt client / connection pool.
@@ -1577,6 +1815,7 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
     # ── Reset fallback state ──
     agent._fallback_activated = False
     agent._fallback_index = 0
+    agent._sticky_fallback_active = False
 
     # When the user deliberately swaps primary providers (e.g. openrouter
     # → anthropic), drop any fallback entries that target the OLD primary
@@ -1918,9 +2157,101 @@ def looks_like_codex_intermediate_ack(
 
 
 
+_STRICT_NO_REASONING_CONTENT_PROVIDERS = frozenset({
+    "groq",
+    "openai",
+    "openai-api",
+    "mistral",
+    "cerebras",
+    "sambanova",
+    "cohere",
+    "xai",
+    "xai-oauth",
+    "copilot",
+    "github",
+    "together",
+    "fireworks",
+    "perplexity",
+    "mbowagpt",
+    "local",
+    "llama-cpp",
+    "llamacpp",
+})
+
+_STRICT_NO_REASONING_CONTENT_HOSTS = (
+    "groq.com",
+    "api.openai.com",
+    "mistral.ai",
+    "cerebras.ai",
+    "sambanova.ai",
+    "cohere.com",
+    "api.x.ai",
+    "githubcopilot.com",
+    "models.github.ai",
+    "together.xyz",
+    "fireworks.ai",
+    "perplexity.ai",
+)
+
+
+def _is_gemini_provider(agent) -> bool:
+    provider = str(getattr(agent, "provider", "") or "").strip().lower()
+    base_url = str(getattr(agent, "base_url", "") or "").strip().lower()
+    return (
+        provider in {"gemini", "google-gemini-cli"}
+        or "generativelanguage.googleapis.com" in base_url
+        or base_url.startswith("cloudcode-pa://")
+    )
+
+
+def provider_rejects_reasoning_content(agent) -> bool:
+    """Return True when the active provider rejects reasoning_content/reasoning_details on input."""
+    if agent._needs_thinking_reasoning_pad():
+        return False
+    provider = str(getattr(agent, "provider", "") or "").strip().lower()
+    base_url = str(getattr(agent, "base_url", "") or "").strip()
+    dynamic_rejected = getattr(agent, "_providers_rejecting_reasoning_content", None)
+    if isinstance(dynamic_rejected, set) and provider and provider in dynamic_rejected:
+        return True
+    if provider in _STRICT_NO_REASONING_CONTENT_PROVIDERS:
+        return True
+    if base_url:
+        for host in _STRICT_NO_REASONING_CONTENT_HOSTS:
+            if base_url_host_matches(base_url, host):
+                return True
+        if "generativelanguage.googleapis.com" in base_url.lower() and base_url.rstrip("/").lower().endswith("/openai"):
+            return True
+        from agent.model_metadata import is_local_endpoint
+        if is_local_endpoint(base_url):
+            return True
+    return False
+
+
+def _strip_non_gemini_extra_content_from_tool_calls(api_msg: dict) -> None:
+    tool_calls = api_msg.get("tool_calls")
+    if not isinstance(tool_calls, list):
+        return
+    if not any(isinstance(tc, dict) and "extra_content" in tc for tc in tool_calls):
+        return
+    api_msg["tool_calls"] = [
+        {k: v for k, v in tc.items() if k != "extra_content"}
+        if isinstance(tc, dict) and "extra_content" in tc
+        else tc
+        for tc in tool_calls
+    ]
+
+
 def copy_reasoning_content_for_api(agent, source_msg: dict, api_msg: dict) -> None:
     """Copy provider-facing reasoning fields onto an API replay message."""
     if source_msg.get("role") != "assistant":
+        return
+
+    if not _is_gemini_provider(agent):
+        _strip_non_gemini_extra_content_from_tool_calls(api_msg)
+
+    if provider_rejects_reasoning_content(agent):
+        api_msg.pop("reasoning_content", None)
+        api_msg.pop("reasoning_details", None)
         return
 
     # 1. Explicit reasoning_content already set — preserve it verbatim
@@ -1990,23 +2321,33 @@ def copy_reasoning_content_for_api(agent, source_msg: dict, api_msg: dict) -> No
 
 
 def reapply_reasoning_echo_for_provider(agent, api_messages: list) -> int:
-    """Re-pad assistant turns with reasoning_content for the active provider.
+    """Re-pad or strip assistant turns' reasoning_content for the active provider.
 
     ``api_messages`` is built once, before the retry loop, while the *primary*
-    provider is active.  If a mid-conversation fallback then switches to a
-    require-side provider (DeepSeek / Kimi / MiMo thinking mode), assistant
-    turns that were built when the prior provider did NOT need the echo-back go
-    out without ``reasoning_content`` and the new provider rejects them with
-    HTTP 400 ("The reasoning_content in the thinking mode must be passed back").
-
-    Calling this immediately before building the request kwargs re-applies the
-    pad against the *current* provider.  It is idempotent and a no-op unless
-    ``_needs_thinking_reasoning_pad()`` is True for the active provider, so it
-    is safe to call every iteration and covers every fallback path.
+    provider is active.  If a mid-conversation fallback then switches to:
+      - a strict provider (Groq / OpenAI / Mistral / etc.) that rejects
+        ``reasoning_content``, ``reasoning_details``, or Gemini ``extra_content``,
+        strip those unsupported fields so the fallback request does not 400.
+      - a require-side provider (DeepSeek / Kimi / MiMo thinking mode), re-apply
+        the ``reasoning_content`` pad against the *current* provider.
 
     Returns the number of assistant turns that gained reasoning_content.
     """
-    if not agent._needs_thinking_reasoning_pad():
+    is_gemini = _is_gemini_provider(agent)
+    rejects_reasoning = provider_rejects_reasoning_content(agent)
+    needs_pad = agent._needs_thinking_reasoning_pad()
+
+    if not is_gemini or rejects_reasoning:
+        for api_msg in api_messages:
+            if not isinstance(api_msg, dict) or api_msg.get("role") != "assistant":
+                continue
+            if not is_gemini:
+                _strip_non_gemini_extra_content_from_tool_calls(api_msg)
+            if rejects_reasoning:
+                api_msg.pop("reasoning_content", None)
+                api_msg.pop("reasoning_details", None)
+
+    if not needs_pad:
         return 0
     padded = 0
     for api_msg in api_messages:

@@ -411,10 +411,12 @@ def run_conversation(
     # so the foreground value here does not leak into it.
     set_current_write_origin(getattr(agent, "_memory_write_origin", "assistant_tool"))
 
-    # If the previous turn activated fallback, restore the primary
-    # runtime so this turn gets a fresh attempt with the preferred model.
-    # No-op when _fallback_activated is False (gateway, first turn, etc.).
-    agent._restore_primary_runtime()
+    # If the previous turn activated fallback, only restore the primary
+    # runtime when sticky fallback is not active. Once a fallback model/key
+    # succeeds in a real conversation turn, keep using that working model
+    # rather than rotating back to a broken primary on the next message.
+    if not getattr(agent, "_sticky_fallback_active", False):
+        agent._restore_primary_runtime()
 
     # Sanitize surrogate characters from user input.  Clipboard paste from
     # rich-text editors (Google Docs, Word, etc.) can inject lone surrogates
@@ -563,6 +565,12 @@ def run_conversation(
     messages.append(user_msg)
     current_turn_user_idx = len(messages) - 1
     agent._persist_user_message_idx = current_turn_user_idx
+
+    try:
+        from agent.agent_runtime_helpers import prepare_turn_intelligence
+        prepare_turn_intelligence(agent, original_user_message, messages)
+    except Exception:
+        pass
     
     if not agent.quiet_mode:
         _print_preview = _summarize_user_message_for_log(user_message)
@@ -739,6 +747,11 @@ def run_conversation(
     # present are surfaced in an advisory footer so the model cannot
     # over-claim success while the file is actually unchanged on disk.
     agent._turn_failed_file_mutations: Dict[str, Dict[str, Any]] = {}
+    try:
+        from agent.self_consciousness import get_self_consciousness_engine
+        get_self_consciousness_engine().reset_turn_state(effective_task_id)
+    except Exception:
+        pass
     
     # Record the execution thread so interrupt()/clear_interrupt() can
     # scope the tool-level interrupt signal to THIS agent's thread only.
@@ -1141,6 +1154,7 @@ def run_conversation(
         nous_paid_entitlement_refresh_attempted=False
         copilot_auth_retry_attempted=False
         thinking_sig_retry_attempted = False
+        reasoning_field_strip_retry_attempted = False
         invalid_encrypted_content_retry_attempted = False
         image_shrink_retry_attempted = False
         multimodal_tool_content_retry_attempted = False
@@ -1579,6 +1593,13 @@ def run_conversation(
                             force=True,
                         )
                         finish_reason = "length"
+
+                if (getattr(agent, "provider", "") or "").strip().lower() != "mbowagpt":
+                    try:
+                        from agent.connectivity import get_connectivity_monitor
+                        get_connectivity_monitor().report_cloud_success(provider=agent.provider)
+                    except Exception:
+                        pass
 
                 if finish_reason == "length":
                     if getattr(response, "id", "") == PARTIAL_STREAM_STUB_ID:
@@ -2296,10 +2317,34 @@ def run_conversation(
                         )
                         continue
 
+                _pool_can_rotate_fast = (
+                    classified.reason in {
+                        FailoverReason.rate_limit,
+                        FailoverReason.overloaded,
+                        FailoverReason.server_error,
+                        FailoverReason.timeout,
+                    }
+                    and _ra()._pool_may_recover_from_rate_limit(
+                        agent._credential_pool,
+                        provider=agent.provider,
+                        base_url=getattr(agent, "base_url", None),
+                    )
+                )
                 recovered_with_pool, has_retried_429 = agent._recover_with_credential_pool(
                     status_code=status_code,
-                    has_retried_429=has_retried_429,
-                    classified_reason=classified.reason,
+                    has_retried_429=True if _pool_can_rotate_fast else has_retried_429,
+                    classified_reason=(
+                        FailoverReason.rate_limit
+                        if (
+                            _pool_can_rotate_fast
+                            and classified.reason in {
+                                FailoverReason.overloaded,
+                                FailoverReason.server_error,
+                                FailoverReason.timeout,
+                            }
+                        )
+                        else classified.reason
+                    ),
                     error_context=error_context,
                 )
                 if recovered_with_pool:
@@ -2498,6 +2543,42 @@ def run_conversation(
                         "%sThinking block signature recovery: stripped "
                         "reasoning_details from %d messages",
                         agent.log_prefix, len(messages),
+                    )
+                    continue
+
+                # ── Unsupported reasoning_content / extra_content recovery ──
+                _err_lower_for_reasoning = str(api_error).lower()
+                if (
+                    status_code in {400, 422}
+                    and not reasoning_field_strip_retry_attempted
+                    and any(
+                        _rf in _err_lower_for_reasoning
+                        for _rf in ("reasoning_content", "reasoning_details", "extra_content")
+                    )
+                ):
+                    reasoning_field_strip_retry_attempted = True
+                    _rej_set = getattr(agent, "_providers_rejecting_reasoning_content", None)
+                    if not isinstance(_rej_set, set):
+                        _rej_set = set()
+                        agent._providers_rejecting_reasoning_content = _rej_set
+                    if getattr(agent, "provider", None):
+                        _rej_set.add(str(agent.provider).strip().lower())
+                    for _msg_list in (api_messages, messages):
+                        for _m in _msg_list:
+                            if isinstance(_m, dict) and _m.get("role") == "assistant":
+                                _m.pop("reasoning_content", None)
+                                _m.pop("reasoning_details", None)
+                                _tcs = _m.get("tool_calls")
+                                if isinstance(_tcs, list):
+                                    _m["tool_calls"] = [
+                                        {k: v for k, v in _tc.items() if k != "extra_content"}
+                                        if isinstance(_tc, dict) and "extra_content" in _tc
+                                        else _tc
+                                        for _tc in _tcs
+                                    ]
+                    logger.warning(
+                        "%sProvider %s rejected reasoning/extra_content fields (HTTP %s) — stripped and retrying immediately",
+                        agent.log_prefix, getattr(agent, "provider", "?"), status_code,
                     )
                     continue
 
@@ -2859,8 +2940,34 @@ def run_conversation(
                     )
 
                 if is_payload_too_large:
+                    if not getattr(agent, "_compact_payload_for_low_tpm", False):
+                        agent._compact_payload_for_low_tpm = True
+                        logger.info(
+                            "%s413 payload too large on %s/%s — enabling compact low-TPM payload mode and retrying immediately",
+                            agent.log_prefix, agent.provider, agent.model,
+                        )
+                        continue
                     compression_attempts += 1
                     if compression_attempts > max_compression_attempts:
+                        if not agent._fallback_chain and not getattr(agent, "_auto_fallback_checked", False):
+                            try:
+                                from hermes_cli.fallback_config import resolve_effective_fallback_chain
+                                _auto_fb = resolve_effective_fallback_chain(
+                                    primary_provider=getattr(agent, "provider", "") or "",
+                                    primary_model=getattr(agent, "model", "") or "",
+                                )
+                                agent._auto_fallback_checked = True
+                                if _auto_fb:
+                                    agent._fallback_chain = _auto_fb
+                                    agent._fallback_index = 0
+                            except Exception:
+                                agent._auto_fallback_checked = True
+                        if agent._try_activate_fallback(reason=classified.reason):
+                            retry_count = 0
+                            compression_attempts = 0
+                            primary_recovery_attempted = False
+                            agent._compact_payload_for_low_tpm = False
+                            continue
                         # Terminal — surface the buffered retry trace.
                         agent._flush_status_buffer()
                         agent._vprint(f"{agent.log_prefix}❌ Max compression attempts ({max_compression_attempts}) reached for payload-too-large error.", force=True)
@@ -2868,6 +2975,7 @@ def run_conversation(
                         logger.error(f"{agent.log_prefix}413 compression failed after {max_compression_attempts} attempts.")
                         agent._persist_session(messages, conversation_history)
                         return {
+                            "final_response": None,
                             "messages": messages,
                             "completed": False,
                             "api_calls": api_call_count,
@@ -2894,6 +3002,25 @@ def run_conversation(
                         restart_with_compressed_messages = True
                         break
                     else:
+                        if not agent._fallback_chain and not getattr(agent, "_auto_fallback_checked", False):
+                            try:
+                                from hermes_cli.fallback_config import resolve_effective_fallback_chain
+                                _auto_fb = resolve_effective_fallback_chain(
+                                    primary_provider=getattr(agent, "provider", "") or "",
+                                    primary_model=getattr(agent, "model", "") or "",
+                                )
+                                agent._auto_fallback_checked = True
+                                if _auto_fb:
+                                    agent._fallback_chain = _auto_fb
+                                    agent._fallback_index = 0
+                            except Exception:
+                                agent._auto_fallback_checked = True
+                        if agent._try_activate_fallback(reason=classified.reason):
+                            retry_count = 0
+                            compression_attempts = 0
+                            primary_recovery_attempted = False
+                            agent._compact_payload_for_low_tpm = False
+                            continue
                         # Terminal — surface buffered context so the user
                         # sees what compression attempts were made.
                         agent._flush_status_buffer()
@@ -2902,6 +3029,7 @@ def run_conversation(
                         logger.error(f"{agent.log_prefix}413 payload too large. Cannot compress further.")
                         agent._persist_session(messages, conversation_history)
                         return {
+                            "final_response": None,
                             "messages": messages,
                             "completed": False,
                             "api_calls": api_call_count,
@@ -3139,6 +3267,19 @@ def run_conversation(
                 ) and not is_context_length_error
 
                 if is_client_error:
+                    if not agent._fallback_chain and not getattr(agent, "_auto_fallback_checked", False):
+                        try:
+                            from hermes_cli.fallback_config import resolve_effective_fallback_chain
+                            _auto_fb = resolve_effective_fallback_chain(
+                                primary_provider=getattr(agent, "provider", "") or "",
+                                primary_model=getattr(agent, "model", "") or "",
+                            )
+                            agent._auto_fallback_checked = True
+                            if _auto_fb:
+                                agent._fallback_chain = _auto_fb
+                                agent._fallback_index = 0
+                        except Exception:
+                            agent._auto_fallback_checked = True
                     # Try fallback before aborting — a different provider may
                     # not have the same issue (rate limit, auth, etc.). Only
                     # announce the attempt when a fallback chain actually
@@ -3155,6 +3296,23 @@ def run_conversation(
                         compression_attempts = 0
                         primary_recovery_attempted = False
                         continue
+                    # Ultimate local safety net in hybrid mode when all cloud fallbacks exhaust
+                    try:
+                        from agent.agent_runtime_helpers import attempt_emergency_local_mbowagpt
+
+                        if attempt_emergency_local_mbowagpt(
+                            agent,
+                            original_user_message,
+                            messages,
+                            reason="cloud_exhausted",
+                        ):
+                            agent._buffer_status("🧠 Cloud providers unavailable — continuing with MbowaGPT local intelligence...")
+                            retry_count = 0
+                            compression_attempts = 0
+                            primary_recovery_attempted = False
+                            continue
+                    except Exception:
+                        pass
                     if api_kwargs is not None:
                         agent._dump_api_request_debug(
                             api_kwargs, reason="non_retryable_client_error", error=api_error,
@@ -3280,6 +3438,30 @@ def run_conversation(
                         "error": str(api_error),
                     }
 
+                # ── Offline / transport fast-failover to MbowaGPT ───────
+                if (getattr(agent, "provider", "") or "").strip().lower() != "mbowagpt":
+                    try:
+                        from agent.connectivity import get_connectivity_monitor, is_network_error
+                        from agent.agent_runtime_helpers import failover_to_local_mbowagpt
+
+                        if is_network_error(api_error):
+                            _mon = get_connectivity_monitor()
+                            _mon.report_cloud_failure(api_error, provider=getattr(agent, "provider", ""))
+                            if _mon.get_mode() != "online" and failover_to_local_mbowagpt(
+                                agent,
+                                original_user_message,
+                                messages,
+                                reason="network_error",
+                                offline=True,
+                            ):
+                                agent._buffer_status("📡 Network unreachable — switching seamlessly to MbowaGPT local intelligence...")
+                                retry_count = 0
+                                compression_attempts = 0
+                                primary_recovery_attempted = False
+                                continue
+                    except Exception:
+                        pass
+
                 # Fast multi-provider failover on server outages, overload,
                 # timeouts, or missing model when fallback providers are ready:
                 # avoid multi-attempt exponential sleep against a failing primary.
@@ -3334,6 +3516,23 @@ def run_conversation(
                         compression_attempts = 0
                         primary_recovery_attempted = False
                         continue
+                    # Ultimate local safety net in hybrid mode when all cloud fallbacks exhaust
+                    try:
+                        from agent.agent_runtime_helpers import attempt_emergency_local_mbowagpt
+
+                        if attempt_emergency_local_mbowagpt(
+                            agent,
+                            original_user_message,
+                            messages,
+                            reason="cloud_exhausted",
+                        ):
+                            agent._buffer_status("🧠 Cloud providers unavailable — continuing with MbowaGPT local intelligence...")
+                            retry_count = 0
+                            compression_attempts = 0
+                            primary_recovery_attempted = False
+                            continue
+                    except Exception:
+                        pass
                     # Terminal — flush buffered retry/fallback trace.
                     agent._flush_status_buffer()
                     _final_summary = agent._summarize_api_error(api_error)
@@ -4223,6 +4422,19 @@ def run_conversation(
                     # chain.  This covers the case where a model
                     # (e.g. GLM-4.5-Air) consistently returns empty
                     # due to context degradation or provider issues.
+                    if _truly_empty and not agent._fallback_chain and not getattr(agent, "_auto_fallback_checked", False):
+                        try:
+                            from hermes_cli.fallback_config import resolve_effective_fallback_chain
+                            _auto_fb = resolve_effective_fallback_chain(
+                                primary_provider=getattr(agent, "provider", "") or "",
+                                primary_model=getattr(agent, "model", "") or "",
+                            )
+                            agent._auto_fallback_checked = True
+                            if _auto_fb:
+                                agent._fallback_chain = _auto_fb
+                                agent._fallback_index = 0
+                        except Exception:
+                            agent._auto_fallback_checked = True
                     if _truly_empty and agent._fallback_chain:
                         logger.warning(
                             "Empty response after %d retries — "
@@ -4494,6 +4706,31 @@ def run_conversation(
         and api_call_count < agent.max_iterations
         and not failed
     )
+    if (
+        completed
+        and getattr(agent, "_fallback_activated", False)
+        and final_response != "(empty)"
+        and not str(final_response).startswith("No reply:")
+    ):
+        agent._sticky_fallback_active = True
+        agent._fallback_index = 0
+        rt = getattr(agent, "_primary_runtime", None)
+        if isinstance(rt, dict) and rt.get("provider") and rt.get("model"):
+            _primary_entry = {
+                "provider": str(rt["provider"]).strip(),
+                "model": str(rt["model"]).strip(),
+            }
+            if rt.get("base_url"):
+                _primary_entry["base_url"] = str(rt["base_url"]).strip()
+            _chain = list(getattr(agent, "_fallback_chain", []) or [])
+            if not any(
+                str(e.get("provider") or "").strip().lower() == _primary_entry["provider"].lower()
+                and str(e.get("model") or "").strip().lower() == _primary_entry["model"].lower()
+                for e in _chain
+                if isinstance(e, dict)
+            ):
+                _chain.append(_primary_entry)
+                agent._fallback_chain = _chain
 
     # Save trajectory if enabled.  ``user_message`` may be a multimodal
     # list of parts; the trajectory format wants a plain string.

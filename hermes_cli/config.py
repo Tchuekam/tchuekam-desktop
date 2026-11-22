@@ -1495,6 +1495,12 @@ DEFAULT_CONFIG = {
             # "volume": 1.0,
             # "normalize_audio": True,
         },
+        "kokoro": {
+            "voice": "bm_george",       # English JARVIS-style default voice
+            "voice_fr": "ff_siwis",     # French offline neural voice
+            "speed": 1.05,
+            "models_dir": "",           # Optional override; defaults to ~/.hermes/models/kokoro
+        },
     },
     
     "stt": {
@@ -2288,6 +2294,15 @@ DEFAULT_CONFIG = {
     "paste_collapse_threshold_fallback": 5,
     "paste_collapse_char_threshold": 2000,
 
+
+    # Hybrid local-first intelligence ecosystem (MbowaGPT Main / Cybertrunk / Relentless)
+    "intelligence": {
+        "mode": "hybrid",                 # "hybrid" | "local" | "online"
+        "auto_local_fallback": True,      # Seamless offline / cloud-outage failover to MbowaGPT
+        "local_voice_first": True,        # Prefer local faster-whisper + Kokoro when offline/low-latency
+        "default_local_model": "mbowagpt-auto",
+        "local_models": {},               # Optional per-role GGUF/Ollama overrides
+    },
 
     # Config schema version - bump this when adding new required fields
     "_config_version": 26,

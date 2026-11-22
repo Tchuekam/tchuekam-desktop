@@ -489,6 +489,12 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "deepseek/deepseek-r1-0528",
         "qwen/qwen3-235b-a22b-fp8",
     ],
+    "mbowagpt": [
+        "mbowagpt-auto",
+        "mbowagpt",
+        "mbowagpt-cybertrunk",
+        "mbowagpt-relentless",
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -908,6 +914,7 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("openrouter",     "OpenRouter",               "OpenRouter (Pay-per-use API aggregator)"),
     ProviderEntry("novita",         "NovitaAI",                 "NovitaAI (Cloud: Model API, Agent Sandbox, GPU Cloud)"),
     ProviderEntry("lmstudio",       "LM Studio",                "LM Studio (Local desktop app with built-in model server)"),
+    ProviderEntry("mbowagpt",       "MbowaGPT (Local)",         "Local MbowaGPT Ecosystem (Main, Cybertrunk, Relentless — 100% offline capable)"),
     ProviderEntry("anthropic",      "Anthropic",                "Anthropic (Claude models via API key or Claude Code)"),
     ProviderEntry("openai-codex",   "OpenAI Codex",             "OpenAI Codex (Codex CLI via ChatGPT subscription or API key)"),
     ProviderEntry("openai-api",     "OpenAI API",               "OpenAI API (api.openai.com, API key)"),
@@ -1143,6 +1150,11 @@ _PROVIDER_ALIASES = {
     "lmstudio": "lmstudio",
     "lm-studio": "lmstudio",
     "lm_studio": "lmstudio",
+    "mbowagpt": "mbowagpt",
+    "mbowagpt-auto": "mbowagpt",
+    "mbowagpt-main": "mbowagpt",
+    "mbowagpt-cybertrunk": "mbowagpt",
+    "mbowagpt-relentless": "mbowagpt",
     "ollama": "custom",  # bare "ollama" = local; use "ollama-cloud" for cloud
     "ollama_cloud": "ollama-cloud",
 }

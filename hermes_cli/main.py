@@ -11701,8 +11701,8 @@ def cmd_dashboard(args):
     """Start the web UI server, or (with --stop/--status) manage running ones."""
     # --status: report running dashboards and exit, no deps needed.
     if getattr(args, "status", False):
-        count = _report_dashboard_status()
-        sys.exit(0 if count == 0 else 0)  # status is informational, always 0
+        _report_dashboard_status()
+        sys.exit(0)  # status is informational, always 0
 
     # --stop: kill any running dashboards and exit, no deps needed.
     if getattr(args, "stop", False):
@@ -11749,14 +11749,11 @@ def cmd_dashboard(args):
         if not _build_web_ui(PROJECT_ROOT / "web", fatal=True):
             sys.exit(1)
     elif getattr(args, "skip_build", False):
-        # --build-mode skip trusts the caller to have pre-built the web UI.
-        # Verify the dist actually exists; otherwise the server will start
-        # and serve 404s with no obvious cause (issue #23817).
-        _dist_root = (
-            Path(os.environ["HERMES_WEB_DIST"])
-            if "HERMES_WEB_DIST" in os.environ
-            else PROJECT_ROOT / "hermes_cli" / "web_dist"
-        )
+        # --skip-build trusts the caller to have pre-built the web UI.
+        # Match web_server.py's resolution order so desktop dist-web and web_dist both work.
+        from hermes_cli.web_server import resolve_web_dist
+
+        _dist_root = resolve_web_dist()
         if not (_dist_root / "index.html").exists():
             print(f"✗ --skip-build was passed but no web dist found at: {_dist_root}")
             print("  Pre-build first:  cd web && npm install && npm run build")
@@ -11781,33 +11778,32 @@ def cmd_dashboard(args):
         print(f"⚠ Plugin discovery failed: {exc}", file=sys.stderr)
 
     from hermes_cli.web_server import start_server
+    from utils import env_var_enabled
 
-    embedded_chat = args.tui or os.environ.get("HERMES_DASHBOARD_TUI") == "1"
-    # ``PORT`` / ``RAILWAY_ENVIRONMENT`` tell us how to *bind* (public host,
-    # platform-assigned port) — they must never decide whether to
-    # authenticate. Forcing ``insecure`` here used to hand every PaaS deploy
-    # an unauthenticated dashboard on 0.0.0.0, and it bypassed the fail-closed
-    # OAuth gate in ``web_server.start_server`` rather than configuring it.
-    # ``PORT`` is also set by plenty of local shells and container images, so
-    # the old behaviour disabled auth well outside the cloud.
-    # Disabling authentication now requires an explicit ``--insecure``.
+    embedded_chat = args.tui or env_var_enabled("HERMES_DASHBOARD_TUI")
     is_cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"))
 
     port = args.port
-    if port is None or is_cloud:
+    if port is None:
         if os.environ.get("PORT"):
             try:
                 port = int(os.environ["PORT"])
             except ValueError:
                 port = 9119
-        elif port is None:
+        else:
             port = 9119
 
+    raw_host = getattr(args, "host", None)
+    resolved_host = "0.0.0.0" if (is_cloud and raw_host in (None, "127.0.0.1")) else (raw_host or "127.0.0.1")
+    allow_public = bool(
+        getattr(args, "insecure", False) or env_var_enabled("HERMES_DASHBOARD_INSECURE")
+    )
+
     start_server(
-        host="0.0.0.0" if is_cloud else args.host,
+        host=resolved_host,
         port=port,
         open_browser=not args.no_open and not is_cloud,
-        allow_public=getattr(args, "insecure", False),
+        allow_public=allow_public,
         embedded_chat=embedded_chat,
     )
 
@@ -15078,24 +15074,23 @@ Examples:
         description="Launch the Hermes Agent web dashboard for managing config, API keys, and sessions",
     )
     def parse_port_arg(val):
-        if str(val).startswith("$"):
-            var_name = str(val).lstrip("$").strip("{}")
-            env_val = os.environ.get(var_name)
-            if env_val:
-                try:
-                    return int(env_val)
-                except ValueError:
-                    pass
+        raw = str(val).strip()
+        if raw.startswith("${") and raw.endswith("}"):
+            expr = raw[2:-1]
+            if ":-" in expr:
+                var_name, default_val = expr.split(":-", 1)
+                raw = os.environ.get(var_name.strip()) or default_val.strip()
+            else:
+                raw = os.environ.get(expr.strip()) or ""
+        elif raw.startswith("$"):
+            raw = os.environ.get(raw.lstrip("$").strip("{}")) or ""
         try:
-            return int(val)
-        except ValueError:
-            env_port = os.environ.get("PORT")
-            if env_port:
-                try:
-                    return int(env_port)
-                except ValueError:
-                    pass
-            return 9119
+            port_num = int(raw)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"Invalid port value: {val!r}") from exc
+        if port_num < 1 or port_num > 65535:
+            raise argparse.ArgumentTypeError(f"Port must be between 1 and 65535, got {port_num}")
+        return port_num
 
     dashboard_parser.add_argument(
         "--port", type=parse_port_arg, default=None, help="Port (default 9119 or $PORT)"

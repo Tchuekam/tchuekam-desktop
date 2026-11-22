@@ -447,6 +447,14 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         api_key_env_vars=("GROQ_API_KEY", "GROQ_API_KEYS"),
         base_url_env_var="GROQ_BASE_URL",
     ),
+    "mbowagpt": ProviderConfig(
+        id="mbowagpt",
+        name="MbowaGPT (Local)",
+        auth_type="api_key",
+        inference_base_url="http://127.0.0.1:18080/v1",
+        api_key_env_vars=(),
+        base_url_env_var="MBOWAGPT_BASE_URL",
+    ),
 }
 
 # Auto-extend PROVIDER_REGISTRY with any api-key provider registered in
@@ -1517,6 +1525,9 @@ def resolve_provider(
         "go": "opencode-go", "opencode-go-sub": "opencode-go",
         "kilo": "kilocode", "kilo-code": "kilocode", "kilo-gateway": "kilocode",
         "lmstudio": "lmstudio", "lm-studio": "lmstudio", "lm_studio": "lmstudio",
+        "mbowagpt": "mbowagpt", "mbowagpt-auto": "mbowagpt",
+        "mbowagpt-main": "mbowagpt", "mbowagpt-cybertrunk": "mbowagpt",
+        "mbowagpt-relentless": "mbowagpt",
         # Local server aliases — route through the generic custom provider
         "ollama": "custom", "ollama_cloud": "ollama-cloud",
         "vllm": "custom", "llamacpp": "custom",
@@ -1579,7 +1590,7 @@ def resolve_provider(
         # whose availability isn't implied by LM_API_KEY presence (it may be
         # offline, and the no-auth setup uses a placeholder value), so it
         # also requires explicit selection.
-        if pid in {"copilot", "lmstudio"}:
+        if pid in {"copilot", "lmstudio", "mbowagpt"}:
             continue
         for env_var in pconfig.api_key_env_vars:
             if has_usable_secret(os.getenv(env_var, "")):
@@ -5655,6 +5666,20 @@ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
     if not pconfig or pconfig.auth_type != "api_key":
         return {"configured": False}
 
+    if provider_id == "mbowagpt":
+        local_ok = False
+        try:
+            from agent.local_runtime import get_local_runtime_manager
+            local_ok = get_local_runtime_manager().is_local_available()
+        except Exception:
+            local_ok = False
+        return {
+            "configured": local_ok,
+            "api_key": "local-mbowagpt" if local_ok else "",
+            "base_url": pconfig.inference_base_url,
+            "source": "local",
+        }
+
     api_key = ""
     key_source = ""
     api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
@@ -5847,6 +5872,9 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
     if not api_key and provider_id == "lmstudio":
         api_key = LMSTUDIO_NOAUTH_PLACEHOLDER
         key_source = key_source or "default"
+    if not api_key and provider_id == "mbowagpt":
+        api_key = "local-mbowagpt"
+        key_source = key_source or "local"
 
     env_url = ""
     if pconfig.base_url_env_var:
