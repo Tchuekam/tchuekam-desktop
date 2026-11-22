@@ -646,7 +646,7 @@ function messageAttachmentRefs(value: unknown): string[] {
 function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
   return (
     <div
-      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-[color-mix(in_srgb,var(--ui-chat-surface-background)_84%,transparent)] px-4 pb-(--conversation-turn-gap) pt-2 backdrop-blur-md"
+      className="group/user-message pointer-events-none sticky z-40 flex w-full min-w-0 max-w-full flex-col items-stretch gap-0 self-end overflow-visible pb-(--conversation-turn-gap) pt-2"
       data-role="user"
       data-slot="aui_user-message-root"
     >
@@ -660,7 +660,7 @@ function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
 // specular top edge + soft ambient shadow); they only differ in border weight,
 // cursor, and padding-right (the read-only view reserves room for the restore icon).
 const USER_BUBBLE_BASE_CLASS =
-  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border border-(--tk-glass-border) bg-(--dt-user-bubble) px-4 py-2.5 text-left shadow-(--tk-glass-shadow) backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-180 ease-out'
+  'composer-human-message standalone-glass pointer-events-auto relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border border-(--tk-glass-border) bg-(--dt-user-bubble) px-4 py-2.5 text-left shadow-(--tk-glass-shadow) backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-180 ease-out'
 
 const USER_ACTION_ICON_BUTTON_CLASS =
   'grid cursor-pointer place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
@@ -1306,7 +1306,7 @@ const UserEditComposer: FC<UserEditComposerProps> = ({ cwd, gateway, sessionId }
     <ComposerPrimitive.Root className="contents" data-slot="aui_edit-composer-root">
       <StickyHumanMessageContainer>
         <div
-          className="composer-human-message-container human-execution-message-top relative flex w-full items-start rounded-md bg-(--ui-chat-surface-background)"
+          className="composer-human-message-container human-execution-message-top pointer-events-auto relative flex w-full items-start rounded-xl bg-transparent"
           onBlur={handleEditBlur}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
