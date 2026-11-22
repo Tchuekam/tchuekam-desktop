@@ -211,6 +211,7 @@ def wait_for_mcp_discovery(timeout: float = 0.01) -> None:
 
 
 def main():
+    server.configure_stdio_runtime()
     _install_sidecar_publisher()
 
     # MCP tool discovery — runs in a background daemon thread so a slow or

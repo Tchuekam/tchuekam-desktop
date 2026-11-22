@@ -2375,6 +2375,15 @@ def set_orchestration_settings(payload: OrchestrationSettingsBody):
 
 @router.websocket("/events")
 async def stream_events(ws: WebSocket):
+    # Gate Kanban WebSocket in public showcase mode unless admin override is present.
+    try:
+        from hermes_cli.web_server import _has_admin_override, _is_public_showcase_mode
+
+        if _is_public_showcase_mode(ws.app) and not _has_admin_override(ws.headers):
+            await ws.close(code=4403)
+            return
+    except Exception:
+        pass
     # Enforce the dashboard session token as a query param — browsers can't
     # set Authorization on a WS upgrade. This matches how the PTY bridge
     # authenticates in hermes_cli/web_server.py.

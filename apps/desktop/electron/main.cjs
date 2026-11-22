@@ -26,6 +26,7 @@ const { execFileSync, spawn } = require('node:child_process')
 const { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } = require('./bootstrap-platform.cjs')
 const { runBootstrap } = require('./bootstrap-runner.cjs')
 const { canImportHermesCli, verifyHermesCli } = require('./backend-probes.cjs')
+const { createBusinessLocalAiManager } = require('./business-local-ai.cjs')
 const { initAutoUpdater, shutdownAutoUpdater } = require('./auto-updater.cjs')
 const {
   DATA_URL_READ_MAX_BYTES,
@@ -3408,6 +3409,7 @@ async function startHermes() {
         // directories. install.ps1 sets HERMES_HOME via setx; the desktop
         // can't reliably do that, so we set it inline for every spawn.
         HERMES_HOME,
+        HERMES_LOCAL_AI_DIR: path.join(HERMES_HOME, 'local-ai'),
         ...backend.env,
         HERMES_DASHBOARD_SESSION_TOKEN: token,
         HERMES_DASHBOARD_TUI: '1',
@@ -4315,6 +4317,43 @@ ipcMain.handle('hermes:version', async () => ({
 }))
 
 // ---------------------------------------------------------------------------
+// Business Hub dedicated local AI agent (desktop-only, 2 GB RAM friendly)
+// ---------------------------------------------------------------------------
+
+function findBusinessOcrPython() {
+  const activeVenvPython = getVenvPython(VENV_ROOT)
+  if (fileExists(activeVenvPython)) return activeVenvPython
+  if (!IS_PACKAGED && isHermesSourceRoot(SOURCE_REPO_ROOT)) {
+    const devPython = findPythonForRoot(SOURCE_REPO_ROOT)
+    if (devPython) return devPython
+  }
+  return findSystemPython()
+}
+
+const businessLocalAi = createBusinessLocalAiManager({
+  hermesHome: HERMES_HOME,
+  findPython: findBusinessOcrPython,
+  log: msg => rememberLog(msg),
+  onStatus: status => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const { webContents } = mainWindow
+    if (!webContents || webContents.isDestroyed()) return
+    webContents.send('hermes:business-ai:status', status)
+  }
+})
+
+ipcMain.handle('hermes:business-ai:status', async () => businessLocalAi.getStatus())
+ipcMain.handle('hermes:business-ai:install', async (_event, options = {}) => businessLocalAi.install(options))
+ipcMain.handle('hermes:business-ai:cancel-install', async () => businessLocalAi.cancelInstall())
+ipcMain.handle('hermes:business-ai:start', async () => businessLocalAi.start())
+ipcMain.handle('hermes:business-ai:unload', async () => businessLocalAi.unload())
+ipcMain.handle('hermes:business-ai:config', async (_event, patch = {}) => businessLocalAi.setConfig(patch))
+ipcMain.handle('hermes:business-ai:delete-model', async (_event, modelId) => businessLocalAi.deleteModel(modelId))
+ipcMain.handle('hermes:business-ai:run-operation', async (_event, req = {}) => businessLocalAi.runOperation(req))
+ipcMain.handle('hermes:business-ai:ask', async (_event, req = {}) => businessLocalAi.askAssistant(req))
+ipcMain.handle('hermes:business-ai:ocr', async (_event, req = {}) => businessLocalAi.runOcr(req))
+
+// ---------------------------------------------------------------------------
 // macOS first-launch placement: move into /Applications and pin to the Dock
 // ---------------------------------------------------------------------------
 //
@@ -4465,6 +4504,7 @@ app.on('before-quit', () => {
   flushDesktopLogBufferSync()
   closePreviewWatchers()
 
+  void businessLocalAi.dispose()
   killHermesProcess()
 })
 

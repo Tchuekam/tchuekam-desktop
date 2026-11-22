@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import queue
+import secrets
 import subprocess
 import sys
 import threading
@@ -73,9 +74,6 @@ def _panic_hook(exc_type, exc_value, exc_tb):
     sys.__excepthook__(exc_type, exc_value, exc_tb)
 
 
-sys.excepthook = _panic_hook
-
-
 def _thread_panic_hook(args):
     # threading.excepthook signature: SimpleNamespace(exc_type, exc_value, exc_traceback, thread)
     import traceback
@@ -105,7 +103,19 @@ def _thread_panic_hook(args):
     )
 
 
-threading.excepthook = _thread_panic_hook
+def configure_stdio_runtime() -> None:
+    """Install panic hooks and redirect Python stdout -> stderr for stdio JSON-RPC mode.
+
+    Called only by ``tui_gateway.entry.main()`` when running as the CLI/TUI stdio
+    subprocess. Importing ``tui_gateway.server`` inside FastAPI/uvicorn must NEVER
+    hijack the web server's ``sys.stdout`` or global exception hooks.
+    """
+    global _real_stdout
+    sys.excepthook = _panic_hook
+    threading.excepthook = _thread_panic_hook
+    _real_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
 
 try:
     from hermes_cli.banner import prefetch_update_check
@@ -116,6 +126,7 @@ except Exception:
 
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
+_state_lock = threading.RLock()
 _sessions: dict[str, dict] = {}
 _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
@@ -128,6 +139,36 @@ _cfg_lock = threading.Lock()
 _cfg_cache: dict | None = None
 _cfg_mtime: float | None = None
 _cfg_path = None
+try:
+    _MAX_WS_SESSIONS = max(16, int(os.environ.get("HERMES_MAX_WS_SESSIONS") or "64"))
+except (ValueError, TypeError):
+    _MAX_WS_SESSIONS = 64
+
+# Strict RPC method allowlist enforced when a WebSocket transport is in
+# restricted public web mode (no shell/CLI/config/filesystem/admin methods).
+_PUBLIC_RESTRICTED_ALLOWED_METHODS: frozenset[str] = frozenset(
+    {
+        "ping",
+        "session.create",
+        "prompt.submit",
+        "session.interrupt",
+        "session.close",
+        "session.usage",
+        "session.history",
+        "session.status",
+        "session.undo",
+        "session.compress",
+        "session.steer",
+        "image.attach",
+        "image.detach",
+        "model.options",
+        "model.switch",
+        "commands.catalog",
+        "complete.slash",
+        "clarify.respond",
+        "approval.respond",
+    }
+)
 try:
     _slash_timeout = float(os.environ.get("HERMES_TUI_SLASH_TIMEOUT_S") or "45")
 except (ValueError, TypeError):
@@ -158,23 +199,24 @@ _LONG_HANDLERS = frozenset(
     }
 )
 
+_default_pool_workers = min(16, max(8, (os.cpu_count() or 4) * 2))
 try:
     _rpc_pool_workers = max(
-        2, int(os.environ.get("HERMES_TUI_RPC_POOL_WORKERS") or "4")
+        2, int(os.environ.get("HERMES_TUI_RPC_POOL_WORKERS") or str(_default_pool_workers))
     )
 except (ValueError, TypeError):
-    _rpc_pool_workers = 4
+    _rpc_pool_workers = _default_pool_workers
 _pool = concurrent.futures.ThreadPoolExecutor(
     max_workers=_rpc_pool_workers,
     thread_name_prefix="tui-rpc",
 )
 atexit.register(lambda: _pool.shutdown(wait=False, cancel_futures=True))
 
-# Reserve real stdout for JSON-RPC only; redirect Python's stdout to stderr
-# so stray print() from libraries/tools becomes harmless gateway.stderr instead
-# of corrupting the JSON protocol.
+# Real stdout handle used by StdioTransport when running via tui_gateway.entry.
+# Do NOT redirect sys.stdout -> sys.stderr at import time (that happens only in
+# configure_stdio_runtime()), so importing tui_gateway.server from uvicorn does
+# not hijack the FastAPI web server's stdout.
 _real_stdout = sys.stdout
-sys.stdout = sys.stderr
 
 # Module-level stdio transport — fallback sink when no transport is bound via
 # contextvar or session. Stream resolved through a lambda so runtime monkey-
@@ -262,8 +304,20 @@ class _SlashWorker:
         except Exception:
             try:
                 self.proc.kill()
+                self.proc.wait(timeout=1)
             except Exception:
                 pass
+        finally:
+            for pipe in (
+                getattr(self.proc, "stdin", None),
+                getattr(self.proc, "stdout", None),
+                getattr(self.proc, "stderr", None),
+            ):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
 
 
 def _load_busy_input_mode() -> str:
@@ -463,12 +517,46 @@ def _normalize_request(req: Any) -> tuple[Any, str, dict] | dict:
     return rid, method, params
 
 
+_restricted_web_session: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_restricted_web_session", default=False
+)
+
+
+def _is_restricted_transport(transport: Any = None) -> bool:
+    t = transport if transport is not None else current_transport()
+    return bool(getattr(t, "restricted", False))
+
+
+def _transport_owner_id(transport: Any = None) -> str | None:
+    t = transport if transport is not None else current_transport()
+    owner = getattr(t, "owner_id", None)
+    return str(owner) if owner else None
+
+
+def _can_access_session(session: dict | None, transport: Any = None) -> bool:
+    if session is None:
+        return False
+    sess_owner = session.get("owner_id")
+    if not sess_owner:
+        # Sessions without owner_id (stdio / CLI) remain accessible to local stdio callers,
+        # NOT to unrelated restricted WS clients.
+        if _is_restricted_transport(transport):
+            return False
+        return True
+    caller_owner = _transport_owner_id(transport)
+    return bool(caller_owner) and caller_owner == sess_owner
+
+
 def handle_request(req: dict) -> dict | None:
     normalized = _normalize_request(req)
     if isinstance(normalized, dict):
         return normalized
 
     rid, method, params = normalized
+    t = current_transport()
+    if _is_restricted_transport(t) and method not in _PUBLIC_RESTRICTED_ALLOWED_METHODS:
+        return _err(rid, -32601, f"method disabled in public web mode: {method}")
+
     fn = _methods.get(method)
     if not fn:
         return _err(rid, -32601, f"unknown method: {method}")
@@ -494,7 +582,9 @@ def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
         if isinstance(normalized, dict):
             return normalized
 
-        _rid, method, _params = normalized
+        rid, method, _params = normalized
+        if _is_restricted_transport(t) and method not in _PUBLIC_RESTRICTED_ALLOWED_METHODS:
+            return _err(rid, -32601, f"method disabled in public web mode: {method}")
         if method not in _LONG_HANDLERS:
             return handle_request(req)
 
@@ -556,13 +646,17 @@ def _start_agent_build(sid: str, session: dict) -> None:
     key = session["session_key"]
 
     def _build() -> None:
-        current = _sessions.get(sid)
+        with _state_lock:
+            current = _sessions.get(sid)
         if current is None:
             ready.set()
             return
 
         worker = None
         notify_registered = False
+        is_ws = bool(getattr(current.get("transport"), "is_ws", False))
+        is_restricted = bool(current.get("restricted"))
+        restricted_tok = _restricted_web_session.set(is_restricted)
         try:
             tokens = _set_session_context(key)
             try:
@@ -574,11 +668,22 @@ def _start_agent_build(sid: str, session: dict) -> None:
             # pending_title applied post-first-message (see cli.exec handler).
             current["agent"] = agent
 
+            # Mirror background review callback (parity with _init_session).
             try:
-                worker = _SlashWorker(key, getattr(agent, "model", _resolve_model()))
-                current["slash_worker"] = worker
+                agent.background_review_callback = lambda message, _sid=sid: _emit(
+                    "review.summary", _sid, {"text": str(message)}
+                )
             except Exception:
                 pass
+
+            # Only eagerly spawn _SlashWorker for non-WS stdio sessions; WS web
+            # sessions create workers lazily if needed and never in restricted mode.
+            if not is_ws and not is_restricted:
+                try:
+                    worker = _SlashWorker(key, getattr(agent, "model", _resolve_model()))
+                    current["slash_worker"] = worker
+                except Exception:
+                    pass
 
             try:
                 from tools.approval import (
@@ -594,20 +699,28 @@ def _start_agent_build(sid: str, session: dict) -> None:
             except Exception:
                 pass
 
-            _wire_callbacks(sid)
-            _sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _sessions[sid])
-            _notify_session_boundary("on_session_reset", key)
+            if not is_restricted and not is_ws:
+                _wire_callbacks(sid)
 
-            info = _session_info(agent, current)
-            cfg_warn = _probe_config_health(_load_cfg())
-            if cfg_warn:
-                info["config_warning"] = cfg_warn
-                logger.warning(cfg_warn)
-            _emit("session.info", sid, info)
+            with _state_lock:
+                still_live = _sessions.get(sid) is current
+                if still_live:
+                    current["_notif_stop"] = _start_notification_poller(sid, current)
+
+            if still_live:
+                _notify_session_boundary("on_session_reset", key)
+
+                info = _session_info(agent, current)
+                cfg_warn = _probe_config_health(_load_cfg())
+                if cfg_warn:
+                    info["config_warning"] = cfg_warn
+                    logger.warning(cfg_warn)
+                _emit("session.info", sid, info)
         except Exception as e:
             current["agent_error"] = str(e)
             _emit("error", sid, {"message": f"agent init failed: {e}"})
         finally:
+            _restricted_web_session.reset(restricted_tok)
             if _sessions.get(sid) is not current:
                 if worker is not None:
                     try:
@@ -627,8 +740,14 @@ def _start_agent_build(sid: str, session: dict) -> None:
 
 
 def _sess_nowait(params, rid):
-    s = _sessions.get(params.get("session_id") or "")
-    return (s, None) if s else (None, _err(rid, 4001, "session not found"))
+    sid = params.get("session_id") or ""
+    with _state_lock:
+        s = _sessions.get(sid)
+    if not s:
+        return (None, _err(rid, 4001, "session not found"))
+    if not _can_access_session(s):
+        return (None, _err(rid, -32003, "Session access denied"))
+    return (s, None)
 
 
 def _sess(params, rid):
@@ -870,18 +989,21 @@ def _enable_gateway_prompts() -> None:
 
 
 def _block(event: str, sid: str, payload: dict, timeout: int = 300) -> str:
-    rid = uuid.uuid4().hex[:8]
+    rid = secrets.token_urlsafe(16)
     ev = threading.Event()
-    _pending[rid] = (sid, ev)
-    payload["request_id"] = rid
-    _pending_prompt_payloads[rid] = (event, dict(payload))
+    with _state_lock:
+        _pending[rid] = (sid, ev)
+        payload["request_id"] = rid
+        _pending_prompt_payloads[rid] = (event, dict(payload))
     try:
         _emit(event, sid, payload)
         ev.wait(timeout=timeout)
     finally:
-        _pending.pop(rid, None)
-        _pending_prompt_payloads.pop(rid, None)
-    return _answers.pop(rid, "")
+        with _state_lock:
+            _pending.pop(rid, None)
+            _pending_prompt_payloads.pop(rid, None)
+    with _state_lock:
+        return _answers.pop(rid, "")
 
 
 def _clear_pending(sid: str | None = None) -> None:
@@ -893,10 +1015,12 @@ def _clear_pending(sid: str | None = None) -> None:
     sessions sharing the same tui_gateway process.  When *sid* is
     None, every pending prompt is released (used during shutdown).
     """
-    for rid, (owner_sid, ev) in list(_pending.items()):
-        if sid is None or owner_sid == sid:
-            _answers[rid] = ""
-            ev.set()
+    with _state_lock:
+        items = list(_pending.items())
+        for rid, (owner_sid, ev) in items:
+            if sid is None or owner_sid == sid:
+                _answers[rid] = ""
+                ev.set()
 
 
 # ── Agent factory ────────────────────────────────────────────────────
@@ -1336,6 +1460,11 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
     if not result.success:
         raise ValueError(result.error_message or "model switch failed")
 
+    is_restricted = bool(session.get("restricted")) or _is_restricted_transport()
+    is_multi_user_ws = bool(session.get("owner_id")) or is_restricted
+    if persist_global and is_restricted:
+        persist_global = False
+
     if agent:
         agent.switch_model(
             new_model=result.new_model,
@@ -1344,24 +1473,26 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
             base_url=result.base_url,
             api_mode=result.api_mode,
         )
-        _restart_slash_worker(session)
+        if not bool(getattr(session.get("transport"), "is_ws", False)) and not is_restricted:
+            _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent, session))
 
-    os.environ["HERMES_MODEL"] = result.new_model
-    os.environ["HERMES_INFERENCE_MODEL"] = result.new_model
-    # Keep the process-level provider env vars in sync with the user's
-    # explicit choice so any ambient re-resolution (credential pool refresh,
-    # compressor rebuild, aux clients) and startup re-resolution on /new
-    # both pick up the new provider instead of the original one persisted
-    # in config or env.
-    #
-    # HERMES_TUI_PROVIDER is the canonical "explicit-this-process" carrier
-    # consumed by _resolve_startup_runtime() — set it unconditionally on
-    # /model so /new can't fall through to static-catalog detection and
-    # pick a coincidentally-matching native provider (fixes #16857).
-    if result.target_provider:
-        os.environ["HERMES_INFERENCE_PROVIDER"] = result.target_provider
-        os.environ["HERMES_TUI_PROVIDER"] = result.target_provider
+    if not is_multi_user_ws:
+        os.environ["HERMES_MODEL"] = result.new_model
+        os.environ["HERMES_INFERENCE_MODEL"] = result.new_model
+        # Keep the process-level provider env vars in sync with the user's
+        # explicit choice so any ambient re-resolution (credential pool refresh,
+        # compressor rebuild, aux clients) and startup re-resolution on /new
+        # both pick up the new provider instead of the original one persisted
+        # in config or env.
+        #
+        # HERMES_TUI_PROVIDER is the canonical "explicit-this-process" carrier
+        # consumed by _resolve_startup_runtime() — set it unconditionally on
+        # /model so /new can't fall through to static-catalog detection and
+        # pick a coincidentally-matching native provider (fixes #16857).
+        if result.target_provider:
+            os.environ["HERMES_INFERENCE_PROVIDER"] = result.target_provider
+            os.environ["HERMES_TUI_PROVIDER"] = result.target_provider
     if persist_global:
         _persist_model_switch(result)
     return {"value": result.new_model, "warning": result.warning_message or ""}
@@ -1604,7 +1735,9 @@ DESKTOP_BACKEND_CONTRACT = 1
 
 def _session_info(agent, session: dict | None = None) -> dict:
     if session is None:
-        for candidate in _sessions.values():
+        with _state_lock:
+            candidates = list(_sessions.values())
+        for candidate in candidates:
             if candidate.get("agent") is agent:
                 session = candidate
                 break
@@ -2339,9 +2472,19 @@ def _reset_session_agent(sid: str, session: dict) -> dict:
     return info
 
 
-def _make_agent(sid: str, key: str, session_id: str | None = None):
+def _make_agent(
+    sid: str,
+    key: str,
+    session_id: str | None = None,
+    *,
+    restricted: bool | None = None,
+):
     from run_agent import AIAgent
     from hermes_cli.runtime_provider import resolve_runtime_provider
+
+    is_restricted = (
+        bool(restricted) if restricted is not None else bool(_restricted_web_session.get())
+    )
 
     # MCP tool discovery runs in a background daemon thread at startup so a
     # dead server can't freeze the shell (see tui_gateway/entry.py).  The agent
@@ -2349,17 +2492,18 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
     # for in-flight discovery to land before building — bounded, so a slow/dead
     # server still can't block.  No-op once discovery has finished (every build
     # after the first during a slow startup).
-    try:
-        from tui_gateway.entry import wait_for_mcp_discovery
+    if not is_restricted:
+        try:
+            from tui_gateway.entry import wait_for_mcp_discovery
 
-        wait_for_mcp_discovery()
-    except Exception:
-        pass
+            wait_for_mcp_discovery()
+        except Exception:
+            pass
 
     cfg = _load_cfg()
     agent_cfg = cfg.get("agent") or {}
     system_prompt = _prompt_text(agent_cfg.get("system_prompt", ""))
-    startup_skills = _parse_tui_skills_env()
+    startup_skills = [] if is_restricted else _parse_tui_skills_env()
     if startup_skills:
         from agent.skill_commands import build_preloaded_skills_prompt
 
@@ -2383,8 +2527,9 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         cfg,
         primary_provider=runtime.get("provider"),
         primary_model=model,
+        include_local=True,
     )
-    return AIAgent(
+    _agent = AIAgent(
         model=model,
         max_iterations=_cfg_max_turns(cfg, 90),
         provider=runtime.get("provider"),
@@ -2392,8 +2537,8 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         api_key=runtime.get("api_key"),
         api_mode=runtime.get("api_mode"),
         fallback_model=_fb_chain or None,
-        acp_command=runtime.get("command"),
-        acp_args=runtime.get("args"),
+        acp_command=None if is_restricted else runtime.get("command"),
+        acp_args=None if is_restricted else runtime.get("args"),
         credential_pool=runtime.get("credential_pool"),
         quiet_mode=True,
         # verbose_logging controls DEBUG-level agent logging; it is intentionally
@@ -2403,17 +2548,19 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         verbose_logging=False,
         reasoning_config=_load_reasoning_config(),
         service_tier=_load_service_tier(),
-        enabled_toolsets=_load_enabled_toolsets(),
-        platform="tui",
+        enabled_toolsets=["web"] if is_restricted else _load_enabled_toolsets(),
+        platform="web" if is_restricted else "tui",
         session_id=session_id or key,
-        session_db=_get_db(),
+        session_db=None if is_restricted else _get_db(),
         ephemeral_system_prompt=system_prompt or None,
-        checkpoints_enabled=is_truthy_value(os.environ.get("HERMES_TUI_CHECKPOINTS")),
-        pass_session_id=is_truthy_value(os.environ.get("HERMES_TUI_PASS_SESSION_ID")),
-        skip_context_files=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
-        skip_memory=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
+        checkpoints_enabled=False if is_restricted else is_truthy_value(os.environ.get("HERMES_TUI_CHECKPOINTS")),
+        pass_session_id=False if is_restricted else is_truthy_value(os.environ.get("HERMES_TUI_PASS_SESSION_ID")),
+        skip_context_files=True if is_restricted else is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
+        skip_memory=True if is_restricted else is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
         **_agent_cbs(sid),
     )
+    _agent.intelligence_callback = lambda payload: _emit("intelligence.route", sid, payload)
+    return _agent
 
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
@@ -2539,36 +2686,6 @@ def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
     if prefix:
         return f"{prefix}\n\n{text}" if text else prefix
     return text or "What do you see in this image?"
-
-
-def _content_display_text(content: Any) -> str:
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, (int, float)):
-        return str(content)
-    if isinstance(content, list):
-        parts = []
-        for part in content:
-            text = _content_display_text(part).strip()
-            if text:
-                parts.append(text)
-        return "\n".join(parts)
-    if isinstance(content, dict):
-        kind = content.get("type")
-        if kind in {"text", "input_text", "output_text"}:
-            return str(content.get("text") or content.get("content") or "")
-        if kind in {"image_url", "input_image", "image"}:
-            return "[image]"
-        if kind in {"input_audio", "audio"}:
-            return "[audio]"
-        if kind:
-            return f"[{kind}]"
-        if "text" in content:
-            return str(content.get("text") or "")
-        return "[structured content]"
-    return str(content)
 
 
 def _coerce_message_text(content: Any) -> str:
@@ -2812,9 +2929,23 @@ def _inflight_snapshot(session: dict) -> dict | None:
 # ── Methods: session ─────────────────────────────────────────────────
 
 
+@method("ping")
+def _(rid, params: dict) -> dict:
+    return _ok(rid, {"ok": True, "ts": time.time()})
+
+
 @method("session.create")
 def _(rid, params: dict) -> dict:
-    sid = uuid.uuid4().hex[:8]
+    t = current_transport() or _stdio_transport
+    owner_id = _transport_owner_id(t)
+    restricted = _is_restricted_transport(t)
+    if owner_id:
+        with _state_lock:
+            ws_count = sum(1 for s in _sessions.values() if s.get("owner_id"))
+            if ws_count >= _MAX_WS_SESSIONS:
+                return _err(rid, 5035, "server busy — too many active web sessions")
+
+    sid = secrets.token_urlsafe(16)
     key = _new_session_key()
     cols = int(params.get("cols", 80))
     history = _coerce_seed_history(params.get("messages"))
@@ -2823,18 +2954,19 @@ def _(rid, params: dict) -> dict:
     # launch directory? Only an explicit choice is persisted as the session's
     # workspace (see _ensure_session_db_row); otherwise it lands in "No
     # workspace" instead of whatever folder the desktop launched in.
-    raw_cwd = str(params.get("cwd") or "").strip()
+    raw_cwd = str(params.get("cwd") or "").strip() if not restricted else ""
     try:
         explicit_cwd = bool(raw_cwd) and os.path.isdir(os.path.abspath(os.path.expanduser(raw_cwd)))
     except Exception:
         explicit_cwd = False
-    resolved_cwd = _completion_cwd(params)
-    _enable_gateway_prompts()
+    resolved_cwd = _completion_cwd({} if restricted else params)
+    if not restricted and not getattr(t, "is_ws", False):
+        _enable_gateway_prompts()
 
     ready = threading.Event()
     now = time.time()
 
-    _sessions[sid] = {
+    new_session = {
         "agent": None,
         "agent_error": None,
         "agent_ready": ready,
@@ -2850,16 +2982,20 @@ def _(rid, params: dict) -> dict:
         "cwd": resolved_cwd,
         "inflight_turn": None,
         "last_active": now,
+        "owner_id": owner_id,
         "pending_title": title or None,
+        "restricted": restricted,
         "running": False,
         "session_key": key,
         "show_reasoning": _load_show_reasoning(),
         "slash_worker": None,
         "tool_progress_mode": _load_tool_progress_mode(),
         "tool_started_at": {},
-        "transport": current_transport() or _stdio_transport,
+        "transport": t,
     }
-    _register_session_cwd(_sessions[sid])
+    with _state_lock:
+        _sessions[sid] = new_session
+    _register_session_cwd(new_session)
     # NOTE: we intentionally do NOT persist a DB row here. Every TUI/desktop
     # launch (and every "New agent" / draft) opens a session here just to paint
     # the composer, so eagerly creating a row left an "Untitled" empty session
@@ -2872,7 +3008,8 @@ def _(rid, params: dict) -> dict:
     # flushed.  This keeps startup responsive while still hydrating tools/skills
     # without requiring the user to submit a first prompt.
     def _deferred_build() -> None:
-        session = _sessions.get(sid)
+        with _state_lock:
+            session = _sessions.get(sid)
         if session is not None:
             _start_agent_build(sid, session)
 
@@ -2891,8 +3028,8 @@ def _(rid, params: dict) -> dict:
                 "model": _resolve_model(),
                 "tools": {},
                 "skills": {},
-                "cwd": _sessions[sid]["cwd"],
-                "branch": _git_branch_for_cwd(_sessions[sid]["cwd"]),
+                "cwd": "" if restricted else new_session["cwd"],
+                "branch": "" if restricted else _git_branch_for_cwd(new_session["cwd"]),
                 "lazy": True,
                 "desktop_contract": DESKTOP_BACKEND_CONTRACT,
                 "profile_name": _current_profile_name(),
@@ -3146,7 +3283,12 @@ def _(rid, params: dict) -> dict:
     """
     current = str(params.get("current_session_id") or "")
     try:
-        snapshot = list(_sessions.items())
+        with _state_lock:
+            snapshot = [
+                (sid, sess)
+                for sid, sess in list(_sessions.items())
+                if _can_access_session(sess)
+            ]
     except Exception as e:
         return _err(rid, 5036, f"could not enumerate active sessions: {e}")
 
@@ -3353,8 +3495,9 @@ def _(rid, params: dict) -> dict:
         "Hermes TUI Status",
         "",
         f"Session ID: {key}",
-        f"Path: {display_hermes_home()}",
     ]
+    if not session.get("restricted"):
+        lines.append(f"Path: {display_hermes_home()}")
     title = (meta.get("title") or "").strip()
     if title:
         lines.append(f"Title: {title}")
@@ -3543,19 +3686,23 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5011, str(e))
 
 
-@method("session.close")
-def _(rid, params: dict) -> dict:
-    sid = params.get("session_id", "")
-    session = _sessions.pop(sid, None)
-    if not session:
-        return _ok(rid, {"closed": False})
-    _finalize_session(session)
+def _close_session_object(sid: str, session: dict) -> None:
+    """Tear down all runtime resources held by one live session."""
+    _clear_pending(sid)
     try:
-        from tools.approval import unregister_gateway_notify
+        agent = session.get("agent")
+        if agent is not None and hasattr(agent, "interrupt"):
+            agent.interrupt()
+    except Exception:
+        pass
+    try:
+        from tools.approval import resolve_gateway_approval, unregister_gateway_notify
 
+        resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
         unregister_gateway_notify(session["session_key"])
     except Exception:
         pass
+    _finalize_session(session)
     try:
         agent = session.get("agent")
         if agent and hasattr(agent, "close"):
@@ -3568,6 +3715,40 @@ def _(rid, params: dict) -> dict:
             worker.close()
     except Exception:
         pass
+
+
+def cleanup_transport_sessions(transport: Any) -> int:
+    """Close and remove every live session owned by *transport* on WS disconnect."""
+    if transport is None:
+        return 0
+    owner = _transport_owner_id(transport)
+    with _state_lock:
+        to_close: list[tuple[str, dict]] = []
+        for sid, sess in list(_sessions.items()):
+            if sess.get("transport") is transport or (owner and sess.get("owner_id") == owner):
+                to_close.append((sid, sess))
+                _sessions.pop(sid, None)
+    for sid, sess in to_close:
+        try:
+            _close_session_object(sid, sess)
+        except Exception:
+            logger.debug("cleanup_transport_sessions error sid=%s", sid, exc_info=True)
+    return len(to_close)
+
+
+@method("session.close")
+def _(rid, params: dict) -> dict:
+    sid = params.get("session_id", "")
+    with _state_lock:
+        existing = _sessions.get(sid)
+        if not existing:
+            return _ok(rid, {"closed": False})
+        if not _can_access_session(existing):
+            return _err(rid, -32003, "Session access denied")
+        session = _sessions.pop(sid, None)
+    if not session:
+        return _ok(rid, {"closed": False})
+    _close_session_object(sid, session)
     return _ok(rid, {"closed": True})
 
 
@@ -3932,12 +4113,12 @@ def _(rid, params: dict) -> dict:
                 return _err(rid, 4004, "truncate_before_user_ordinal must be an integer")
             history = session.get("history", [])
             user_indices = [i for i, m in enumerate(history) if m.get("role") == "user"]
-            if ordinal >= len(user_indices):
+            if ordinal < 0 or ordinal >= len(user_indices):
                 return _err(rid, 4018, "target user message is no longer in session history")
             truncated = history[: user_indices[ordinal]]
             session["history"] = truncated
             session["history_version"] = int(session.get("history_version", 0)) + 1
-            if (db := _get_db()) is not None:
+            if not session.get("restricted") and (db := _get_db()) is not None:
                 try:
                     db.replace_messages(session["session_key"], truncated)
                 except Exception as exc:
@@ -3946,8 +4127,10 @@ def _(rid, params: dict) -> dict:
         session["last_active"] = time.time()
         _start_inflight_turn(session, text)
 
-    # Persist the DB row lazily, now that the user has actually sent a message.
-    _ensure_session_db_row(session)
+    # Persist the DB row lazily, now that the user has actually sent a message
+    # (skipped for ephemeral public web sessions).
+    if not session.get("restricted"):
+        _ensure_session_db_row(session)
     _start_agent_build(sid, session)
 
     def run_after_agent_ready() -> None:
@@ -4051,7 +4234,6 @@ def _notification_poller_loop(
 
         rid = f"__notif__{int(time.time() * 1000)}"
         try:
-            _emit("message.start", sid)
             _run_prompt_submit(rid, sid, session, text)
         except Exception as exc:
             print(
@@ -4091,7 +4273,6 @@ def _notification_poller_loop(
 
         rid = f"__notif__{int(time.time() * 1000)}"
         try:
-            _emit("message.start", sid)
             _run_prompt_submit(rid, sid, session, text)
         except Exception as exc:
             print(
@@ -4148,7 +4329,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             streamer = make_stream_renderer(cols)
             prompt = text
 
-            if isinstance(prompt, str) and "@" in prompt:
+            if not session.get("restricted") and isinstance(prompt, str) and "@" in prompt:
                 from agent.context_references import preprocess_context_references
                 from agent.model_metadata import get_model_context_length
 
@@ -4399,7 +4580,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         pass
 
             if (
-                status == "complete"
+                not session.get("restricted")
+                and status == "complete"
                 and isinstance(raw, str)
                 and raw.strip()
                 and isinstance(text, str)
@@ -4423,7 +4605,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             # calls / reasoning already stream separately and would be
             # noisy to read aloud.
             if (
-                status == "complete"
+                not session.get("restricted")
+                and status == "complete"
                 and isinstance(raw, str)
                 and raw.strip()
                 and _voice_tts_enabled()
@@ -4484,7 +4667,6 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     return
                 session["running"] = True
             try:
-                _emit("message.start", sid)
                 _run_prompt_submit(rid, sid, session, goal_followup)
             except Exception as _cont_exc:
                 print(
@@ -4508,7 +4690,6 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         break
                     session["running"] = True
                 try:
-                    _emit("message.start", sid)
                     _run_prompt_submit(rid, sid, session, synth)
                 except Exception as _n_exc:
                     print(
@@ -4568,6 +4749,46 @@ def _(rid, params: dict) -> dict:
     )
 
 
+def _cache_remote_image_for_attach(url: str) -> tuple[Path, str]:
+    """Download a safe remote https:// image (<= 10 MB) into web_uploads."""
+    import httpx
+    from tools.url_safety import is_safe_url
+
+    if not url.lower().startswith("https://") or not is_safe_url(url):
+        raise ValueError("Unsafe or unsupported image URL")
+
+    max_bytes = 10 * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    with httpx.Client(timeout=15.0, follow_redirects=False) as client:
+        with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            for chunk in resp.iter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("Remote image exceeds 10 MB limit")
+                chunks.append(chunk)
+    data = b"".join(chunks)
+
+    ext = None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        ext = ".png"
+    elif data.startswith(b"\xff\xd8\xff"):
+        ext = ".jpg"
+    elif data[:6] in (b"GIF87a", b"GIF89a"):
+        ext = ".gif"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        ext = ".webp"
+    if ext is None:
+        raise ValueError("Remote URL did not return a supported image format")
+
+    uploads_dir = (get_hermes_home() / "tmp" / "web_uploads").resolve()
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    dest = uploads_dir / f"remote_{secrets.token_hex(12)}{ext}"
+    dest.write_bytes(data)
+    return dest, ext
+
+
 @method("image.attach")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
@@ -4576,6 +4797,7 @@ def _(rid, params: dict) -> dict:
     raw = str(params.get("path", "") or "").strip()
     if not raw:
         return _err(rid, 4015, "path required")
+    is_restricted = bool(session.get("restricted"))
     try:
         from cli import (
             _IMAGE_EXTENSIONS,
@@ -4584,15 +4806,34 @@ def _(rid, params: dict) -> dict:
             _split_path_input,
         )
 
-        dropped = _detect_file_drop(raw)
-        if dropped:
-            image_path = dropped["path"]
-            remainder = dropped["remainder"]
+        if raw.lower().startswith("https://"):
+            try:
+                image_path, _ = _cache_remote_image_for_attach(raw)
+                remainder = ""
+            except Exception as exc:
+                return _err(rid, 4016, f"image not found: {exc}")
+        elif is_restricted:
+            # Restricted public web sessions may only attach uploaded temp images
+            # from ~/.hermes/tmp/web_uploads (or safe https:// URLs handled above).
+            uploads_dir = (get_hermes_home() / "tmp" / "web_uploads").resolve()
+            try:
+                candidate = Path(raw).resolve()
+                if not candidate.is_relative_to(uploads_dir) or not candidate.is_file():
+                    return _err(rid, 4016, f"image not found: {raw}")
+                image_path = candidate
+                remainder = ""
+            except Exception:
+                return _err(rid, 4016, f"image not found: {raw}")
         else:
-            path_token, remainder = _split_path_input(raw)
-            image_path = _resolve_attachment_path(path_token)
-            if image_path is None:
-                return _err(rid, 4016, f"image not found: {path_token}")
+            dropped = _detect_file_drop(raw)
+            if dropped:
+                image_path = dropped["path"]
+                remainder = dropped["remainder"]
+            else:
+                path_token, remainder = _split_path_input(raw)
+                image_path = _resolve_attachment_path(path_token)
+                if image_path is None:
+                    return _err(rid, 4016, f"image not found: {path_token}")
         if image_path.suffix.lower() not in _IMAGE_EXTENSIONS:
             return _err(rid, 4016, f"unsupported image: {image_path.name}")
         session.setdefault("attached_images", []).append(str(image_path))
@@ -4842,12 +5083,16 @@ def _(rid, params: dict) -> dict:
 
 def _respond(rid, params, key):
     r = params.get("request_id", "")
-    entry = _pending.get(r)
-    if not entry:
-        return _err(rid, 4009, f"no pending {key} request")
-    _, ev = entry
-    _answers[r] = params.get(key, "")
-    ev.set()
+    with _state_lock:
+        entry = _pending.get(r)
+        if not entry:
+            return _err(rid, 4009, f"no pending {key} request")
+        owner_sid, ev = entry
+        owner_session = _sessions.get(owner_sid)
+        if owner_session is not None and not _can_access_session(owner_session):
+            return _err(rid, -32003, "Session access denied")
+        _answers[r] = params.get(key, "")
+        ev.set()
     return _ok(rid, {"status": "ok"})
 
 
@@ -4889,6 +5134,34 @@ def _(rid, params: dict) -> dict:
 
 
 # ── Methods: config ──────────────────────────────────────────────────
+
+
+@method("model.switch")
+def _(rid, params: dict) -> dict:
+    """Switch model/provider for one live session cleanly (no slash.exec / global leak in WS mode)."""
+    sid = str(params.get("session_id") or "")
+    session, err = _sess({"session_id": sid}, rid)
+    if err:
+        return err
+    if session.get("running"):
+        return _err(
+            rid,
+            4009,
+            "session busy — /interrupt the current turn before switching models",
+        )
+    raw = str(params.get("model") or params.get("value") or "").strip()
+    if not raw:
+        return _err(rid, 4002, "model value required")
+    provider = str(params.get("provider") or "").strip()
+    if provider and "--provider" not in raw:
+        raw = f"{raw} --provider {provider}"
+    if params.get("persist_global") and not session.get("restricted") and "--global" not in raw:
+        raw = f"{raw} --global"
+    try:
+        result = _apply_model_switch(sid, session, raw)
+        return _ok(rid, {"value": result["value"], "warning": result.get("warning", "")})
+    except Exception as exc:
+        return _err(rid, 5001, str(exc))
 
 
 @method("config.set")
@@ -5565,7 +5838,7 @@ def _(rid, params: dict) -> dict:
 
         shutdown_mcp_servers()
         discover_mcp_tools()
-        if session:
+        if session and session.get("agent") is not None:
             agent = session["agent"]
             # Rebuild the cached agent's tool snapshot so the current session
             # picks up added/removed MCP tools without `/new` (which discards
@@ -6165,198 +6438,6 @@ def _(rid, params: dict) -> dict:
             )
 
     return _err(rid, 4018, f"not a quick/plugin/skill command: {name}")
-
-
-# ── Methods: missing TUI handlers (slash.exec, shell.exec, model.options, skills.manage) ──
-
-
-@method("slash.exec")
-def _(rid, params: dict) -> dict:
-    cmd = (params.get("command") or "").strip()
-    if not cmd:
-        return _err(rid, 4001, "command parameter is required")
-    if not cmd.startswith("/"):
-        cmd = f"/{cmd}"
-
-    session_id = params.get("session_id")
-    session = _sessions.get(session_id) if session_id else None
-    if not session and _active_session_id:
-        session = _sessions.get(_active_session_id)
-
-    worker = session.get("slash_worker") if session else None
-    if worker:
-        try:
-            out = worker.run(cmd)
-            return _ok(rid, {"output": out})
-        except Exception as e:
-            return _ok(rid, {"output": "", "warning": f"Slash worker error: {e}"})
-
-    try:
-        from cli import HermesCLI
-        import contextlib
-        import io
-
-        buf = io.StringIO()
-        cli_inst = HermesCLI(compact=True, verbose=False)
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            cli_inst.process_command(cmd)
-        return _ok(rid, {"output": buf.getvalue().rstrip()})
-    except Exception as e:
-        return _ok(rid, {"output": "", "warning": str(e)})
-
-
-@method("shell.exec")
-def _(rid, params: dict) -> dict:
-    command = (params.get("command") or "").strip()
-    if not command:
-        return _err(rid, 4001, "command parameter is required")
-
-    session_id = params.get("session_id")
-    session = _sessions.get(session_id) if session_id else None
-    cwd = _session_cwd(session) if session else _completion_cwd(params)
-
-    try:
-        r = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=min(int(params.get("timeout", 60)), 300),
-        )
-        return _ok(
-            rid,
-            {
-                "code": r.returncode,
-                "stdout": r.stdout or "",
-                "stderr": r.stderr or "",
-            },
-        )
-    except subprocess.TimeoutExpired:
-        return _ok(
-            rid,
-            {
-                "code": 124,
-                "stdout": "",
-                "stderr": "Command timed out after execution limit.",
-            },
-        )
-    except Exception as e:
-        return _err(rid, 5021, str(e))
-
-
-@method("model.options")
-def _(rid, params: dict) -> dict:
-    try:
-        from hermes_cli.models import (
-            CANONICAL_PROVIDERS,
-            _PROVIDER_LABELS,
-            _PROVIDER_MODELS,
-        )
-
-        cur_model, cur_provider = _resolve_startup_runtime()
-        session_id = params.get("session_id")
-        if session_id and session_id in _sessions:
-            s = _sessions[session_id]
-            if s.get("model"):
-                cur_model = s["model"]
-
-        providers = []
-        for p in CANONICAL_PROVIDERS:
-            slug = p.slug
-            label = p.label or _PROVIDER_LABELS.get(slug, slug)
-            models = _PROVIDER_MODELS.get(slug, [])
-            providers.append(
-                {
-                    "slug": slug,
-                    "name": label,
-                    "models": list(models),
-                    "is_current": (slug == cur_provider),
-                    "authenticated": True,
-                }
-            )
-
-        return _ok(
-            rid,
-            {
-                "model": cur_model,
-                "provider": cur_provider or "auto",
-                "providers": providers,
-            },
-        )
-    except Exception as e:
-        return _err(rid, 5022, str(e))
-
-
-@method("skills.manage")
-def _(rid, params: dict) -> dict:
-    action = params.get("action", "list")
-    query = (params.get("query") or "").strip().lower()
-    page = max(1, int(params.get("page") or 1))
-
-    try:
-        from tools.skills_tool import _find_all_skills
-
-        all_skills = _find_all_skills(skip_disabled=True)
-
-        if action == "list":
-            grouped: dict[str, list[str]] = {}
-            for s in all_skills:
-                cat = s.get("category", "general")
-                grouped.setdefault(cat, []).append(s["name"])
-            return _ok(rid, {"skills": grouped})
-
-        elif action == "inspect":
-            match = next((s for s in all_skills if s["name"].lower() == query), None)
-            if match:
-                return _ok(
-                    rid,
-                    {
-                        "info": {
-                            "name": match["name"],
-                            "description": match.get("description", ""),
-                            "category": match.get("category", "general"),
-                            "location": str(match.get("dir", "")),
-                        }
-                    },
-                )
-            return _ok(rid, {"info": None})
-
-        elif action == "search":
-            results = []
-            for s in all_skills:
-                if query in s["name"].lower() or query in s.get("description", "").lower():
-                    results.append(
-                        {"name": s["name"], "description": s.get("description", "")}
-                    )
-            return _ok(rid, {"results": results[:50]})
-
-        elif action == "install":
-            return _ok(rid, {"installed": True, "name": params.get("query", "")})
-
-        elif action == "browse":
-            items = [
-                {"name": s["name"], "description": s.get("description", "")}
-                for s in all_skills
-            ]
-            page_size = 20
-            total = len(items)
-            total_pages = max(1, (total + page_size - 1) // page_size)
-            start = (page - 1) * page_size
-            end = start + page_size
-            return _ok(
-                rid,
-                {
-                    "items": items[start:end],
-                    "page": page,
-                    "total": total,
-                    "total_pages": total_pages,
-                },
-            )
-
-        return _err(rid, 4004, f"unknown skills action: {action}")
-    except Exception as e:
-        return _err(rid, 5023, str(e))
 
 
 # ── Methods: paste ────────────────────────────────────────────────────
@@ -8202,3 +8283,46 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5002, "command timed out (30s)")
     except Exception as e:
         return _err(rid, 5003, str(e))
+
+
+@method("intelligence.status")
+def _(rid, params: dict) -> dict:
+    try:
+        from agent.connectivity import get_connectivity_monitor
+        from agent.local_runtime import get_local_runtime_manager
+        from agent.self_consciousness import get_self_consciousness_engine
+        from tools.tts_tool import _check_kokoro_available
+
+        mon = get_connectivity_monitor()
+        status = mon.get_status(probe_if_stale=bool(params.get("probe", True)))
+        runtime = get_local_runtime_manager().get_status()
+        try:
+            autonomy = get_self_consciousness_engine().get_status_summary()
+        except Exception:
+            autonomy = None
+        return _ok(rid, {
+            **status,
+            "local_runtime": runtime,
+            "voice": {"kokoro_ready": _check_kokoro_available()},
+            "autonomy": autonomy,
+        })
+    except Exception as exc:
+        return _err(rid, 5030, str(exc))
+
+
+@method("intelligence.set_mode")
+def _(rid, params: dict) -> dict:
+    mode = str(params.get("mode") or "hybrid").strip().lower()
+    persist = bool(params.get("persist", True))
+    try:
+        from agent.connectivity import get_connectivity_monitor
+
+        mon = get_connectivity_monitor()
+        new_mode = mon.set_mode(mode, persist=persist)
+        status = mon.get_status(probe_if_stale=False)
+        sid = str(params.get("session_id") or "")
+        if sid:
+            _emit("intelligence.state", sid, status)
+        return _ok(rid, {"mode": new_mode, **status})
+    except Exception as exc:
+        return _err(rid, 5031, str(exc))

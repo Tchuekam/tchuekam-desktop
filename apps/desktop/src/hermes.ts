@@ -15,6 +15,8 @@ import type {
   EnvVarInfo,
   HermesConfig,
   HermesConfigRecord,
+  IntelligenceMode,
+  IntelligenceStatusResponse,
   LogsResponse,
   MessagingPlatformsResponse,
   MessagingPlatformTestResponse,
@@ -66,6 +68,8 @@ export type {
   GatewayReadyPayload,
   HermesConfig,
   HermesConfigRecord,
+  IntelligenceMode,
+  IntelligenceStatusResponse,
   LogsResponse,
   MessagingEnvVarInfo,
   MessagingHomeChannel,
@@ -671,6 +675,7 @@ export function materializeStudioAsset(id: string): Promise<{ success: boolean; 
 export function getStudioAssetData(id: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
   return window.hermesDesktop.api({ path: `/api/images/assets/${encodeURIComponent(id)}/data`, method: 'GET' })
 }
+
 export function processImageEdit(payload: {
   image: string
   mask?: string
@@ -757,4 +762,77 @@ export function saveStudioPrompt(prompt: Omit<SavedPrompt, 'createdAt'>): Promis
     method: 'POST',
     body: prompt
   })
+}
+
+export function getIntelligenceStatus(probe = true): Promise<IntelligenceStatusResponse> {
+  return window.hermesDesktop.api<IntelligenceStatusResponse>({
+    path: `/api/intelligence/status?probe=${probe ? 'true' : 'false'}`,
+    method: 'GET'
+  })
+}
+
+export function setIntelligenceMode(
+  mode: IntelligenceMode,
+  persist = true
+): Promise<IntelligenceStatusResponse> {
+  return window.hermesDesktop.api<IntelligenceStatusResponse>({
+    path: '/api/intelligence/mode',
+    method: 'POST',
+    body: { mode, persist }
+  })
+}
+
+export function preloadLocalIntelligence(
+  modelId = 'mbowagpt'
+): Promise<{ ok: boolean; model_id: string; served_model: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; model_id: string; served_model: string }>({
+    path: '/api/intelligence/local/preload',
+    method: 'POST',
+    body: { model_id: modelId }
+  })
+}
+
+export function installLocalIntelligenceModel(
+  modelId: string
+): Promise<{ ok: boolean; model_id: string; path?: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; model_id: string; path?: string }>({
+    path: '/api/intelligence/local/install',
+    method: 'POST',
+    body: { model_id: modelId },
+    timeoutMs: 600_000
+  })
+}
+
+export async function buildVoiceWsUrl(sessionId?: string | null): Promise<string> {
+  const conn = await window.hermesDesktop.getConnection()
+  const rawWsUrl = String(conn?.wsUrl || '')
+  const parsed = new URL(rawWsUrl, typeof window !== 'undefined' ? window.location.href : 'http://127.0.0.1/')
+
+  if (parsed.pathname.endsWith('/api/ws')) {
+    parsed.pathname = `${parsed.pathname.slice(0, -'/api/ws'.length)}/api/ws/voice`
+  } else if (!parsed.pathname.endsWith('/ws/voice')) {
+    parsed.pathname = `${parsed.pathname.replace(/\/$/, '')}/api/ws/voice`
+  }
+
+  // Mint fresh single-use ticket in public gated mode if existing conn carried one
+  if (parsed.searchParams.has('ticket')) {
+    try {
+      const minted = await window.hermesDesktop.api<{ ticket: string }>({
+        path: '/api/auth/ws-ticket',
+        method: 'POST'
+      })
+
+      if (minted?.ticket) {
+        parsed.searchParams.set('ticket', minted.ticket)
+      }
+    } catch {
+      // keep existing query if mint fails
+    }
+  }
+
+  if (sessionId && sessionId.trim()) {
+    parsed.searchParams.set('session_id', sessionId.trim())
+  }
+
+  return parsed.toString()
 }

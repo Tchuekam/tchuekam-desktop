@@ -590,3 +590,125 @@ export interface ModelAssignmentResponse {
   scope?: string
   tasks?: string[]
 }
+
+export type IntelligenceMode = 'hybrid' | 'local' | 'online'
+export type ConnectivityState = 'online' | 'degraded' | 'offline'
+
+export interface MbowaGPTModelStatus {
+  description: string
+  display_name: string
+  id: string
+  ready: boolean
+  recommended_filename: string
+  recommended_installed: boolean
+  recommended_size_mb: number
+  resolved_path: string | null
+  resolved_weights: string | null
+  role_title: string
+}
+
+export interface LocalRuntimeStatus {
+  active_port: number | null
+  active_role: string | null
+  active_served_model: string | null
+  active_weights: string | null
+  binary_path: string | null
+  download?: {
+    downloaded_bytes?: number
+    error?: string
+    model_id?: string
+    percent?: number
+    status?: string
+    total_bytes?: number
+  } | null
+  hardware: {
+    cpu_count: number
+    gpu_layers: number
+    ram_gb: number
+    recommended_ctx_size: number
+    recommended_threads: number
+  }
+  installed_ggufs: string[]
+  models: MbowaGPTModelStatus[]
+  ollama_models: string[]
+  ready: boolean
+  running: boolean
+}
+
+export interface AutonomyDomainSummary {
+  description: string
+  id: string
+  ready: boolean
+  recommended_tools: string[]
+  sample_skills: string[]
+  skill_count: number
+  specialist: string
+  title: string
+}
+
+export interface AutonomyStatusSummary {
+  active_plan?: {
+    completed_steps: number
+    failed_steps: number
+    objective: string
+    plan_id: string
+    status: string
+    total_steps: number
+    verified: boolean
+  } | null
+  identity: {
+    creator: string
+    name: string
+    title: string
+    uptime_seconds: number
+  }
+  self_conscious: boolean
+  skills_ecosystem: {
+    all_domains_ready: boolean
+    domains: AutonomyDomainSummary[]
+    domains_covered: number
+    domains_total: number
+    total_skills: number
+  }
+  tool_health: {
+    available_toolsets_count: number
+    circuit_open_tools: string[]
+    fallbacks_used: number
+    success_rate: number
+    total_calls: number
+    total_registered: number
+    total_successes: number
+    unavailable_toolsets_count: number
+  }
+  verified_deliverables_count: number
+}
+
+export interface IntelligenceStatusResponse {
+  active_tier: 'cloud' | 'local'
+  autonomy?: AutonomyStatusSummary | null
+  connectivity: ConnectivityState
+  consecutive_failures: number
+  degraded: boolean
+  last_checked_at: number
+  last_error: string
+  last_provider: string
+  local_runtime: LocalRuntimeStatus
+  mode: IntelligenceMode
+  offline: boolean
+  online: boolean
+  voice: {
+    duplex_ws_path?: string
+    kokoro_ready: boolean
+    whisper_local_ready: boolean
+  }
+}
+
+export interface IntelligenceRouteEvent {
+  display_name?: string
+  model: string
+  offline?: boolean
+  provider: string
+  reason?: string
+  specialist_key?: string
+  tier?: 'cloud' | 'local'
+}

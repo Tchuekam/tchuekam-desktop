@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { $terminalTakeover } from '@/app/right-sidebar/store'
 import { Codicon } from '@/components/ui/codicon'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { queueComposerSeed } from '@/store/composer'
 import { notify } from '@/store/notifications'
@@ -11,6 +12,11 @@ import { notify } from '@/store/notifications'
 import { NEW_CHAT_ROUTE } from '../routes'
 
 import { DocumentWorkspace } from './components/editor/document-workspace'
+import {
+  BusinessLocalAiInlineCard,
+  BusinessLocalAiModal,
+  BusinessLocalAiStatusBadge
+} from './components/local-ai/business-local-agent-panel'
 import { ProfileModal } from './components/profile/profile-modal'
 import { exportBusinessDocument } from './exporters'
 import {
@@ -30,6 +36,7 @@ import {
   openBusinessDocument,
   renameBusinessDocument
 } from './store'
+import { askBusinessLocalAgent } from './store/local-ai'
 import type { BusinessDocument, DocumentTemplate } from './types'
 
 interface Builder {
@@ -165,6 +172,7 @@ export function BusinessView() {
   const [docTypeFilter, setDocTypeFilter] = useState<string>('all')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [scanning, setScanning] = useState(false)
   const scanFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const canStartChat = !takeover
@@ -188,7 +196,7 @@ export function BusinessView() {
   }
 
   const handleScanButton = () => {
-    if (!canStartChat) {
+    if (!canStartChat || scanning) {
       return
     }
 
@@ -198,10 +206,11 @@ export function BusinessView() {
   const handleScanFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
 
-    if (!file) {
+    if (!file || scanning) {
       return
     }
 
+    setScanning(true)
     void extractDocumentFromFile(file)
       .then(res => {
         createBusinessDocument('scan', {
@@ -231,6 +240,7 @@ export function BusinessView() {
         })
       })
       .finally(() => {
+        setScanning(false)
         if (scanFileInputRef.current) {
           scanFileInputRef.current.value = ''
         }
@@ -295,6 +305,7 @@ export function BusinessView() {
       !docSearch.trim() ||
       doc.title.toLowerCase().includes(docSearch.toLowerCase()) ||
       doc.type.toLowerCase().includes(docSearch.toLowerCase())
+
     const matchesType = docTypeFilter === 'all' || doc.type === docTypeFilter
 
     return matchesSearch && matchesType
@@ -313,6 +324,7 @@ export function BusinessView() {
         />
 
         <ProfileModal onClose={() => setProfileOpen(false)} open={profileOpen} />
+        {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
 
         {/* Apple-style Hero Header */}
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/50 pb-6">
@@ -342,6 +354,7 @@ export function BusinessView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
             <button
               aria-label="Business & Personal Profiles"
               className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-card/80 px-3.5 text-xs font-semibold shadow-2xs backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-muted"
@@ -423,6 +436,17 @@ export function BusinessView() {
                 <Codicon name="close" size="0.85rem" />
               </button>
             )}
+            {IS_DESKTOP ? (
+              <button
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!canStartChat || !question.trim()}
+                onClick={() => void askBusinessLocalAgent(question.trim())}
+                type="button"
+              >
+                <Codicon name="chip" size="0.85rem" />
+                Ask Local Agent
+              </button>
+            ) : null}
             <button
               className="inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold text-white shadow-xs transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!canStartChat || !question.trim()}
@@ -432,6 +456,8 @@ export function BusinessView() {
               Open in chat
             </button>
           </form>
+
+          {IS_DESKTOP ? <BusinessLocalAiInlineCard /> : null}
 
           {/* Quick Consultation Chips */}
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -796,12 +822,12 @@ export function BusinessView() {
             <div className="mt-5 flex flex-wrap gap-2.5">
               <button
                 className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-[#0a2f6b] shadow-md transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!canStartChat}
+                disabled={!canStartChat || scanning}
                 onClick={handleScanButton}
                 type="button"
               >
-                <Codicon name="cloud-upload" size="0.9rem" />
-                Select PDF / Image to Scan
+                <Codicon name={scanning ? 'loading' : 'cloud-upload'} size="0.9rem" spinning={scanning} />
+                {scanning ? 'Scanning…' : 'Select PDF / Image to Scan'}
               </button>
               <button
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-xs transition hover:bg-white/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"

@@ -117,5 +117,22 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       ipcRenderer.on('hermes:updates:progress', listener)
       return () => ipcRenderer.removeListener('hermes:updates:progress', listener)
     }
+  },
+  businessAi: {
+    getStatus: () => ipcRenderer.invoke('hermes:business-ai:status'),
+    install: options => ipcRenderer.invoke('hermes:business-ai:install', options),
+    cancelInstall: () => ipcRenderer.invoke('hermes:business-ai:cancel-install'),
+    start: () => ipcRenderer.invoke('hermes:business-ai:start'),
+    unload: () => ipcRenderer.invoke('hermes:business-ai:unload'),
+    setConfig: patch => ipcRenderer.invoke('hermes:business-ai:config', patch),
+    deleteModel: modelId => ipcRenderer.invoke('hermes:business-ai:delete-model', modelId),
+    runOperation: req => ipcRenderer.invoke('hermes:business-ai:run-operation', req),
+    askAssistant: req => ipcRenderer.invoke('hermes:business-ai:ask', req),
+    runOcr: req => ipcRenderer.invoke('hermes:business-ai:ocr', req),
+    onStatus: callback => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('hermes:business-ai:status', listener)
+      return () => ipcRenderer.removeListener('hermes:business-ai:status', listener)
+    }
   }
 })

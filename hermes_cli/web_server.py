@@ -19,7 +19,10 @@ import importlib.util
 import json
 import logging
 import os
+import posixpath
+import re
 import secrets
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -28,6 +31,8 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import zlib
+from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -64,7 +69,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
 except ImportError:
     # First try lazy-installing the dashboard extras. Only the user actually
     # running `hermes dashboard` needs fastapi+uvicorn; lazy install keeps
@@ -76,20 +81,26 @@ except ImportError:
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
         from fastapi.staticfiles import StaticFiles
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
     except Exception:
         raise SystemExit(
             "Web UI requires fastapi and uvicorn.\n"
             f"Install with: {sys.executable} -m pip install 'fastapi' 'uvicorn[standard]'"
         )
 
-_custom_web_dist = os.environ.get("HERMES_WEB_DIST")
-if _custom_web_dist and Path(_custom_web_dist).exists():
-    WEB_DIST = Path(_custom_web_dist)
-elif (PROJECT_ROOT / "apps" / "desktop" / "dist-web").exists():
-    WEB_DIST = PROJECT_ROOT / "apps" / "desktop" / "dist-web"
-else:
-    WEB_DIST = Path(__file__).parent / "web_dist"
+
+def resolve_web_dist() -> Path:
+    """Resolve the active SPA static build directory consistently across CLI and server."""
+    custom_web_dist = os.environ.get("HERMES_WEB_DIST")
+    if custom_web_dist and Path(custom_web_dist).exists():
+        return Path(custom_web_dist)
+    desktop_dist = PROJECT_ROOT / "apps" / "desktop" / "dist-web"
+    if (desktop_dist / "index.html").exists() or desktop_dist.exists():
+        return desktop_dist
+    return Path(__file__).parent / "web_dist"
+
+
+WEB_DIST = resolve_web_dist()
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -108,6 +119,7 @@ _log = logging.getLogger(__name__)
 async def _lifespan(app: "FastAPI"):
     app.state.event_channels = {}  # dict[str, set]
     app.state.event_lock = asyncio.Lock()
+    app.state.muapi_client = None
     try:
         from tchuekam_backend.core.database import init_db, SessionLocal
         from tchuekam_backend.services.rbac_service import RbacService
@@ -120,7 +132,16 @@ async def _lifespan(app: "FastAPI"):
             db.close()
     except Exception as e:
         _log.debug("tchuekam_backend DB initialization skipped or error: %s", e)
-    yield
+    try:
+        yield
+    finally:
+        client = getattr(app.state, "muapi_client", None)
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+            app.state.muapi_client = None
 
 
 def _get_event_state(app: "FastAPI"):
@@ -144,9 +165,12 @@ app = FastAPI(title="TchuekaM Agent", version=__version__, lifespan=_lifespan)
 
 try:
     from tchuekam_backend.api.router import api_router as _tchuekam_backend_router
+    from tchuekam_backend.core.exceptions import AppException as _SaaSAppException
+    from tchuekam_backend.core.exception_handlers import app_exception_handler as _saas_exception_handler
+    app.add_exception_handler(_SaaSAppException, _saas_exception_handler)
     app.include_router(_tchuekam_backend_router, prefix="/api/v1")
 except Exception as _e:
-    _log.debug("tchuekam_backend api_router skipped: %s", _e)
+    _log.warning("tchuekam_backend api_router skipped: %s", _e)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
@@ -168,33 +192,63 @@ _reveal_timestamps: List[float] = []
 _REVEAL_MAX_PER_WINDOW = 5
 _REVEAL_WINDOW_SECONDS = 30
 
-# CORS: restrict to known first-party origins.  The web UI is normally served
-# from the same origin as this server; binding to 0.0.0.0 with
-# allow_origins=["*"] would let any website read/modify config and secrets.
-#
-# ``HERMES_DASHBOARD_ALLOWED_ORIGINS`` adds deployment-specific origins as a
-# comma-separated list (exact origins, e.g. "https://demo.example.com").  The
-# hosted web build needs this whenever the SPA and this server sit on different
-# hosts — a Vercel frontend talking to a Railway backend, say.
+# Per-IP sliding-window rate limiter for expensive / proxy / WS endpoints.
+_RATE_BUCKETS: Dict[tuple[str, str], deque[float]] = {}
+_RATE_LOCK = threading.Lock()
+_PROMPTS_LOCK = threading.Lock()
 
+
+def _client_ip_from_conn(conn: Any) -> str:
+    """Return peer IP for HTTP Request or WebSocket without blindly trusting spoofed headers."""
+    client = getattr(conn, "client", None)
+    host = getattr(client, "host", None) if client else None
+    return host or "unknown"
+
+
+def _rate_limit_check(conn: Any, bucket: str, max_req: int, window_s: float) -> bool:
+    """Return True if under rate limit, False if rate limit exceeded."""
+    now = time.monotonic()
+    cutoff = now - window_s
+    ip = _client_ip_from_conn(conn)
+    key = (bucket, ip)
+    with _RATE_LOCK:
+        dq = _RATE_BUCKETS.get(key)
+        if dq is None:
+            dq = deque()
+            _RATE_BUCKETS[key] = dq
+        while dq and dq[0] <= cutoff:
+            dq.popleft()
+        if len(dq) >= max_req:
+            return False
+        dq.append(now)
+        if len(_RATE_BUCKETS) > 4096:
+            stale = [k for k, v in _RATE_BUCKETS.items() if not v or v[-1] <= cutoff]
+            for k in stale[:1024]:
+                _RATE_BUCKETS.pop(k, None)
+        return True
+
+
+def _require_rate_limit(conn: Any, bucket: str, max_req: int, window_s: float) -> None:
+    if not _rate_limit_check(conn, bucket, max_req, window_s):
+        raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
+
+# CORS: restrict to verified first-party origins + configured deployment origins.
 _DASHBOARD_ORIGIN_REGEX = (
-    r"^https?://(.*\.tchuekam\.com|tchuekam\.com|.*\.netlify\.app|.*\.vercel\.app"
-    r"|.*\.up\.railway\.app|localhost|127\.0\.0\.1)(:\d+)?$"
+    r"^https://([a-zA-Z0-9-]+\.)*tchuekam\.com$"
+    r"|^https://tchuekam(?:-[a-zA-Z0-9-]+)*\.(?:vercel\.app|netlify\.app|up\.railway\.app)$"
+    r"|^http://(?:localhost|127\.0\.0\.1)(?::\d+)?$"
 )
 
-_extra_origins = [
-    origin.strip().rstrip("/")
-    for origin in os.environ.get("HERMES_DASHBOARD_ALLOWED_ORIGINS", "").split(",")
-    if origin.strip()
-]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_extra_origins,
-    allow_origin_regex=_DASHBOARD_ORIGIN_REGEX,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def _get_extra_allowed_origins() -> List[str]:
+    return [
+        origin.strip().rstrip("/")
+        for origin in os.environ.get("HERMES_DASHBOARD_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+
+
+_extra_origins = _get_extra_allowed_origins()
 
 # ---------------------------------------------------------------------------
 # Endpoints that do NOT require the session token.  Everything else under
@@ -237,9 +291,16 @@ def _has_valid_session_token(request: Request) -> bool:
 
 
 def _require_token(request: Request) -> None:
-    """Validate the ephemeral session token.  Raises 401 on mismatch."""
-    if not _has_valid_session_token(request):
+    """Validate OAuth gate session, admin override, or dashboard session token."""
+    if getattr(request.app.state, "auth_required", False):
+        if getattr(request.state, "session", None) is not None:
+            return
+        if _has_admin_override(request.headers):
+            return
         raise HTTPException(status_code=401, detail="Unauthorized")
+    if _has_valid_session_token(request) or _has_admin_override(request.headers):
+        return
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # Accepted Host header values for loopback binds. DNS rebinding attacks
@@ -313,20 +374,170 @@ def _is_accepted_host(host_header: str, bound_host: str) -> bool:
     return host_only == bound_lc
 
 
+# NOTE: Starlette applies HTTP middlewares in LIFO order: the LAST middleware
+# added wraps outermost and executes FIRST on inbound requests (and LAST on
+# responses). Register from innermost → outermost so execution order is:
+#   CORSMiddleware → security_headers → host_header → _dashboard_auth_gate → auth_middleware
+
+_PUBLIC_DEMO_TRUTHY: frozenset[str] = frozenset({"1", "true", "yes"})
+
+_PUBLIC_SHOWCASE_ALLOWED_GET_EXACT: frozenset[str] = frozenset({
+    "/api/status",
+    "/api/health",
+    "/api/v1/health",
+    "/api/config/defaults",
+    "/api/config/schema",
+    "/api/model/info",
+    "/api/model/options",
+    "/api/model/recommended-default",
+    "/api/model/auxiliary",
+    "/api/skills",
+    "/api/skills/hub/search",
+    "/api/tools/toolsets",
+    "/api/images/models",
+    "/api/images/providers",
+    "/api/images/library",
+    "/api/images/prompts",
+    "/api/dashboard/themes",
+    "/api/dashboard/plugins",
+    "/api/download-info",
+    "/api/auth/me",
+    "/api/auth/providers",
+    "/api/auth/status",
+})
+
+_PUBLIC_SHOWCASE_ALLOWED_GET_PREFIXES: tuple[str, ...] = (
+    "/api/download/",
+    "/api/images/jobs/",
+    "/api/images/assets/",
+)
+
+_PUBLIC_SHOWCASE_ALLOWED_POST_EXACT: frozenset[str] = frozenset({
+    "/api/business/ai",
+    "/api/business/ocr",
+    "/api/audio/transcribe",
+    "/api/audio/speak",
+    "/api/uploads/image",
+    "/api/images/generate",
+    "/api/images/edit",
+    "/api/images/analyze",
+    "/api/images/ocr",
+    "/api/images/library",
+    "/api/images/prompts",
+    "/api/providers/validate",
+    "/api/auth/ws-ticket",
+})
+
+_PUBLIC_SHOWCASE_ALLOWED_POST_PREFIXES: tuple[str, ...] = (
+    "/api/images/jobs/",
+    "/api/images/assets/",
+    "/api/auth/",
+)
+
+
+def _is_public_showcase_mode(app_instance: Optional[FastAPI]) -> bool:
+    """True when exposed publicly without OAuth login (public demo showcase)."""
+    explicit = (
+        os.environ.get("HERMES_PUBLIC_DEMO", "").strip().lower() in _PUBLIC_DEMO_TRUTHY
+        or os.environ.get("TCHUEKAM_PUBLIC_DEMO", "").strip().lower() in _PUBLIC_DEMO_TRUTHY
+    )
+    target = app_instance if app_instance is not None else app
+    state = getattr(target, "state", None)
+    insecure_public = bool(getattr(state, "allow_public", False)) and not bool(
+        getattr(state, "auth_required", False)
+    )
+    return explicit or insecure_public
+
+
+def _is_allowed_dashboard_origin(origin: str) -> bool:
+    """Return True if an HTTP Origin matches the configured dashboard CORS allowlist."""
+    norm = (origin or "").strip().rstrip("/")
+    if not norm:
+        return False
+    if norm in _get_extra_allowed_origins():
+        return True
+    return bool(re.match(_DASHBOARD_ORIGIN_REGEX, norm))
+
+
+def _has_admin_override(headers) -> bool:
+    """Allow an operator-configured admin secret key to bypass demo restrictions."""
+    admin_key = (os.environ.get("HERMES_DASHBOARD_ADMIN_KEY") or "").strip()
+    if not admin_key:
+        return False
+    provided = (headers.get("x-hermes-admin-key") or "").strip()
+    return bool(provided) and hmac.compare_digest(provided.encode(), admin_key.encode())
+
+
+def _is_blocked_in_public_showcase(
+    path: str, method: str, authorization: str = ""
+) -> bool:
+    """Default-deny gate for `/api/*` when running in public demo showcase mode."""
+    collapsed = re.sub(r"/+", "/", path or "/")
+    norm_path = posixpath.normpath(collapsed)
+    if norm_path != "/" and norm_path.endswith("/"):
+        norm_path = norm_path.rstrip("/")
+    if not (norm_path == "/api" or norm_path.startswith("/api/")):
+        return False
+    norm_method = (method or "GET").upper()
+    if norm_method == "OPTIONS":
+        return False
+    if norm_path.startswith("/api/muapi-proxy/"):
+        return False
+    if norm_path.startswith("/api/v1/"):
+        return not _allows_saas_api_passthrough(norm_path, authorization)
+    if norm_method in {"GET", "HEAD"}:
+        if norm_path in _PUBLIC_SHOWCASE_ALLOWED_GET_EXACT:
+            return False
+        if norm_path.startswith(_PUBLIC_SHOWCASE_ALLOWED_GET_PREFIXES):
+            return False
+        return True
+    if norm_method == "POST":
+        if norm_path in _PUBLIC_SHOWCASE_ALLOWED_POST_EXACT:
+            return False
+        if norm_path.startswith(_PUBLIC_SHOWCASE_ALLOWED_POST_PREFIXES):
+            return False
+        return True
+    if norm_method == "DELETE" and norm_path.startswith("/api/images/library/"):
+        return False
+    return True
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Require authentication on private /api/ routes and enforce showcase allowlist."""
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    path = request.url.path
+    if _is_public_showcase_mode(request.app) and _is_blocked_in_public_showcase(
+        path, request.method, authorization=request.headers.get("authorization", "")
+    ):
+        if not _has_admin_override(request.headers):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Operation disabled in public showcase mode"},
+            )
+    if getattr(request.app.state, "auth_required", False) or getattr(request.app.state, "allow_public", False):
+        return await call_next(request)
+    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
+        if _allows_saas_api_passthrough(path, request.headers.get("authorization", "")):
+            return await call_next(request)
+        if not _has_valid_session_token(request):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized"},
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def _dashboard_auth_gate(request: Request, call_next):
+    from hermes_cli.dashboard_auth.middleware import gated_auth_middleware
+    return await gated_auth_middleware(request, call_next)
+
+
 @app.middleware("http")
 async def host_header_middleware(request: Request, call_next):
-    """Reject requests whose Host header doesn't match the bound interface.
-
-    Defends against DNS rebinding: a victim browser on a localhost
-    dashboard is tricked into fetching from an attacker hostname that
-    TTL-flips to 127.0.0.1. CORS and same-origin checks don't help —
-    the browser now treats the attacker origin as same-origin with the
-    dashboard. Host-header validation at the app layer catches it.
-
-    See GHSA-ppp5-vxwm-4cf7.
-    """
-    # Store the bound host on app.state so this middleware can read it —
-    # set by start_server() at listen time.
+    """Reject requests whose Host header doesn't match the bound interface."""
     bound_host = getattr(app.state, "bound_host", None)
     if bound_host:
         host_header = request.headers.get("host", "")
@@ -343,131 +554,20 @@ async def host_header_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# ---------------------------------------------------------------------------
-# Dashboard OAuth auth gate — engaged only when start_server flags the
-# bind as non-loopback-without-insecure.  No-op pass-through in loopback
-# mode so the legacy auth_middleware (below) handles those binds via
-# the injected ``_SESSION_TOKEN``.  Registered between host_header and
-# auth_middleware so the order is: host check → cookie auth → token auth.
-# ---------------------------------------------------------------------------
-
-
-@app.middleware("http")
-async def _dashboard_auth_gate(request: Request, call_next):
-    from hermes_cli.dashboard_auth.middleware import gated_auth_middleware
-    return await gated_auth_middleware(request, call_next)
-
-
-_PUBLIC_DEMO_BLOCKED_EXACT: frozenset[str] = frozenset({
-    "/api/env/reveal",
-    "/api/config/raw",
-    "/api/logs",
-    "/api/hermes/update",
-})
-
-_PUBLIC_DEMO_BLOCKED_PREFIXES: tuple[str, ...] = (
-    "/api/ops/",
-    "/api/cron/",
-    "/api/mcp/",
-    "/api/profiles",
-    "/api/webhooks",
-    "/api/credentials/pool",
-    "/api/pairing",
-    "/api/gateway/",
-    "/api/messaging/",
-    "/api/providers/oauth",
-    "/api/dashboard/agent-plugins",
+_CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' data: https://fonts.gstatic.com; "
+    "img-src 'self' data: blob: https:; "
+    "media-src 'self' data: blob: https:; "
+    "connect-src 'self' wss: ws: https://*.tchuekam.com https://tchuekam.com "
+    "https://*.supabase.co https://api.muapi.ai https://*.fal.media https://*.fal.run "
+    "https://www.google-analytics.com https://analytics.google.com https://*.up.railway.app; "
+    "frame-ancestors 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'"
 )
-
-_PUBLIC_DEMO_MUTATING_PATHS: frozenset[str] = frozenset({
-    "/api/env",
-    "/api/config",
-    "/api/model/set",
-    "/api/curator/paused",
-    "/api/curator/run",
-    "/api/memory/provider",
-    "/api/memory/reset",
-    "/api/skills/toggle",
-    "/api/dashboard/theme",
-    "/api/dashboard/plugin-providers",
-})
-
-_PUBLIC_DEMO_MUTATING_PREFIXES: tuple[str, ...] = (
-    "/api/skills/hub/",
-    "/api/tools/",
-)
-
-_PUBLIC_DEMO_TRUTHY: frozenset[str] = frozenset({"1", "true", "yes"})
-
-
-def _is_public_showcase_mode(app_instance: FastAPI) -> bool:
-    """True when exposed publicly without OAuth login (public demo showcase)."""
-    explicit = (
-        os.environ.get("HERMES_PUBLIC_DEMO", "").strip().lower() in _PUBLIC_DEMO_TRUTHY
-        or os.environ.get("TCHUEKAM_PUBLIC_DEMO", "").strip().lower() in _PUBLIC_DEMO_TRUTHY
-    )
-    insecure_public = bool(getattr(app_instance.state, "allow_public", False)) and not bool(
-        getattr(app_instance.state, "auth_required", False)
-    )
-    return explicit or insecure_public
-
-
-def _is_allowed_dashboard_origin(origin: str) -> bool:
-    """Return True if an HTTP Origin matches the configured dashboard CORS allowlist."""
-    norm = (origin or "").strip().rstrip("/")
-    if not norm:
-        return False
-    if norm in _extra_origins:
-        return True
-    return bool(re.match(_DASHBOARD_ORIGIN_REGEX, norm))
-
-
-def _has_admin_override(headers) -> bool:
-    """Allow an operator-configured admin secret key to bypass demo restrictions."""
-    admin_key = (os.environ.get("HERMES_DASHBOARD_ADMIN_KEY") or "").strip()
-    if not admin_key:
-        return False
-    provided = (headers.get("x-hermes-admin-key") or "").strip()
-    return bool(provided) and hmac.compare_digest(provided.encode(), admin_key.encode())
-
-
-def _is_blocked_in_public_showcase(path: str, method: str) -> bool:
-    """Return True if this route exposes secrets, shell, logs, or server config writes."""
-    norm_method = (method or "GET").upper()
-    if path in _PUBLIC_DEMO_BLOCKED_EXACT or path.startswith(_PUBLIC_DEMO_BLOCKED_PREFIXES):
-        return True
-    if norm_method in {"POST", "PUT", "PATCH", "DELETE"}:
-        if path in _PUBLIC_DEMO_MUTATING_PATHS or path.startswith(_PUBLIC_DEMO_MUTATING_PREFIXES):
-            return True
-        if path.startswith("/api/dashboard/plugins/") and path.endswith("/visibility"):
-            return True
-    return False
-
-
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    """Require the session token on all /api/ routes except the public list."""
-    path = request.url.path
-    if _is_public_showcase_mode(request.app) and _is_blocked_in_public_showcase(path, request.method):
-        if not _has_admin_override(request.headers):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Operation disabled in public showcase mode"},
-            )
-    # When the OAuth gate is active, cookie-based auth (gated_auth_middleware
-    # above) is authoritative.  The legacy _SESSION_TOKEN path is loopback-only
-    # and is skipped here so the gate's session attachment isn't overridden.
-    if getattr(request.app.state, "auth_required", False) or getattr(request.app.state, "allow_public", False):
-        return await call_next(request)
-    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
-        if _allows_saas_api_passthrough(path, request.headers.get("authorization", "")):
-            return await call_next(request)
-        if not _has_valid_session_token(request):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Unauthorized"},
-            )
-    return await call_next(request)
 
 
 @app.middleware("http")
@@ -478,9 +578,22 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
-    if request.headers.get("x-forwarded-proto", "").lower() == "https":
+    response.headers.setdefault("Content-Security-Policy", _CSP_POLICY)
+    if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+# Registered LAST so Starlette LIFO places CORSMiddleware OUTERMOST — every
+# preflight OPTIONS and error response receives CORS headers consistently.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_extra_origins,
+    allow_origin_regex=_DASHBOARD_ORIGIN_REGEX,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -746,20 +859,6 @@ def _audio_extension_for_mime(mime_type: str) -> str:
     return _AUDIO_MIME_EXTENSIONS.get(normalized, ".webm")
 
 
-class ModelAssignment(BaseModel):
-    """Payload for POST /api/model/set — assign a provider/model to a slot.
-
-    scope="main"        → writes model.provider + model.default
-    scope="auxiliary"   → writes auxiliary.<task>.provider + auxiliary.<task>.model
-    scope="auxiliary" with task=""  → applied to every auxiliary.* slot
-    scope="auxiliary" with task="__reset__"  → resets every slot to provider="auto"
-    """
-    scope: str
-    provider: str
-    model: str
-    task: str = ""
-
-
 _GATEWAY_HEALTH_URL = os.getenv("GATEWAY_HEALTH_URL")
 try:
     _GATEWAY_HEALTH_TIMEOUT = float(os.getenv("GATEWAY_HEALTH_TIMEOUT", "3"))
@@ -835,7 +934,7 @@ async def health_check():
 
 
 @app.get("/api/status")
-async def get_status():
+async def get_status(request: Request):
     current_ver, latest_ver = check_config_version()
 
     # --- Gateway liveness detection ---
@@ -934,17 +1033,22 @@ async def get_status():
         # Module not importable yet (early startup) — leave as [].
         pass
 
+    restricted_public = (
+        _is_public_showcase_mode(request.app)
+        and not _has_admin_override(request.headers)
+    )
+
     return {
         "version": __version__,
         "release_date": __release_date__,
-        "hermes_home": str(get_hermes_home()),
-        "config_path": str(get_config_path()),
-        "env_path": str(get_env_path()),
+        "hermes_home": None if restricted_public else str(get_hermes_home()),
+        "config_path": None if restricted_public else str(get_config_path()),
+        "env_path": None if restricted_public else str(get_env_path()),
         "config_version": current_ver,
         "latest_config_version": latest_ver,
         "gateway_running": gateway_running,
-        "gateway_pid": gateway_pid,
-        "gateway_health_url": _GATEWAY_HEALTH_URL,
+        "gateway_pid": None if restricted_public else gateway_pid,
+        "gateway_health_url": None if restricted_public else _GATEWAY_HEALTH_URL,
         "gateway_state": gateway_state,
         "gateway_platforms": gateway_platforms,
         "gateway_exit_reason": gateway_exit_reason,
@@ -955,14 +1059,7 @@ async def get_status():
     }
 
 
-@app.get("/api/system/stats")
-async def get_system_stats():
-    """Host + process system stats for the System page.
-
-    OS / Python / host identity from stdlib; CPU / memory / disk / uptime from
-    psutil when available, with graceful degradation when it isn't.  Read-only
-    and non-sensitive (no env values, no paths beyond the hermes home root).
-    """
+def _collect_system_stats() -> Dict[str, Any]:
     import platform as _platform
 
     info: Dict[str, Any] = {
@@ -1032,6 +1129,17 @@ async def get_system_stats():
             pass
 
     return info
+
+
+@app.get("/api/system/stats")
+async def get_system_stats():
+    """Host + process system stats for the System page.
+
+    OS / Python / host identity from stdlib; CPU / memory / disk / uptime from
+    psutil when available, with graceful degradation when it isn't.  Read-only
+    and non-sensitive (no env values, no paths beyond the hermes home root).
+    """
+    return await asyncio.to_thread(_collect_system_stats)
 
 
 # ---------------------------------------------------------------------------
@@ -1185,6 +1293,13 @@ async def run_config_migrate():
 # ---------------------------------------------------------------------------
 
 _ACTION_LOG_DIR: Path = get_hermes_home() / "logs"
+_DEFAULT_ACTION_LOG_DIR: Path = _ACTION_LOG_DIR
+
+
+def _get_action_log_dir() -> Path:
+    if _ACTION_LOG_DIR != _DEFAULT_ACTION_LOG_DIR:
+        return _ACTION_LOG_DIR
+    return get_hermes_home() / "logs"
 
 # Short ``name`` (from the URL) → absolute log file path.
 _ACTION_LOG_FILES: Dict[str, str] = {
@@ -1218,8 +1333,9 @@ _ACTION_RESULTS: Dict[str, Dict[str, Any]] = {}
 def _record_completed_action(name: str, message: str, exit_code: int = 1) -> None:
     """Record a non-spawned action result and write it to the action log."""
     log_file_name = _ACTION_LOG_FILES[name]
-    _ACTION_LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = _ACTION_LOG_DIR / log_file_name
+    log_dir = _get_action_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / log_file_name
     with open(log_path, "ab", buffering=0) as log_file:
         log_file.write(
             f"\n=== {name} completed {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode()
@@ -1231,42 +1347,56 @@ def _record_completed_action(name: str, message: str, exit_code: int = 1) -> Non
     _ACTION_RESULTS[name] = {"exit_code": exit_code, "pid": None}
 
 
+def _reap_finished_actions() -> None:
+    for action_name, old_proc in list(_ACTION_PROCS.items()):
+        try:
+            rc = old_proc.poll()
+        except Exception:
+            rc = None
+        if rc is not None:
+            _ACTION_RESULTS[action_name] = {"exit_code": rc, "pid": old_proc.pid}
+            _ACTION_PROCS.pop(action_name, None)
+
+
 def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
     """Spawn ``hermes <subcommand>`` detached and record the Popen handle.
 
     Uses the running interpreter's ``hermes_cli.main`` module so the action
     inherits the same venv/PYTHONPATH the web server is using.
     """
+    _reap_finished_actions()
     log_file_name = _ACTION_LOG_FILES[name]
-    _ACTION_LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = _ACTION_LOG_DIR / log_file_name
+    log_dir = _get_action_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / log_file_name
     log_file = open(log_path, "ab", buffering=0)
-    log_file.write(
-        f"\n=== {name} started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode()
-    )
-
-    cmd = [sys.executable, "-m", "hermes_cli.main", *subcommand]
-
-    popen_kwargs: Dict[str, Any] = {
-        "cwd": str(PROJECT_ROOT),
-        "stdin": subprocess.DEVNULL,
-        "stdout": log_file,
-        "stderr": subprocess.STDOUT,
-        "env": {**os.environ, "HERMES_NONINTERACTIVE": "1"},
-    }
-    if sys.platform == "win32":
-        popen_kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-            | getattr(subprocess, "DETACHED_PROCESS", 0)
+    try:
+        log_file.write(
+            f"\n=== {name} started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode()
         )
-    else:
-        popen_kwargs["start_new_session"] = True
 
-    proc = subprocess.Popen(cmd, **popen_kwargs)
-    # The child inherits its own duplicated fd for stdout/stderr, so the
-    # parent's handle can be released immediately — otherwise we leak one
-    # fd per spawned action.
-    log_file.close()
+        cmd = [sys.executable, "-m", "hermes_cli.main", *subcommand]
+
+        popen_kwargs: Dict[str, Any] = {
+            "cwd": str(PROJECT_ROOT),
+            "stdin": subprocess.DEVNULL,
+            "stdout": log_file,
+            "stderr": subprocess.STDOUT,
+            "env": {**os.environ, "HERMES_NONINTERACTIVE": "1"},
+        }
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+    finally:
+        # The child inherits its own duplicated fd for stdout/stderr, so the
+        # parent's handle can be released immediately — even if Popen raises.
+        log_file.close()
     _ACTION_RESULTS.pop(name, None)
     _ACTION_PROCS[name] = proc
     return proc
@@ -1330,7 +1460,8 @@ async def update_hermes():
 
 
 @app.post("/api/audio/transcribe")
-async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
+async def transcribe_audio_upload(payload: AudioTranscriptionRequest, request: Request):
+    _require_rate_limit(request, "audio", 20, 60.0)
     data_url = (payload.data_url or "").strip()
     if not data_url.startswith("data:") or "," not in data_url:
         raise HTTPException(status_code=400, detail="Invalid audio payload")
@@ -1340,6 +1471,9 @@ async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
         raise HTTPException(
             status_code=400, detail="Audio payload must be base64 encoded"
         )
+
+    if len(encoded) > (_MAX_TRANSCRIPTION_UPLOAD_BYTES * 4 // 3 + 16):
+        raise HTTPException(status_code=413, detail="Audio recording is too large")
 
     mime_type = (
         payload.mime_type or header[5:].split(";", 1)[0] or "audio/webm"
@@ -1386,9 +1520,9 @@ async def transcribe_audio_upload(payload: AudioTranscriptionRequest):
         result = await loop.run_in_executor(None, _do_transcribe, temp_path)
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception:
         _log.exception("Desktop voice transcription failed")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+        raise HTTPException(status_code=500, detail="Transcription failed")
     finally:
         if temp_path:
             try:
@@ -1590,7 +1724,7 @@ async def get_action_status(name: str, lines: int = 200):
     if log_file_name is None:
         raise HTTPException(status_code=404, detail=f"Unknown action: {name}")
 
-    log_path = _ACTION_LOG_DIR / log_file_name
+    log_path = _get_action_log_dir() / log_file_name
     tail = _tail_lines(log_path, min(max(lines, 1), 2000))
 
     proc = _ACTION_PROCS.get(name)
@@ -1688,18 +1822,29 @@ async def search_sessions(q: str = "", limit: int = 20):
         from hermes_state import SessionDB
         db = SessionDB()
         try:
-            # Auto-add prefix wildcards so partial words match
-            # e.g. "nimb" → "nimb*" matches "nimby"
-            # Preserve quoted phrases and existing wildcards as-is
-            import re
             terms = []
             for token in re.findall(r'"[^"]*"|\S+', q.strip()):
                 if token.startswith('"') or token.endswith("*"):
                     terms.append(token)
-                else:
+                elif re.fullmatch(r"[\w]+", token):
                     terms.append(token + "*")
+                else:
+                    terms.append('"' + token.replace('"', '""') + '"')
             prefix_query = " ".join(terms)
-            matches = db.search_messages(query=prefix_query, limit=limit)
+            try:
+                matches = db.search_messages(query=prefix_query, limit=limit)
+            except sqlite3.OperationalError:
+                safe_terms = [
+                    '"' + t.replace('"', '""') + '"'
+                    for t in q.strip().split()
+                    if t.strip()
+                ]
+                if not safe_terms:
+                    return {"results": []}
+                try:
+                    matches = db.search_messages(query=" ".join(safe_terms), limit=limit)
+                except sqlite3.OperationalError:
+                    return {"results": []}
             # Group by session_id — return unique sessions with their best snippet
             seen: dict = {}
             for m in matches:
@@ -2259,15 +2404,24 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
     reachable=False means the network probe couldn't run (caller may save with
     a warning rather than hard-blocking offline users).
     """
+    _require_rate_limit(request, "validate", 15, 60.0)
     origin = request.headers.get("origin", "")
+    is_public_showcase = _is_public_showcase_mode(request.app)
+    is_admin = _has_admin_override(request.headers)
     if not (
-        _is_public_showcase_mode(request.app)
-        and (_has_valid_session_token(request) or _is_allowed_dashboard_origin(origin))
+        is_public_showcase
+        and (_has_valid_session_token(request) or is_admin or _is_allowed_dashboard_origin(origin))
     ):
         _require_token(request)
     import httpx
 
     key = (body.key or "").strip()
+    if is_public_showcase and not is_admin and key not in {"FAL_KEY", "MUAPI_KEY"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Credential validation is disabled for this key in public mode",
+        )
+
     value = (body.value or "").strip()
     if not value:
         return {"ok": False, "reachable": True, "message": "Enter a value first."}
@@ -2276,13 +2430,19 @@ async def validate_provider_credential(body: EnvVarUpdate, request: Request):
         # Local / custom endpoint: validate connectivity, not auth — any HTTP
         # response (even 401) proves the endpoint is up.
         if key == "OPENAI_BASE_URL":
+            parsed_url = urllib.parse.urlparse(value)
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                return {"ok": False, "reachable": False, "message": "Enter a valid http(s) URL."}
+            from tools.url_safety import is_safe_url
+            if not is_safe_url(value):
+                return {"ok": False, "reachable": False, "message": "That endpoint URL is not allowed."}
             url = value.rstrip("/") + "/models"
             try:
-                with httpx.Client(timeout=httpx.Timeout(8.0)) as client:
+                with httpx.Client(timeout=httpx.Timeout(8.0), follow_redirects=False) as client:
                     client.get(url)
                 return {"ok": True, "reachable": True, "message": ""}
             except Exception:
-                return {"ok": False, "reachable": False, "message": f"Could not reach {url}."}
+                return {"ok": False, "reachable": False, "message": "Could not reach that endpoint."}
 
         if key == "FAL_KEY":
             # fal.ai has no free "whoami" endpoint. An empty request to a queue
@@ -3769,7 +3929,7 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
                     code_challenge=challenge,
                     state=state,
                 )
-        device_data = await asyncio.get_event_loop().run_in_executor(
+        device_data = await asyncio.get_running_loop().run_in_executor(
             None, _do_minimax_request
         )
         sid, sess = _new_oauth_session("minimax-oauth", "device_code")
@@ -5804,7 +5964,11 @@ class BackupRequest(BaseModel):
 async def run_backup(body: BackupRequest):
     args = ["backup"]
     if body.output:
-        args.append(body.output.strip())
+        output_arg = body.output.strip()
+        if output_arg.startswith("-"):
+            raise HTTPException(status_code=400, detail="Invalid backup output path")
+        if output_arg:
+            args.append(output_arg)
     try:
         proc = _spawn_hermes_action(args, "backup")
     except Exception as exc:
@@ -5820,7 +5984,7 @@ class ImportRequest(BaseModel):
 @app.post("/api/ops/import")
 async def run_import(body: ImportRequest):
     archive = (body.archive or "").strip()
-    if not archive:
+    if not archive or archive.startswith("-"):
         raise HTTPException(status_code=400, detail="archive path is required")
     if not os.path.isfile(archive):
         raise HTTPException(status_code=404, detail=f"Archive not found: {archive}")
@@ -6049,8 +6213,8 @@ class SkillInstallRequest(BaseModel):
 @app.post("/api/skills/hub/install")
 async def install_skill_hub(body: SkillInstallRequest):
     identifier = (body.identifier or "").strip()
-    if not identifier:
-        raise HTTPException(status_code=400, detail="identifier is required")
+    if not identifier or identifier.startswith("-"):
+        raise HTTPException(status_code=400, detail="Valid identifier is required")
     try:
         proc = _spawn_hermes_action(["skills", "install", identifier], "skills-install")
     except Exception as exc:
@@ -6066,8 +6230,8 @@ class SkillUninstallRequest(BaseModel):
 @app.post("/api/skills/hub/uninstall")
 async def uninstall_skill_hub(body: SkillUninstallRequest):
     name = (body.name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="name is required")
+    if not name or name.startswith("-"):
+        raise HTTPException(status_code=400, detail="Valid name is required")
     try:
         proc = _spawn_hermes_action(["skills", "uninstall", name, "--yes"], "skills-uninstall")
     except Exception as exc:
@@ -6894,7 +7058,21 @@ def _ws_host_origin_is_allowed(ws: "WebSocket") -> bool:
     if not parsed.netloc:
         return False
 
-    return _is_accepted_host(parsed.netloc, bound_host)
+    bound_lc = bound_host.strip().lower()
+    if bound_lc in {"0.0.0.0", "::"}:
+        if parsed.netloc.lower() == host_header.strip().lower():
+            return True
+        return _is_allowed_dashboard_origin(origin)
+
+    if _is_accepted_host(parsed.netloc, bound_host):
+        return True
+
+    norm_origin = origin.strip().rstrip("/")
+    if norm_origin in _get_extra_allowed_origins():
+        return True
+    if parsed.scheme == "https" and _is_allowed_dashboard_origin(origin):
+        return True
+    return False
 
 
 def _ws_request_is_allowed(ws: "WebSocket") -> bool:
@@ -6980,11 +7158,21 @@ def _ws_auth_ok(ws: "WebSocket") -> bool:
     # backend-injected session token on showcase chat (/api/ws, /api/events).
     # Keep /api/pty and /api/pub strictly gated behind the token / lockdown.
     if (
-        _is_public_showcase_mode(ws.app)
-        and ws.url.path in {"/api/ws", "/api/events"}
+        _is_public_showcase_mode(getattr(ws, "app", None))
+        and getattr(getattr(ws, "url", None), "path", "") in {"/api/ws", "/api/events"}
     ):
-        origin = ws.headers.get("origin", "")
+        headers = getattr(ws, "headers", {}) or {}
+        origin = headers.get("origin", "")
         if not origin or _is_allowed_dashboard_origin(origin):
+            return True
+        parsed_origin = urllib.parse.urlparse(origin)
+        host_hdr = (headers.get("host") or "").strip().lower()
+        if (
+            parsed_origin.scheme in {"http", "https"}
+            and parsed_origin.netloc
+            and host_hdr
+            and parsed_origin.netloc.lower() == host_hdr
+        ):
             return True
 
     return False
@@ -7065,6 +7253,8 @@ def _build_gateway_ws_url() -> Optional[str]:
     if not host or not port:
         return None
 
+    host = "127.0.0.1" if host == "0.0.0.0" else ("::1" if host == "::" else host)
+
     netloc = (
         f"[{host}]:{port}"
         if ":" in host and not host.startswith("[")
@@ -7100,6 +7290,8 @@ def _build_sidecar_url(channel: str) -> Optional[str]:
 
     if not host or not port:
         return None
+
+    host = "127.0.0.1" if host == "0.0.0.0" else ("::1" if host == "::" else host)
 
     netloc = f"[{host}]:{port}" if ":" in host and not host.startswith("[") else f"{host}:{port}"
 
@@ -7229,7 +7421,19 @@ async def pty_ws(ws: WebSocket) -> None:
     # --- writer loop: WebSocket → PTY master ----------------------------
     try:
         while True:
-            msg = await ws.receive()
+            recv_task = asyncio.create_task(ws.receive())
+            done, _pending = await asyncio.wait(
+                {reader_task, recv_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if reader_task in done:
+                recv_task.cancel()
+                try:
+                    await recv_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                break
+            msg = recv_task.result()
             msg_type = msg.get("type")
             if msg_type == "websocket.disconnect":
                 break
@@ -7245,10 +7449,10 @@ async def pty_ws(ws: WebSocket) -> None:
             if match and match.end() == len(raw):
                 cols = int(match.group(1))
                 rows = int(match.group(2))
-                bridge.resize(cols=cols, rows=rows)
+                await asyncio.to_thread(bridge.resize, cols=cols, rows=rows)
                 continue
 
-            bridge.write(raw)
+            await asyncio.to_thread(bridge.write, raw)
     except WebSocketDisconnect:
         pass
     finally:
@@ -7257,7 +7461,7 @@ async def pty_ws(ws: WebSocket) -> None:
             await reader_task
         except (asyncio.CancelledError, Exception):
             pass
-        bridge.close()
+        await asyncio.to_thread(bridge.close)
 
 
 # ---------------------------------------------------------------------------
@@ -7285,9 +7489,18 @@ async def gateway_ws(ws: WebSocket) -> None:
         await ws.close(code=4403)
         return
 
+    if not _rate_limit_check(ws, "ws", 30, 60.0):
+        await ws.close(code=4429)
+        return
+
+    restricted = (
+        _is_public_showcase_mode(ws.app)
+        and not _has_admin_override(ws.headers)
+    )
+
     from tui_gateway.ws import handle_ws
 
-    await handle_ws(ws)
+    await handle_ws(ws, restricted=restricted)
 
 
 # ---------------------------------------------------------------------------
@@ -7305,6 +7518,10 @@ async def gateway_ws(ws: WebSocket) -> None:
 @app.websocket("/api/pub")
 async def pub_ws(ws: WebSocket) -> None:
     if not _DASHBOARD_EMBEDDED_CHAT_ENABLED:
+        await ws.close(code=4403)
+        return
+
+    if _is_public_showcase_mode(ws.app) and not _has_admin_override(ws.headers):
         await ws.close(code=4403)
         return
 
@@ -7372,6 +7589,157 @@ async def events_ws(ws: WebSocket) -> None:
 
                 if not subs:
                     event_channels.pop(channel, None)
+
+
+class IntelligenceModeRequest(BaseModel):
+    mode: str
+    persist: bool = True
+
+
+class LocalModelActionRequest(BaseModel):
+    model_id: str = "mbowagpt"
+
+
+def _build_intelligence_status(*, probe: bool = True) -> Dict[str, Any]:
+    from agent.connectivity import get_connectivity_monitor
+    from agent.local_runtime import get_local_runtime_manager
+    from agent.self_consciousness import get_self_consciousness_engine
+    from tools.tts_tool import _check_kokoro_available
+    from tools.transcription_tools import _HAS_FASTER_WHISPER
+
+    mon = get_connectivity_monitor()
+    conn_status = mon.get_status(probe_if_stale=probe)
+    local_status = get_local_runtime_manager().get_status()
+    kokoro_ok = _check_kokoro_available()
+    try:
+        autonomy_status = get_self_consciousness_engine().get_status_summary()
+    except Exception:
+        autonomy_status = None
+    return {
+        **conn_status,
+        "local_runtime": local_status,
+        "voice": {
+            "kokoro_ready": kokoro_ok,
+            "whisper_local_ready": bool(_HAS_FASTER_WHISPER),
+            "duplex_ws_path": "/api/ws/voice",
+        },
+        "autonomy": autonomy_status,
+    }
+
+
+@app.get("/api/autonomy/status")
+async def get_autonomy_status():
+    from agent.self_consciousness import get_self_consciousness_engine
+
+    return await asyncio.to_thread(get_self_consciousness_engine().get_status_summary)
+
+
+class AutonomyInspectRequest(BaseModel):
+    aspect: str = "all"
+    objective: str = ""
+
+
+@app.post("/api/autonomy/inspect")
+async def post_autonomy_inspect(payload: AutonomyInspectRequest):
+    from agent.self_consciousness import get_self_consciousness_engine
+
+    return await asyncio.to_thread(
+        get_self_consciousness_engine().inspect,
+        payload.aspect,
+        payload.objective,
+    )
+
+
+@app.get("/api/intelligence/status")
+async def get_intelligence_status(probe: bool = True):
+    return await asyncio.to_thread(_build_intelligence_status, probe=probe)
+
+
+@app.post("/api/intelligence/mode")
+async def set_intelligence_mode(payload: IntelligenceModeRequest):
+    from agent.connectivity import get_connectivity_monitor
+
+    mon = get_connectivity_monitor()
+    mon.set_mode(payload.mode, persist=payload.persist)
+    return await asyncio.to_thread(_build_intelligence_status, probe=False)
+
+
+@app.post("/api/intelligence/local/preload")
+async def preload_local_intelligence(payload: LocalModelActionRequest):
+    from agent.local_runtime import get_local_runtime_manager
+
+    try:
+        ep = await asyncio.to_thread(get_local_runtime_manager().ensure_started, payload.model_id)
+        return {
+            "ok": True,
+            "model_id": ep.model_id,
+            "served_model": ep.served_model,
+            "base_url": ep.base_url,
+            "backend": ep.backend,
+            "ctx_size": ep.ctx_size,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to start local model: {exc}")
+
+
+@app.post("/api/intelligence/local/install")
+async def install_local_intelligence_model(payload: LocalModelActionRequest):
+    from agent.local_runtime import get_local_runtime_manager
+
+    try:
+        res = await asyncio.to_thread(get_local_runtime_manager().install_model, payload.model_id)
+        return res
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to install local model: {exc}")
+
+
+async def _handle_jarvis_voice_ws(ws: WebSocket) -> None:
+    if not _ws_auth_ok(ws):
+        await ws.close(code=4401)
+        return
+
+    if not _ws_request_is_allowed(ws):
+        await ws.close(code=4403)
+        return
+
+    await ws.accept()
+    from agent.jarvis_voice.pipeline import JarvisVoiceSession
+
+    session_id = ws.query_params.get("session_id") or None
+    voice_session = JarvisVoiceSession(ws, session_id=session_id)
+    try:
+        await voice_session.initialize()
+        while True:
+            message = await ws.receive()
+            msg_type = message.get("type")
+            if msg_type == "websocket.disconnect":
+                break
+            raw_bytes = message.get("bytes")
+            if raw_bytes:
+                await voice_session.handle_audio_bytes(raw_bytes)
+                continue
+            raw_text = message.get("text")
+            if raw_text:
+                try:
+                    payload = json.loads(raw_text)
+                except Exception:
+                    continue
+                if isinstance(payload, dict):
+                    await voice_session.handle_control(payload)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await voice_session.close()
+
+
+@app.websocket("/ws/voice")
+async def jarvis_voice_ws_root(ws: WebSocket) -> None:
+    await _handle_jarvis_voice_ws(ws)
+
+
+@app.websocket("/api/ws/voice")
+async def jarvis_voice_ws_api(ws: WebSocket) -> None:
+    await _handle_jarvis_voice_ws(ws)
 
 
 def _normalise_prefix(raw: Optional[str]) -> str:
@@ -7459,17 +7827,33 @@ def _get_image_studio_dir() -> Path:
 
 
 def _load_prompts() -> List[Dict[str, Any]]:
-    p = _get_image_studio_dir() / "prompts.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return []
+    with _PROMPTS_LOCK:
+        p = _get_image_studio_dir() / "prompts.json"
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                pass
+        return []
+
 
 def _save_prompts(data: List[Dict[str, Any]]):
-    p = _get_image_studio_dir() / "prompts.json"
-    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    with _PROMPTS_LOCK:
+        studio_dir = _get_image_studio_dir()
+        p = studio_dir / "prompts.json"
+        fd, tmp_name = tempfile.mkstemp(prefix="prompts-", suffix=".tmp", dir=str(studio_dir))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2)
+            os.replace(tmp_name, p)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
 
 
 @app.get("/api/images/models")
@@ -7497,6 +7881,7 @@ async def api_images_generate(req: ImageGenerateRequest, request: Request):
     ``clientRequestId`` makes the call idempotent: re-sending it returns the
     existing job instead of generating (and billing) again.
     """
+    _require_rate_limit(request, "images", 20, 60.0)
     from starlette.concurrency import run_in_threadpool
 
     import agent.image_studio_service as studio
@@ -7624,30 +8009,136 @@ async def api_images_asset_data(asset_id: str, workspaceId: Optional[str] = None
     return {"success": True, **data}
 
 
+class ImageUploadRequest(BaseModel):
+    data_url: str
+    filename: Optional[str] = None
+
+
+_MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
+_MAX_IMAGE_STUDIO_BYTES = 20 * 1024 * 1024
+_MAX_OCR_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def _sniff_image_bytes(raw: bytes) -> Optional[tuple[str, str]]:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png", "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return ".jpg", "image/jpeg"
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    if raw.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif", "image/gif"
+    return None
+
+
+@app.post("/api/uploads/image")
+async def api_upload_image(req: ImageUploadRequest, request: Request):
+    """Persist an uploaded/pasted browser image to a bounded server temp cache."""
+    import uuid
+    from hermes_constants import get_hermes_home
+
+    _require_rate_limit(request, "uploads", 20, 60.0)
+    data_url = (req.data_url or "").strip()
+    m = re.match(r"^data:(image/[\w.+-]+);base64,(.*)$", data_url, re.DOTALL | re.IGNORECASE)
+    if not m:
+        raise HTTPException(status_code=400, detail="Payload must be a base64 image data URL")
+
+    encoded = m.group(2).strip()
+    if len(encoded) > (_MAX_IMAGE_UPLOAD_BYTES * 4 // 3 + 16):
+        raise HTTPException(status_code=413, detail="Image upload is too large (max 10 MB)")
+
+    try:
+        raw_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Image payload is not valid base64")
+
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Image upload is empty")
+    if len(raw_bytes) > _MAX_IMAGE_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Image upload is too large (max 10 MB)")
+
+    sniffed = _sniff_image_bytes(raw_bytes)
+    if not sniffed:
+        raise HTTPException(status_code=400, detail="Unsupported or invalid image file")
+    ext, detected_mime = sniffed
+
+    upload_dir = get_hermes_home() / "cache" / "web_uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Best-effort pruning of stale web upload cache entries (>24h or >200 files)
+    try:
+        now = time.time()
+        existing = sorted(
+            (p for p in upload_dir.iterdir() if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for p in existing[:-200]:
+            p.unlink(missing_ok=True)
+        for p in existing:
+            if now - p.stat().st_mtime > 86400:
+                p.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    dest = upload_dir / f"upload_{uuid.uuid4().hex}{ext}"
+    await asyncio.to_thread(dest.write_bytes, raw_bytes)
+    return {
+        "ok": True,
+        "path": str(dest),
+        "mime_type": detected_mime,
+        "size": len(raw_bytes),
+    }
+
+
 @app.post("/api/images/edit")
-async def api_images_edit(req: ImageEditRequest):
+async def api_images_edit(req: ImageEditRequest, request: Request):
+    _require_rate_limit(request, "images", 20, 60.0)
+    from starlette.concurrency import run_in_threadpool
+
+    image_val = (req.image or "").strip()
+    if image_val.startswith("data:"):
+        m = re.match(r"^data:(image/[\w.+-]+);base64,(.*)$", image_val, re.DOTALL | re.IGNORECASE)
+        if not m or len(m.group(2)) > (_MAX_IMAGE_STUDIO_BYTES * 4 // 3 + 16):
+            return {"success": False, "error": "Invalid or oversized image data.", "error_type": "invalid_image"}
+    elif image_val.startswith(("http://", "https://")):
+        from tools.url_safety import is_safe_url
+        if not is_safe_url(image_val):
+            return {"success": False, "error": "That image URL is not allowed.", "error_type": "invalid_image"}
+    else:
+        return {"success": False, "error": "Provide the image as an https URL or an uploaded image.", "error_type": "invalid_image"}
+
+    byok_key = (request.headers.get("x-fal-key") or "").strip()
+    if byok_key == "server-configured":
+        byok_key = ""
+
     try:
         from agent.image_studio_service import register_asset
+        from tools.image_generation_tool import scoped_fal_key
 
         if req.operation == "upscale":
             import tools.image_generation_tool as _it
-            upscaled = _it._upscale_image(req.image, req.prompt or "high quality, detailed")
-            if upscaled and "url" in upscaled:
-                asset = register_asset(
-                    url=upscaled["url"],
-                    prompt=req.prompt or "Upscaled Image",
-                    provider="fal",
-                    model=_it.UPSCALER_MODEL,
-                    studio_type="image",
-                    parameters={"operation": "upscale"},
-                    status="completed",
-                )
-                return {"success": True, "image": upscaled["url"], "asset": asset}
-            return {
-                "success": False,
-                "error": "Upscaling failed. Ensure FAL_KEY is configured.",
-                "error_type": "upscale_failed",
-            }
+
+            def _do_upscale():
+                with scoped_fal_key(byok_key):
+                    upscaled = _it._upscale_image(image_val, req.prompt or "high quality, detailed")
+                if upscaled and "url" in upscaled:
+                    asset = register_asset(
+                        url=upscaled["url"],
+                        prompt=req.prompt or "Upscaled Image",
+                        provider="fal",
+                        model=_it.UPSCALER_MODEL,
+                        studio_type="image",
+                        parameters={"operation": "upscale"},
+                        status="completed",
+                    )
+                    return {"success": True, "image": upscaled["url"], "asset": asset}
+                return {
+                    "success": False,
+                    "error": "Upscaling failed. Ensure FAL_KEY is configured.",
+                    "error_type": "upscale_failed",
+                }
+
+            return await run_in_threadpool(_do_upscale)
 
         return {
             "success": False,
@@ -7658,8 +8149,8 @@ async def api_images_edit(req: ImageEditRequest):
         _log.error("Image edit failed: %s", e, exc_info=True)
         return {
             "success": False,
-            "error": str(e),
-            "error_type": type(e).__name__,
+            "error": "Image editing failed.",
+            "error_type": "edit_failed",
         }
 
 
@@ -7695,8 +8186,14 @@ async def _run_vision(image: str, prompt: str) -> Dict[str, Any]:
             m = re.match(r"data:(image/[\w.+-]+);base64,(.*)$", image, re.DOTALL)
             if not m:
                 return {"success": False, "error_type": "invalid_image", "error": "Unsupported image data."}
-            raw_bytes = base64.b64decode(m.group(2))
-            if len(raw_bytes) > 20 * 1024 * 1024:
+            encoded = m.group(2).strip()
+            if len(encoded) > (_MAX_IMAGE_STUDIO_BYTES * 4 // 3 + 16):
+                return {"success": False, "error_type": "invalid_image", "error": "Image is larger than 20 MB."}
+            try:
+                raw_bytes = base64.b64decode(encoded, validate=True)
+            except (binascii.Error, ValueError):
+                return {"success": False, "error_type": "invalid_image", "error": "Unsupported image data."}
+            if len(raw_bytes) > _MAX_IMAGE_STUDIO_BYTES:
                 return {"success": False, "error_type": "invalid_image", "error": "Image is larger than 20 MB."}
             ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(m.group(1), "png")
             from agent.image_studio_service import get_image_studio_dir
@@ -7732,7 +8229,13 @@ def _dominant_colors(image_data_url: str, count: int = 5) -> List[str]:
     m = re.match(r"data:image/[\w.+-]+;base64,(.*)$", image_data_url.strip(), re.DOTALL)
     if not m:
         return []
-    img = Image.open(io.BytesIO(base64.b64decode(m.group(1)))).convert("RGB")
+    encoded = m.group(1).strip()
+    if len(encoded) > (_MAX_IMAGE_STUDIO_BYTES * 4 // 3 + 16):
+        return []
+    raw_bytes = base64.b64decode(encoded, validate=True)
+    if len(raw_bytes) > _MAX_IMAGE_STUDIO_BYTES:
+        return []
+    img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
     img.thumbnail((96, 96))
     quant = img.quantize(colors=count, method=Image.Quantize.MEDIANCUT)
     palette = quant.getpalette() or []
@@ -7741,11 +8244,12 @@ def _dominant_colors(image_data_url: str, count: int = 5) -> List[str]:
 
 
 @app.post("/api/images/analyze")
-async def api_images_analyze(req: ImageAnalyzeRequest):
+async def api_images_analyze(req: ImageAnalyzeRequest, request: Request):
+    _require_rate_limit(request, "images", 20, 60.0)
     mode = (req.mode or "describe").lower()
     if mode == "color":
         try:
-            colors = _dominant_colors(req.image)
+            colors = await asyncio.to_thread(_dominant_colors, req.image)
         except Exception as e:
             _log.warning("Palette extraction failed: %s", e)
             colors = []
@@ -7764,6 +8268,10 @@ async def api_images_analyze(req: ImageAnalyzeRequest):
     return {"success": True, "result": out["text"], "colors": []}
 
 
+_MAX_PDF_DECOMPRESS_BYTES = 2 * 1024 * 1024
+_MAX_PDF_EXTRACTED_CHARS = 500_000
+
+
 def _extract_pdf_bytes_text(pdf_bytes: bytes) -> str:
     """Extract readable text from PDF bytes using pymupdf/pypdf or built-in zlib stream parsing."""
     import re
@@ -7776,15 +8284,19 @@ def _extract_pdf_bytes_text(pdf_bytes: bytes) -> str:
         pages = [page.get_text("text").strip() for page in doc]
         joined = "\n\n".join(p for p in pages if p)
         if joined:
-            return joined
+            return joined[:_MAX_PDF_EXTRACTED_CHARS]
     except Exception:
         pass
 
     chunks: list[str] = []
+    total_chars = 0
     raw_latin = pdf_bytes.decode("latin1", errors="ignore")
 
     def _collect_literals(stream_str: str) -> None:
+        nonlocal total_chars
         for match in re.finditer(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*(?:Tj|')", stream_str):
+            if total_chars >= _MAX_PDF_EXTRACTED_CHARS:
+                break
             txt = (
                 match.group(1)
                 .replace(r"\n", "\n")
@@ -7796,26 +8308,39 @@ def _extract_pdf_bytes_text(pdf_bytes: bytes) -> str:
             ).strip()
             if txt and re.search(r"[A-Za-z0-9À-ÿ]", txt):
                 chunks.append(txt)
+                total_chars += len(txt) + 1
 
     _collect_literals(raw_latin)
 
     for stream_match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf_bytes, re.DOTALL):
+        if total_chars >= _MAX_PDF_EXTRACTED_CHARS:
+            break
         stream_data = stream_match.group(1)
         try:
-            decompressed = zlib.decompress(stream_data).decode("latin1", errors="ignore")
+            decomp = zlib.decompressobj()
+            decompressed = decomp.decompress(stream_data, _MAX_PDF_DECOMPRESS_BYTES).decode(
+                "latin1", errors="ignore"
+            )
             _collect_literals(decompressed)
         except Exception:
             continue
 
-    return "\n".join(chunks).strip()
+    return "\n".join(chunks).strip()[:_MAX_PDF_EXTRACTED_CHARS]
 
 
 @app.post("/api/images/ocr")
-async def api_images_ocr(req: ImageOCRRequest):
+async def api_images_ocr(req: ImageOCRRequest, request: Request):
+    _require_rate_limit(request, "ocr", 20, 60.0)
     raw_img = (req.image or "").strip()
     if raw_img.startswith("data:application/pdf;base64,"):
+        b64_part = raw_img.split(",", 1)[1].strip()
+        if len(b64_part) > (_MAX_OCR_UPLOAD_BYTES * 4 // 3 + 16):
+            return {"success": False, "error_type": "invalid_image", "error": "PDF is too large (max 25 MB)."}
         try:
-            extracted = _extract_pdf_bytes_text(base64.b64decode(raw_img.split(",", 1)[1]))
+            pdf_bytes = base64.b64decode(b64_part, validate=True)
+            if len(pdf_bytes) > _MAX_OCR_UPLOAD_BYTES:
+                return {"success": False, "error_type": "invalid_image", "error": "PDF is too large (max 25 MB)."}
+            extracted = await asyncio.to_thread(_extract_pdf_bytes_text, pdf_bytes)
         except Exception:
             extracted = ""
         if extracted:
@@ -7840,29 +8365,48 @@ class BusinessOcrRequest(BaseModel):
 
 
 @app.post("/api/business/ocr")
-async def api_business_ocr(req: BusinessOcrRequest):
+async def api_business_ocr(req: BusinessOcrRequest, request: Request):
+    _require_rate_limit(request, "ocr", 20, 60.0)
     raw = (req.data_url or "").strip()
     if "," in raw:
-        raw_b64 = raw.split(",", 1)[1]
+        raw_b64 = raw.split(",", 1)[1].strip()
     else:
         raw_b64 = raw
 
+    if len(raw_b64) > (_MAX_OCR_UPLOAD_BYTES * 4 // 3 + 16):
+        return JSONResponse({"ok": False, "error": "Uploaded file exceeds 25 MB limit."}, status_code=413)
+
     try:
-        file_bytes = base64.b64decode(raw_b64)
+        file_bytes = base64.b64decode(raw_b64, validate=True)
     except Exception:
         return JSONResponse({"ok": False, "error": "Invalid base64 file payload."}, status_code=400)
+
+    if len(file_bytes) > _MAX_OCR_UPLOAD_BYTES:
+        return JSONResponse({"ok": False, "error": "Uploaded file exceeds 25 MB limit."}, status_code=413)
 
     mime = (req.mime_type or "").lower()
     fname = (req.file_name or "document").lower()
 
     if "pdf" in mime or fname.endswith(".pdf") or file_bytes.startswith(b"%PDF"):
-        text = _extract_pdf_bytes_text(file_bytes)
+        text = await asyncio.to_thread(_extract_pdf_bytes_text, file_bytes)
         if text:
             return {"ok": True, "text": text}
         return {
             "ok": True,
             "text": f"[{req.file_name}]\n[illegible — scanned PDF contains no embedded text layer. Unclear text is marked [illegible], never guessed.]",
         }
+
+    sniffed_img = _sniff_image_bytes(file_bytes)
+    if sniffed_img or mime.startswith("image/"):
+        img_mime = sniffed_img[1] if sniffed_img else (mime.split(";", 1)[0] or "image/png")
+        img_data_url = raw if raw.startswith("data:image/") else f"data:{img_mime};base64,{raw_b64}"
+        vision_out = await _run_vision(
+            img_data_url,
+            "Transcribe all visible text accurately as written, preserving line breaks. "
+            "Mark anything unclear as [illegible]. Never guess. Output only the transcription.",
+        )
+        if vision_out.get("success") and (vision_out.get("text") or "").strip():
+            return {"ok": True, "text": vision_out["text"].strip()}
 
     # Try plain UTF-8 text if small text payload
     try:
@@ -7887,7 +8431,11 @@ class BusinessAiRequest(BaseModel):
 
 
 @app.post("/api/business/ai")
-async def api_business_ai(req: BusinessAiRequest):
+async def api_business_ai(req: BusinessAiRequest, request: Request):
+    _require_rate_limit(request, "business_ai", 30, 60.0)
+    if len(req.input or "") > 60_000:
+        raise HTTPException(status_code=413, detail="Input text too large (max 60,000 chars).")
+
     grounding = (
         "Do not invent names, dates, amounts, credentials, or legal terms. "
         "Mark any missing or unconfirmed fact as [to confirm]. "
@@ -7905,7 +8453,8 @@ async def api_business_ai(req: BusinessAiRequest):
         ]
         try:
             resp = call_llm(messages=msgs, task="fast", max_tokens=600, timeout=20.0)
-            text = resp.choices[0].message.content.strip() if resp and getattr(resp, "choices", None) else ""
+            raw_content = resp.choices[0].message.content if resp and getattr(resp, "choices", None) else ""
+            text = (raw_content or "").strip()
             if text:
                 return text
         except Exception as exc:
@@ -7917,14 +8466,18 @@ async def api_business_ai(req: BusinessAiRequest):
             if not fb_provider or not fb_model:
                 continue
             try:
-                resp = call_llm(
-                    messages=msgs,
-                    provider=fb_provider,
-                    model=fb_model,
-                    max_tokens=600,
-                    timeout=15.0,
-                )
-                text = resp.choices[0].message.content.strip() if resp and getattr(resp, "choices", None) else ""
+                fb_kwargs: Dict[str, Any] = {
+                    "messages": msgs,
+                    "provider": fb_provider,
+                    "model": fb_model,
+                    "max_tokens": 600,
+                    "timeout": 15.0,
+                }
+                if entry.get("base_url"):
+                    fb_kwargs["base_url"] = entry["base_url"]
+                resp = call_llm(**fb_kwargs)
+                raw_content = resp.choices[0].message.content if resp and getattr(resp, "choices", None) else ""
+                text = (raw_content or "").strip()
                 if text:
                     return text
             except Exception as fb_exc:
@@ -8018,16 +8571,40 @@ async def api_images_prompts_get():
 
 @app.post("/api/images/prompts")
 async def api_images_prompts_save(prompt: SavedPromptSave):
-    prompts = _load_prompts()
-    existing_idx = next((i for i, x in enumerate(prompts) if x["id"] == prompt.id), None)
-    new_prompt = prompt.dict()
-    if existing_idx is not None:
-        new_prompt["createdAt"] = prompts[existing_idx].get("createdAt", int(time.time() * 1000))
-        prompts[existing_idx] = new_prompt
-    else:
-        new_prompt["createdAt"] = int(time.time() * 1000)
-        prompts.append(new_prompt)
-    _save_prompts(prompts)
+    if len(prompt.prompt or "") > 10_000:
+        return JSONResponse({"success": False, "error": "Prompt text too long (max 10,000 chars)."}, status_code=422)
+    with _PROMPTS_LOCK:
+        studio_dir = _get_image_studio_dir()
+        p = studio_dir / "prompts.json"
+        prompts: List[Dict[str, Any]] = []
+        if p.exists():
+            try:
+                loaded = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    prompts = loaded
+            except Exception:
+                prompts = []
+        existing_idx = next((i for i, x in enumerate(prompts) if x.get("id") == prompt.id), None)
+        if existing_idx is None and len(prompts) >= 500:
+            return JSONResponse({"success": False, "error": "Saved prompt limit reached (max 500)."}, status_code=422)
+        new_prompt = prompt.model_dump()
+        if existing_idx is not None:
+            new_prompt["createdAt"] = prompts[existing_idx].get("createdAt", int(time.time() * 1000))
+            prompts[existing_idx] = new_prompt
+        else:
+            new_prompt["createdAt"] = int(time.time() * 1000)
+            prompts.append(new_prompt)
+        fd, tmp_name = tempfile.mkstemp(prefix="prompts-", suffix=".tmp", dir=str(studio_dir))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(prompts, fh, indent=2)
+            os.replace(tmp_name, p)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
     return {"success": True, "prompt": new_prompt}
 
 
@@ -8068,23 +8645,28 @@ def mount_spa(application: FastAPI):
         ``__HERMES_AUTH_REQUIRED__`` flag lets the SPA pick the right
         auth scheme for /api/pty and /api/ws (ticket vs token).
         """
-        html = _index_path.read_text()
+        html = _index_path.read_text(encoding="utf-8")
         chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
-        gated = bool(getattr(app.state, "auth_required", False))
+        gated = bool(getattr(application.state, "auth_required", False))
+        public_showcase = _is_public_showcase_mode(application)
         gated_js = "true" if gated else "false"
-        if gated:
+        prefix_js = json.dumps(prefix)
+        if gated or public_showcase:
+            demo_part = "window.__HERMES_PUBLIC_DEMO__=true;" if public_showcase else ""
             bootstrap_script = (
                 f"<script>"
                 f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
-                f'window.__HERMES_BASE_PATH__="{prefix}";'
+                f"window.__HERMES_BASE_PATH__={prefix_js};"
                 f"window.__HERMES_AUTH_REQUIRED__={gated_js};"
+                f"{demo_part}"
                 f"</script>"
             )
         else:
+            token_js = json.dumps(_SESSION_TOKEN)
             bootstrap_script = (
-                f'<script>window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+                f"<script>window.__HERMES_SESSION_TOKEN__={token_js};"
                 f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
-                f'window.__HERMES_BASE_PATH__="{prefix}";'
+                f"window.__HERMES_BASE_PATH__={prefix_js};"
                 f"window.__HERMES_AUTH_REQUIRED__={gated_js};"
                 f"</script>"
             )
@@ -8094,6 +8676,12 @@ def mount_spa(application: FastAPI):
             html = html.replace('href="/assets/', f'href="{prefix}/assets/')
             html = html.replace('src="/assets/', f'src="{prefix}/assets/')
             html = html.replace('href="/favicon.ico"', f'href="{prefix}/favicon.ico"')
+            html = html.replace('href="/manifest.webmanifest"', f'href="{prefix}/manifest.webmanifest"')
+            html = html.replace('href="/apple-touch-icon.png"', f'href="{prefix}/apple-touch-icon.png"')
+            html = html.replace('href="/hermes.png"', f'href="{prefix}/hermes.png"')
+            html = html.replace('src="/hermes.png"', f'src="{prefix}/hermes.png"')
+            html = html.replace('href="/icon-192.png"', f'href="{prefix}/icon-192.png"')
+            html = html.replace('href="/icon-512.png"', f'href="{prefix}/icon-512.png"')
             html = html.replace('href="/fonts/', f'href="{prefix}/fonts/')
             html = html.replace('href="/ds-assets/', f'href="{prefix}/ds-assets/')
             html = html.replace('src="/ds-assets/', f'src="{prefix}/ds-assets/')
@@ -8118,7 +8706,7 @@ def mount_spa(application: FastAPI):
         ):
             return JSONResponse({"error": "not found"}, status_code=404)
         prefix = _normalise_prefix(request.headers.get("x-forwarded-prefix"))
-        css = css_path.read_text()
+        css = css_path.read_text(encoding="utf-8")
         if prefix:
             for asset_dir in ("/fonts/", "/fonts-terminal/", "/ds-assets/", "/assets/"):
                 css = css.replace(f"url({asset_dir}", f"url({prefix}{asset_dir}")
@@ -8126,7 +8714,8 @@ def mount_spa(application: FastAPI):
                 css = css.replace(f"url('{asset_dir}", f"url('{prefix}{asset_dir}")
         return Response(content=css, media_type="text/css")
 
-    application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+    if (WEB_DIST / "assets").is_dir():
+        application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
     if (WEB_DIST / "ds-assets").is_dir():
         application.mount("/ds-assets", StaticFiles(directory=WEB_DIST / "ds-assets"), name="ds-assets")
     if (WEB_DIST / "hermes-frames").is_dir():
@@ -8146,6 +8735,8 @@ def mount_spa(application: FastAPI):
                 {"detail": f"No such API endpoint: /{full_path}"},
                 status_code=404,
             )
+        if full_path == "index.html":
+            return _serve_index(prefix)
         file_path = WEB_DIST / full_path
         # Prevent path traversal via url-encoded sequences (%2e%2e/)
         if (
@@ -9128,8 +9719,6 @@ def _platform_from_user_agent(user_agent: str) -> str:
         # architecture cannot be read reliably from the UA.  arm64 is the
         # correct default for every Mac sold since 2020, and the x64 build
         # stays reachable by its explicit link.
-        if "intel mac os x 10_" in ua and "arm" not in ua:
-            return "mac-arm64"
         return "mac-arm64"
     if "linux" in ua or "x11" in ua:
         return "linux"
@@ -9317,7 +9906,7 @@ async def download_release_info(request: Request):
     version and file sizes, so the download page never advertises something
     that does not exist.
     """
-    info = dict(_release_info())
+    info = dict(await asyncio.to_thread(_release_info))
     info["detected_platform"] = _platform_from_user_agent(request.headers.get("user-agent", ""))
     info["available"] = bool(info.get("platforms"))
     return JSONResponse(info)
@@ -9352,6 +9941,17 @@ async def download_installer_file(target: str, request: Request):
 
 
 _MUAPI_PROXY_ALLOWED_PREFIXES = ("api/v1/", "workflow/", "agents/", "app/")
+_MAX_MUAPI_PROXY_BODY_BYTES = 10 * 1024 * 1024
+
+
+def _get_muapi_client(app_instance: FastAPI):
+    import httpx
+
+    client = getattr(app_instance.state, "muapi_client", None)
+    if client is None or getattr(client, "is_closed", False):
+        client = httpx.AsyncClient(timeout=60.0, follow_redirects=False)
+        app_instance.state.muapi_client = client
+    return client
 
 
 @app.api_route(
@@ -9363,8 +9963,12 @@ async def api_muapi_proxy(target_path: str, request: Request):
     from fastapi import Response
     import httpx
 
-    cleaned = (target_path or "").lstrip("/")
-    if not cleaned or ".." in cleaned.split("/") or "://" in cleaned:
+    _require_rate_limit(request, "muapi", 60, 60.0)
+    raw_target = target_path or ""
+    if any(c in raw_target for c in ("\\", "\r", "\n", "\x00")) or "://" in raw_target:
+        return JSONResponse({"error": "Invalid MuAPI proxy path"}, status_code=400)
+    cleaned = posixpath.normpath(raw_target.lstrip("/"))
+    if cleaned in ("", ".") or cleaned.startswith("../") or "/../" in cleaned or ".." in cleaned.split("/"):
         return JSONResponse({"error": "Invalid MuAPI proxy path"}, status_code=400)
     if not any(cleaned.startswith(prefix) for prefix in _MUAPI_PROXY_ALLOWED_PREFIXES):
         return JSONResponse({"error": "Disallowed MuAPI proxy path"}, status_code=400)
@@ -9379,18 +9983,36 @@ async def api_muapi_proxy(target_path: str, request: Request):
         if val:
             headers[hdr] = val
 
+    is_public = _is_public_showcase_mode(request.app) and not _has_admin_override(request.headers)
+    api_key_hdr = (headers.get("x-api-key") or "").strip()
+    if api_key_hdr == "server-configured":
+        server_key = (os.environ.get("MUAPI_KEY") or "").strip()
+        if not server_key:
+            return JSONResponse({"error": "Server MuAPI key is not configured"}, status_code=401)
+        headers["x-api-key"] = server_key
+    elif is_public and not api_key_hdr:
+        return JSONResponse({"error": "MuAPI API key is required"}, status_code=401)
+
+    content_len = request.headers.get("content-length")
+    if content_len and content_len.isdigit() and int(content_len) > _MAX_MUAPI_PROXY_BODY_BYTES:
+        return JSONResponse({"error": "Request body too large"}, status_code=413)
+
     body = await request.body() if request.method not in ("GET", "HEAD") else None
+    if body is not None and len(body) > _MAX_MUAPI_PROXY_BODY_BYTES:
+        return JSONResponse({"error": "Request body too large"}, status_code=413)
+
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            upstream_resp = await client.request(
-                request.method,
-                upstream_url,
-                headers=headers,
-                content=body,
-            )
+        client = _get_muapi_client(request.app)
+        upstream_resp = await client.request(
+            request.method,
+            upstream_url,
+            headers=headers,
+            content=body,
+        )
     except httpx.HTTPError as exc:
+        _log.warning("MuAPI upstream request failed: %s", exc)
         return JSONResponse(
-            {"error": f"MuAPI upstream request failed: {exc}"},
+            {"error": "MuAPI upstream request failed."},
             status_code=502,
         )
 
@@ -9549,11 +10171,24 @@ def start_server(
     # (see _ws_client_is_allowed), so a spoofed X-Forwarded-For does not grant
     # access there.  Note PORT also matches a loopback bind in a shell that
     # exports it; only local processes can reach that bind either way.
+    proxy_on = bool(
+        allow_public
+        or app.state.auth_required
+        or os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("PORT")
+    )
+    forwarded_ips = os.environ.get(
+        "HERMES_FORWARDED_ALLOW_IPS",
+        "*" if proxy_on else "127.0.0.1",
+    )
     uvicorn.run(
         app,
         host=host,
         port=port,
         log_level="info",
-        proxy_headers=True if (allow_public or app.state.auth_required or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT")) else False,
-        forwarded_allow_ips="*",
+        proxy_headers=proxy_on,
+        forwarded_allow_ips=forwarded_ips,
+        ws_ping_interval=20.0,
+        ws_ping_timeout=20.0,
+        ws_max_size=16 * 1024 * 1024,
     )

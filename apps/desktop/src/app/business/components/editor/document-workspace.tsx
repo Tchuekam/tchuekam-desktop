@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { $terminalTakeover } from '@/app/right-sidebar/store'
 import { Codicon } from '@/components/ui/codicon'
+import { IS_DESKTOP } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify } from '@/store/notifications'
 
@@ -25,14 +26,31 @@ import {
   undoDocumentChange,
   updateBusinessDocument
 } from '../../store'
+import {
+  $businessLocalAiDrawerOpen,
+  subscribeBusinessLocalAiStatus
+} from '../../store/local-ai'
 import type {
+  AttestationData,
   BusinessDocument,
+  BusinessPlanData,
+  ContractData,
+  CoverLetterData,
   CVData,
   DocumentDataMap,
   DocumentLanguage,
   DocumentType,
-  ExportFormat
+  ExportFormat,
+  InvoiceData,
+  PitchDeckData,
+  QuoteData,
+  ScanDocumentData
 } from '../../types'
+import {
+  BusinessLocalAiModal,
+  BusinessLocalAiStatusBadge,
+  BusinessLocalAiWorkspaceDrawer
+} from '../local-ai/business-local-agent-panel'
 import { DocumentPreview } from '../preview/document-preview'
 
 import { DocumentForms } from './document-forms'
@@ -240,6 +258,99 @@ export function DocumentWorkspace({
     }
   }
 
+  const drawerOpen = useStore($businessLocalAiDrawerOpen)
+
+  useEffect(() => {
+    if (!IS_DESKTOP) {
+      return
+    }
+
+    return subscribeBusinessLocalAiStatus()
+  }, [])
+
+  const handleApplyLocalAiText = (text: string) => {
+    const cleaned = text.trim()
+
+    if (!cleaned) {
+      return
+    }
+
+    switch (doc.type) {
+      case 'cv':
+        handleUpdateData<'cv'>(c => ({ ...(c as CVData), summary: cleaned }))
+
+        break
+
+      case 'letter':
+        handleUpdateData<'letter'>(c => ({
+          ...(c as CoverLetterData),
+          bodyParagraphs: cleaned.split(/\n\n+/).filter(Boolean)
+        }))
+
+        break
+
+      case 'attestation':
+        handleUpdateData<'attestation'>(c => ({ ...(c as AttestationData), bodyText: cleaned }))
+
+        break
+
+      case 'contract':
+        handleUpdateData<'contract'>(c => ({ ...(c as ContractData), scope: cleaned }))
+
+        break
+
+      case 'invoice':
+        handleUpdateData<'invoice'>(c => ({ ...(c as InvoiceData), notes: cleaned }))
+
+        break
+
+      case 'quote':
+        handleUpdateData<'quote'>(c => ({ ...(c as QuoteData), notes: cleaned }))
+
+        break
+
+      case 'plan':
+        handleUpdateData<'plan'>(c => {
+          const plan = c as BusinessPlanData
+
+          return {
+            ...plan,
+            sections: { ...plan.sections, executiveSummary: cleaned }
+          }
+        })
+
+        break
+
+      case 'deck':
+        handleUpdateData<'deck'>(c => {
+          const deck = c as PitchDeckData
+
+          const bullets = cleaned
+            .split(/\r?\n/)
+            .map(l => l.replace(/^[•*-]\s*/, '').trim())
+            .filter(Boolean)
+
+          return {
+            ...deck,
+            slides: deck.slides.map((s, idx) => (idx === activeSlideIndex ? { ...s, bullets } : s))
+          }
+        })
+
+        break
+
+      case 'scan':
+        handleUpdateData<'scan'>(c => ({ ...(c as ScanDocumentData), structuredSummary: cleaned }))
+
+        break
+    }
+
+    notify({
+      kind: 'success',
+      message: 'Applied Local Agent draft to active document.',
+      title: 'Draft Applied'
+    })
+  }
+
   const handleAskInChat = () => {
     const basePrompt =
       doc.type === 'scan'
@@ -251,6 +362,7 @@ export function DocumentWorkspace({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-foreground pt-(--titlebar-height)">
+      {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
       {/* Apple-style Studio Navigation & Command Bar */}
       <header className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/70 bg-card/85 px-3 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
         <div className="flex items-center gap-3">
@@ -377,6 +489,24 @@ export function DocumentWorkspace({
             <span>Duplicate</span>
           </button>
 
+          {IS_DESKTOP ? (
+            <button
+              aria-label="Toggle Business Hub Local Agent"
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition',
+                drawerOpen
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'border-border/70 bg-background/80 text-foreground hover:border-primary/40 hover:bg-muted'
+              )}
+              disabled={!canUseAi}
+              onClick={() => $businessLocalAiDrawerOpen.set(!drawerOpen)}
+              type="button"
+            >
+              <Codicon name="chip" size="0.85rem" />
+              <span>Local Agent</span>
+            </button>
+          ) : null}
+
           <button
             className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
             disabled={!canUseAi}
@@ -386,6 +516,8 @@ export function DocumentWorkspace({
             <Codicon name="comment-discussion" size="0.85rem" />
             <span>Ask in Chat</span>
           </button>
+
+          {IS_DESKTOP ? <BusinessLocalAiStatusBadge /> : null}
         </div>
 
         {/* Right Controls: Apple Export Buttons */}
@@ -423,6 +555,10 @@ export function DocumentWorkspace({
           )}
         </div>
       )}
+
+      {IS_DESKTOP ? (
+        <BusinessLocalAiWorkspaceDrawer document={doc} onApplyText={handleApplyLocalAiText} />
+      ) : null}
 
       {/* Mobile Editor / Preview Switcher (<1024px) */}
       <div className="flex items-center gap-1 border-b border-border/60 bg-muted/30 px-3 py-1.5 lg:hidden">
