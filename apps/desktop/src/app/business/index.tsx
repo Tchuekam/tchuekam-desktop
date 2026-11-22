@@ -820,19 +820,23 @@ export function BusinessView() {
         >
           <span
             className="pointer-events-none absolute inset-0"
-            style={{ background: 'radial-gradient(50% 120% at 88% 10%,rgba(61,123,255,.5),transparent 55%)' }}
+            style={{
+              background:
+                'radial-gradient(50% 110% at 88% 12%,rgba(99,102,241,0.34),transparent 58%),radial-gradient(40% 90% at 65% 100%,rgba(56,189,248,0.18),transparent 62%)'
+            }}
           />
           <div className="relative z-10 flex-1">
-            <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide backdrop-blur-xs">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide backdrop-blur-xs">
+              <span aria-hidden className="size-1.5 rounded-full bg-sky-400" />
               OCR & Document Extraction
             </span>
-            <span className="mt-3 block text-xl font-bold tracking-tight">Turn photos and PDFs into text</span>
-            <span className="mt-2 block max-w-lg text-sm text-white/75 leading-relaxed">
+            <span className="mt-3 block text-xl font-semibold tracking-tight">Turn photos and PDFs into text</span>
+            <span className="mt-2 block max-w-lg text-sm leading-relaxed text-slate-200/80">
               Upload a PDF, JPG, or PNG to extract text directly into an editable workspace, convert it into an invoice or CV draft, or open in chat. Unclear text is marked [illegible], never guessed.
             </span>
             <div className="mt-5 flex flex-wrap gap-2.5">
               <button
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-[#0a2f6b] shadow-md transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-[#0f172a] shadow-md transition hover:bg-slate-100 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canStartChat || scanning}
                 onClick={handleScanButton}
                 type="button"
@@ -841,7 +845,7 @@ export function BusinessView() {
                 {scanning ? 'Scanning…' : 'Select PDF / Image to Scan'}
               </button>
               <button
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-xs transition hover:bg-white/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-xs transition hover:bg-white/18 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canStartChat}
                 onClick={() => startChat(SCAN_TO_TEXT_PROMPT)}
                 type="button"
@@ -853,7 +857,11 @@ export function BusinessView() {
           </div>
           <span className="relative z-10 hidden shrink-0 items-center gap-3 sm:flex">
             <span className="flex">
-              {['#f2a65a', '#5a8cf2', '#57b98b'].map((c, i) => (
+              {[
+                'linear-gradient(150deg, rgba(99,102,241,0.9), rgba(15,23,42,0.55))',
+                'linear-gradient(150deg, rgba(56,189,248,0.85), rgba(15,23,42,0.55))',
+                'linear-gradient(150deg, rgba(226,232,240,0.92), rgba(71,85,105,0.55))'
+              ].map((bg, i) => (
                 <span
                   className="size-16 rounded-xl border-2 border-white/15 shadow-xl backdrop-blur-xs"
                   key={c}
