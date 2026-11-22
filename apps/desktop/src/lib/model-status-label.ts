@@ -38,6 +38,24 @@ const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
 const titleCase = (text: string): string => text.replace(/\b\w/g, char => char.toUpperCase()).trim()
 
 function prettifyBase(base: string): string {
+  const lower = base.toLowerCase()
+
+  if (lower === 'mbowagpt' || lower === 'mbowagpt-main') {
+    return 'MbowaGPT'
+  }
+
+  if (lower === 'mbowagpt-auto') {
+    return 'MbowaGPT Auto'
+  }
+
+  if (lower === 'mbowagpt-cybertrunk') {
+    return 'MbowaGPT Cybertrunk'
+  }
+
+  if (lower === 'mbowagpt-relentless') {
+    return 'MbowaGPT Relentless'
+  }
+
   if (/^claude-/i.test(base)) {
     return titleCase(base.replace(/^claude-/i, '').replace(/-/g, ' '))
   }
