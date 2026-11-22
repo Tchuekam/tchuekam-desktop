@@ -164,7 +164,16 @@ function PlaybackWaveform({ audioElement }: { audioElement: HTMLAudioElement | n
 
         const amp = Math.sqrt(peak / 255)
         const bh = Math.max(3, Math.round((0.18 + amp * 0.82) * WAVE_H))
-        ctx.fillRect(X0 + i * STEP, Math.round((WAVE_H - bh) / 2), BAR_W, bh)
+        const x = X0 + i * STEP
+        const y = Math.round((WAVE_H - bh) / 2)
+
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath()
+          ctx.roundRect(x, y, BAR_W, bh, Math.min(BAR_W / 2, bh / 2))
+          ctx.fill()
+        } else {
+          ctx.fillRect(x, y, BAR_W, bh)
+        }
       }
 
       raf = requestAnimationFrame(tick)
@@ -190,8 +199,8 @@ export function VoiceActivity({ state }: { state: VoiceActivityState }) {
     <div
       aria-live="polite"
       className={cn(
-        'flex h-8 items-center gap-2 rounded-xl border border-border/55 bg-muted/55 px-2.5 text-xs text-muted-foreground',
-        'shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-sm'
+        'flex h-8.5 items-center gap-2.5 rounded-xl border border-(--tk-cyan-border) bg-(--tk-cyan-soft) px-3 text-xs text-(--tk-cyan-text)',
+        'shadow-[inset_0_1px_0_var(--tk-specular-edge)] backdrop-blur-md'
       )}
       role="status"
     >
