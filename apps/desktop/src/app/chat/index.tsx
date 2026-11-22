@@ -12,6 +12,7 @@ import { useLocation } from 'react-router-dom'
 
 import { Thread } from '@/components/assistant-ui/thread'
 import { Backdrop } from '@/components/Backdrop'
+import { GatewayPromptCard } from '@/components/chat/gateway-prompt-card'
 import { NotificationStack } from '@/components/notifications'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -19,6 +20,7 @@ import { getGlobalModelOptions, type HermesGateway } from '@/hermes'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { quickModelOptions, sessionTitle, toRuntimeMessage } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
+import { IS_DESKTOP, IS_WEB } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { clearComposerSeed, type ComposerAttachment } from '@/store/composer'
 import { $pinnedSessionIds } from '@/store/layout'
@@ -315,6 +317,25 @@ export function ChatView({
 
       <NotificationStack />
 
+      {IS_WEB && !gatewayOpen && gatewayState !== 'idle' && (
+        <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+          <span className="truncate">
+            {gatewayState === 'connecting'
+              ? 'Reconnecting to TchuekaM gateway…'
+              : 'Connection lost — reconnecting automatically…'}
+          </span>
+          <Button
+            disabled={gatewayState === 'connecting'}
+            onClick={() => window.dispatchEvent(new Event('hermes:gateway-retry'))}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Retry now
+          </Button>
+        </div>
+      )}
+
       <div
         className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
         {...dropHandlers}
@@ -331,13 +352,14 @@ export function ChatView({
             sessionId={activeSessionId}
             sessionKey={threadKey}
           />
+          <GatewayPromptCard gateway={gateway} sessionId={activeSessionId} />
           {showChatBar && (
             <Suspense fallback={<ChatBarFallback />}>
               <ChatBar
                 acceptsSeed={!isRoutedSessionView}
                 busy={busy}
                 cwd={currentCwd}
-                disabled={!gatewayOpen}
+                disabled={IS_DESKTOP && !gatewayOpen}
                 focusKey={activeSessionId}
                 gateway={gateway}
                 maxRecordingSeconds={maxVoiceRecordingSeconds}
