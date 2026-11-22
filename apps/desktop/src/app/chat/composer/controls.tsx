@@ -7,19 +7,17 @@ import { cn } from '@/lib/utils'
 import type { ConversationStatus } from './hooks/use-voice-conversation'
 import type { ChatBarState, VoiceStatus } from './types'
 
-export const ICON_BTN = 'size-(--composer-control-size) shrink-0 rounded-md'
+export const ICON_BTN = 'size-(--composer-control-size) shrink-0 rounded-lg transition-all duration-150'
 export const GHOST_ICON_BTN = cn(
   ICON_BTN,
   'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
 )
-// Send/voice-conversation primary: solid foreground-on-background circle
-// (reads as black-on-white in light mode, white-on-black in dark mode) to
-// match the reference composer's high-contrast CTA. Keeps the pill itself
-// neutral and lets the action visually dominate the row.
+// Primary focal CTA for sending, queueing, or entering voice conversation.
+// Uses the signature top-lit electric indigo treatment so the composer
+// reads as an intentional, precision-engineered control deck.
 export const PRIMARY_ICON_BTN = cn(
-  'size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full p-0',
-  'bg-foreground text-background hover:bg-foreground/90',
-  'disabled:bg-foreground/30 disabled:text-background disabled:opacity-100'
+  'tk-btn-primary size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full p-0 text-white',
+  'active:scale-95 disabled:opacity-35 disabled:shadow-none'
 )
 
 interface ConversationProps {
@@ -59,6 +57,7 @@ export function ComposerControls({
   }
 
   const showVoicePrimary = !busy && !hasComposerPayload
+  const isStop = busy && busyAction === 'stop'
 
   return (
     <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
@@ -81,7 +80,11 @@ export function ComposerControls({
       ) : (
         <Button
           aria-label={busy ? (busyAction === 'queue' ? 'Queue message' : 'Stop') : 'Send'}
-          className={PRIMARY_ICON_BTN}
+          className={cn(
+            isStop
+              ? 'size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full border border-destructive/40 bg-destructive/90 p-0 text-white shadow-xs transition-all duration-150 hover:bg-destructive active:scale-95 disabled:opacity-35'
+              : PRIMARY_ICON_BTN
+          )}
           disabled={disabled || !canSubmit}
           title={busy ? (busyAction === 'queue' ? 'Queue message' : 'Stop') : 'Send'}
           type="submit"
@@ -90,7 +93,7 @@ export function ComposerControls({
             busyAction === 'queue' ? (
               <Layers3 size={16} />
             ) : (
-              <span className="block size-3 rounded-[0.1875rem] bg-current" />
+              <span className="block size-2.5 rounded-[0.1875rem] bg-current" />
             )
           ) : (
             <Codicon name="arrow-up" size="1rem" />
@@ -113,6 +116,17 @@ function ConversationPill({
   const speaking = status === 'speaking'
   const listening = status === 'listening' && !muted
 
+  const shortStatus =
+    status === 'speaking'
+      ? 'Speaking'
+      : status === 'transcribing'
+        ? 'Transcribing'
+        : status === 'thinking'
+          ? 'Thinking'
+          : muted
+            ? 'Muted'
+            : 'Listening'
+
   const label =
     status === 'speaking'
       ? 'Speaking · Interrupt anytime'
@@ -125,11 +139,27 @@ function ConversationPill({
             : 'Listening'
 
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
+    <div className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-(--tk-cyan-border) bg-(--tk-voice-surface) px-1.5 py-0.5 shadow-(--tk-voice-shadow) backdrop-blur-md">
+      <span aria-hidden="true" className="hidden items-center gap-1.5 pl-2 pr-1 text-[0.7rem] font-medium text-foreground/85 sm:inline-flex">
+        <span
+          className={cn(
+            'size-1.5 rounded-full',
+            speaking || status === 'thinking'
+              ? 'tk-thinking-dot'
+              : listening
+                ? 'bg-(--tk-cyan) animate-pulse'
+                : 'bg-muted-foreground/60'
+          )}
+        />
+        <span>{shortStatus}</span>
+      </span>
       <Button
         aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
         aria-pressed={muted}
-        className={cn(GHOST_ICON_BTN, 'p-0', muted && 'bg-muted text-muted-foreground')}
+        className={cn(
+          'size-7 shrink-0 rounded-full p-0 text-(--ui-text-secondary) transition-colors hover:bg-(--tk-cyan-soft) hover:text-foreground',
+          muted && 'bg-muted/80 text-muted-foreground'
+        )}
         disabled={disabled}
         onClick={() => {
           triggerHaptic('selection')
@@ -140,12 +170,12 @@ function ConversationPill({
         type="button"
         variant="ghost"
       >
-        <Codicon name={muted ? 'mic-off' : 'mic'} size="1rem" />
+        <Codicon name={muted ? 'mic-off' : 'mic'} size="0.9375rem" />
       </Button>
       {(listening || speaking) && (
         <Button
           aria-label={speaking ? 'Interrupt assistant speech' : 'Stop listening and send'}
-          className="h-(--composer-control-size) shrink-0 gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="h-7 shrink-0 gap-1.5 rounded-full px-2.5 text-xs font-medium text-(--ui-text-secondary) hover:bg-(--tk-indigo-soft) hover:text-foreground"
           disabled={disabled}
           onClick={() => {
             triggerHaptic('submit')
@@ -155,13 +185,13 @@ function ConversationPill({
           type="button"
           variant="ghost"
         >
-          <Square className="fill-current" size={11} />
+          <Square className="fill-current" size={10} />
           <span>{speaking ? 'Interrupt' : 'Stop'}</span>
         </Button>
       )}
       <Button
         aria-label="End voice conversation"
-        className="h-(--composer-control-size) gap-1.5 rounded-full bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        className="tk-btn-primary h-7 gap-2 rounded-full px-3 text-xs font-semibold text-white active:scale-95"
         disabled={disabled}
         onClick={() => {
           triggerHaptic('close')
@@ -193,15 +223,21 @@ function ConversationIndicator({
     return <Loader2 className="animate-spin" size={12} />
   }
 
-  const bars = [0.55, 0.85, 1, 0.85, 0.55]
+  const bars = [0.42, 0.72, 0.95, 1, 0.95, 0.72, 0.42]
   const normalized = Math.max(0, Math.min(level, 1))
 
   return (
-    <span aria-hidden="true" className="flex h-3 items-center gap-0.5">
+    <span aria-hidden="true" className="flex h-3.5 items-center gap-[0.15rem]">
       {bars.map((weight, index) => {
-        const height = listening ? 0.3 + Math.min(0.7, normalized * weight) : 0.3
+        const height = listening ? 0.28 + Math.min(0.72, normalized * weight) : 0.28
 
-        return <span className="w-0.5 rounded-full bg-current" key={index} style={{ height: `${height * 100}%` }} />
+        return (
+          <span
+            className="w-[0.125rem] rounded-full bg-current transition-[height] duration-75 ease-out"
+            key={index}
+            style={{ height: `${height * 100}%` }}
+          />
+        )
       })}
     </span>
   )
@@ -230,9 +266,9 @@ function DictationButton({
       className={cn(
         GHOST_ICON_BTN,
         'p-0',
-        'data-[active=true]:bg-accent data-[active=true]:text-foreground',
-        status === 'recording' && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-        status === 'transcribing' && 'bg-primary/10 text-primary'
+        'data-[active=true]:bg-(--tk-cyan-soft) data-[active=true]:text-(--tk-cyan-text)',
+        status === 'recording' && 'border border-(--tk-cyan-border) bg-(--tk-cyan-soft) text-(--tk-cyan-text) hover:brightness-110',
+        status === 'transcribing' && 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
       )}
       data-active={active}
       disabled={disabled || !state.enabled || status === 'transcribing'}

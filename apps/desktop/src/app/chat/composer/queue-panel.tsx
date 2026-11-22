@@ -26,9 +26,9 @@ export function QueuePanel({ busy, editingId, entries, onDelete, onEdit, onSendN
   }
 
   return (
-    <div className="rounded-2xl border border-border/65 bg-[color-mix(in_srgb,var(--dt-card)_70%,transparent)] py-0.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--dt-card)_30%,transparent)_inset]">
+    <div className="tk-glass rounded-xl py-1">
       <button
-        className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-[0.72rem] font-medium text-muted-foreground/92 transition-colors hover:text-foreground/90"
+        className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-[0.72rem] font-medium text-muted-foreground/92 transition-colors hover:text-foreground/90"
         onClick={() => setCollapsed(open => !open)}
         type="button"
       >
@@ -45,9 +45,9 @@ export function QueuePanel({ busy, editingId, entries, onDelete, onEdit, onSendN
             return (
               <div
                 className={cn(
-                  'group/queue-row flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-1',
-                  'transition-colors duration-300 ease-out hover:bg-(--chrome-action-hover) hover:transition-none',
-                  isEditing && 'border-[color-mix(in_srgb,var(--dt-composer-ring)_40%,transparent)] bg-accent/25'
+                  'group/queue-row flex items-center gap-2 rounded-lg border border-transparent px-2 py-1',
+                  'transition-colors duration-150 ease-out hover:bg-(--chrome-action-hover)',
+                  isEditing && 'border-(--tk-indigo-border) bg-(--tk-indigo-soft)'
                 )}
                 key={entry.id}
               >

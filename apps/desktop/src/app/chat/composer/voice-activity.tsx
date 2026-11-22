@@ -45,18 +45,18 @@ function formatElapsed(seconds: number) {
 
 function VoiceLevelBars({ level, active }: { active: boolean; level: number }) {
   const normalized = Math.max(0, Math.min(level, 1))
-  const bars = [0.5, 0.78, 1, 0.78, 0.5]
+  const bars = [0.38, 0.65, 0.88, 1, 0.88, 0.65, 0.38]
 
   return (
-    <div aria-hidden="true" className="flex h-4 items-center gap-0.5">
+    <div aria-hidden="true" className="flex h-4 items-center gap-[0.1875rem] text-(--tk-cyan)">
       {bars.map((weight, index) => {
-        const height = active ? 0.25 + Math.min(0.68, normalized * weight) : 0.25
+        const height = active ? 0.24 + Math.min(0.76, normalized * weight) : 0.24
 
         return (
           <span
             className={cn(
-              'w-0.5 rounded-full bg-current transition-[height,opacity] duration-100 ease-out',
-              active ? 'opacity-80' : 'animate-pulse opacity-45'
+              'w-[0.125rem] rounded-full bg-current transition-[height,opacity] duration-75 ease-out',
+              active ? 'opacity-90' : 'animate-pulse opacity-45'
             )}
             key={index}
             style={{ height: `${height * 100}%` }}
@@ -133,7 +133,19 @@ function PlaybackWaveform({ audioElement }: { audioElement: HTMLAudioElement | n
     canvas.style.height = `${WAVE_H}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.imageSmoothingEnabled = false
-    ctx.fillStyle = getComputedStyle(canvas).color
+    const style = getComputedStyle(canvas)
+
+    if (typeof ctx.createLinearGradient === 'function') {
+      const rootStyle = getComputedStyle(document.documentElement)
+      const indigo = rootStyle.getPropertyValue('--tk-indigo').trim() || style.color
+      const cyan = rootStyle.getPropertyValue('--tk-cyan').trim() || style.color
+      const grad = ctx.createLinearGradient(0, 0, WAVE_W, 0)
+      grad.addColorStop(0, indigo)
+      grad.addColorStop(1, cyan)
+      ctx.fillStyle = grad
+    } else {
+      ctx.fillStyle = style.color
+    }
 
     let raf = 0
 
@@ -152,7 +164,16 @@ function PlaybackWaveform({ audioElement }: { audioElement: HTMLAudioElement | n
 
         const amp = Math.sqrt(peak / 255)
         const bh = Math.max(3, Math.round((0.18 + amp * 0.82) * WAVE_H))
-        ctx.fillRect(X0 + i * STEP, Math.round((WAVE_H - bh) / 2), BAR_W, bh)
+        const x = X0 + i * STEP
+        const y = Math.round((WAVE_H - bh) / 2)
+
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath()
+          ctx.roundRect(x, y, BAR_W, bh, Math.min(BAR_W / 2, bh / 2))
+          ctx.fill()
+        } else {
+          ctx.fillRect(x, y, BAR_W, bh)
+        }
       }
 
       raf = requestAnimationFrame(tick)
@@ -178,23 +199,23 @@ export function VoiceActivity({ state }: { state: VoiceActivityState }) {
     <div
       aria-live="polite"
       className={cn(
-        'flex h-8 items-center gap-2 rounded-xl border border-border/55 bg-muted/55 px-2.5 text-xs text-muted-foreground',
-        'shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-sm'
+        'flex h-8.5 items-center gap-2.5 rounded-xl border border-(--tk-cyan-border) bg-(--tk-cyan-soft) px-3 text-xs text-(--tk-cyan-text)',
+        'shadow-[inset_0_1px_0_var(--tk-specular-edge)] backdrop-blur-md'
       )}
       role="status"
     >
       <div
         className={cn(
           'flex size-5 shrink-0 items-center justify-center rounded-full',
-          recording ? 'bg-primary/15 text-primary' : 'bg-primary/10 text-primary'
+          recording ? 'bg-(--tk-cyan) text-white shadow-xs' : 'bg-(--tk-indigo-soft) text-(--tk-indigo-text)'
         )}
       >
-        {recording ? <Mic size={12} /> : <Loader2 className="animate-spin" size={12} />}
+        {recording ? <Mic size={11} /> : <Loader2 className="animate-spin" size={11} />}
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate font-medium text-foreground/85">{title}</span>
-        <span className="font-mono text-[0.6875rem] text-muted-foreground/85">
+        <span className="truncate font-medium text-foreground/92">{title}</span>
+        <span className="font-mono text-[0.6875rem] tabular-nums text-(--ui-text-secondary)">
           {formatElapsed(state.elapsedSeconds)}
         </span>
       </div>
@@ -223,22 +244,22 @@ export function VoicePlaybackActivity() {
     <div
       aria-live="polite"
       className={cn(
-        'flex h-8 items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-2.5 text-xs text-primary',
-        'shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-sm'
+        'flex h-8.5 items-center gap-2.5 rounded-xl border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-3 text-xs text-(--tk-indigo-text)',
+        'shadow-[inset_0_1px_0_var(--tk-specular-edge)] backdrop-blur-md'
       )}
       role="status"
     >
-      <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-        {preparing ? <Loader2 className="animate-spin" size={12} /> : <Volume2 size={12} />}
+      <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-(--tk-indigo) to-(--tk-cyan) text-white shadow-xs">
+        {preparing ? <Loader2 className="animate-spin" size={11} /> : <Volume2 size={11} />}
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate font-medium text-foreground/85">{title}</span>
+        <span className="truncate font-medium text-foreground/92">{title}</span>
         {!preparing && <PlaybackWaveform audioElement={playback.audioElement} />}
       </div>
 
       <Button
-        className="h-6 shrink-0 gap-1 rounded-full px-2 text-[0.6875rem]"
+        className="h-6 shrink-0 gap-1 rounded-full px-2.5 text-[0.6875rem] font-medium hover:bg-(--tk-indigo-soft) hover:text-foreground"
         onClick={stopVoicePlayback}
         size="sm"
         type="button"

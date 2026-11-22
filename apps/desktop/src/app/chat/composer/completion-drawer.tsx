@@ -3,30 +3,24 @@ import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ReactNode } from 'react'
 
 export const COMPLETION_DRAWER_CLASS = [
-  'absolute bottom-[calc(100%+0.25rem)] left-0 z-50',
-  'w-60 max-w-[calc(100vw-2rem)]',
+  'tk-glass-elevated absolute bottom-[calc(100%+0.375rem)] left-0 z-50',
+  'w-64 max-w-[calc(100vw-2rem)]',
   'max-h-[min(23rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain',
-  'rounded-lg border border-(--ui-stroke-secondary)',
-  'bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)]',
-  'p-1 text-xs text-popover-foreground shadow-md',
-  'backdrop-blur-md'
+  'rounded-xl p-1 text-xs text-popover-foreground'
 ].join(' ')
 
 export const COMPLETION_DRAWER_BELOW_CLASS = [
-  'absolute left-0 top-[calc(100%+0.25rem)] z-50',
-  'w-60 max-w-[calc(100vw-2rem)]',
+  'tk-glass-elevated absolute left-0 top-[calc(100%+0.375rem)] z-50',
+  'w-64 max-w-[calc(100vw-2rem)]',
   'max-h-[min(23rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain',
-  'rounded-lg border border-(--ui-stroke-secondary)',
-  'bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)]',
-  'p-1 text-xs text-popover-foreground shadow-md',
-  'backdrop-blur-md'
+  'rounded-xl p-1 text-xs text-popover-foreground'
 ].join(' ')
 
 export const COMPLETION_DRAWER_ROW_CLASS = [
-  'relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1',
+  'relative flex cursor-default select-none items-center gap-2 rounded-lg px-2.5 py-1.5',
   'w-full min-w-0 text-left text-xs outline-hidden transition-colors',
   'hover:bg-(--ui-bg-tertiary)',
-  'data-[highlighted]:bg-(--ui-bg-tertiary) data-[highlighted]:text-foreground'
+  'data-[highlighted]:bg-(--tk-indigo-soft) data-[highlighted]:text-foreground'
 ].join(' ')
 
 export function ComposerCompletionDrawer({

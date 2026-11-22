@@ -1156,7 +1156,7 @@ export function ChatBar({
           )}
           <SkinSlashPopover draft={draft} onSelect={selectSkinSlashCommand} />
           {activeQueueSessionKey && queuedPrompts.length > 0 && (
-            <div className="relative z-6 mb-1 px-0.5">
+            <div className="relative z-6 mb-1.5 px-0.5">
               <QueuePanel
                 busy={busy}
                 editingId={queueEdit?.entryId ?? null}
@@ -1178,11 +1178,11 @@ export function ChatBar({
           <div className="relative w-full rounded-[inherit]">
             <div
               className={cn(
-                'relative z-4 isolate rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))] shadow-composer transition-[border-color,box-shadow] duration-200 ease-out',
+                'relative z-4 isolate rounded-[inherit] border border-(--tk-glass-border) shadow-composer transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]',
                 COMPOSER_DROP_FADE_CLASS,
-                'group-focus-within/composer:border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(45%*var(--composer-ring-strength)),transparent)] group-focus-within/composer:shadow-composer-focus',
+                'group-focus-within/composer:border-(--tk-indigo-border) group-focus-within/composer:shadow-composer-focus',
                 'group-has-data-[state=open]/composer:border-t-transparent',
-                'group-has-data-[state=open]/composer:shadow-[0_0.0625rem_0_0.0625rem_color-mix(in_srgb,var(--dt-composer-ring)_calc(35%*var(--composer-ring-strength)),transparent),0_0.5rem_1.5rem_color-mix(in_srgb,var(--shadow-ink)_6%,transparent)]',
+                'group-has-data-[state=open]/composer:shadow-[0_0_0_1px_var(--tk-indigo-border),0_12px_32px_-10px_var(--tk-indigo-glow)]',
                 dragActive && COMPOSER_DROP_ACTIVE_CLASS
               )}
               data-slot="composer-surface"
@@ -1192,19 +1192,19 @@ export function ChatBar({
                 aria-hidden
                 className={cn(
                   'pointer-events-none absolute inset-0 -z-10 rounded-[inherit]',
-                  'bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)]',
-                  'backdrop-blur-[0.75rem] backdrop-saturate-[1.12]',
-                  '[-webkit-backdrop-filter:blur(0.75rem)_saturate(1.12)]',
-                  'transition-[background-color] duration-150 ease-out',
-                  'group-data-[thread-scrolled-up]/composer:bg-[color-mix(in_srgb,var(--dt-card)_48%,transparent)]',
-                  'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_85%,transparent)]'
+                  'bg-(--tk-glass-elevated-bg)',
+                  'backdrop-blur-[22px] backdrop-saturate-[1.42]',
+                  '[-webkit-backdrop-filter:blur(22px)_saturate(1.42)]',
+                  'transition-[background-color] duration-180 ease-out',
+                  'group-data-[thread-scrolled-up]/composer:bg-(--tk-glass-bg)',
+                  'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_92%,transparent)]'
                 )}
               />
               <div
                 className={cn(
                   'relative z-1 flex min-h-0 w-full flex-col gap-(--composer-row-gap) overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y) transition-opacity duration-200 ease-out',
                   scrolledUp
-                    ? 'opacity-30 group-hover/composer:opacity-100 group-focus-within/composer:opacity-100'
+                    ? 'opacity-40 group-hover/composer:opacity-100 group-focus-within/composer:opacity-100'
                     : 'opacity-100'
                 )}
                 data-slot="composer-fade"
@@ -1212,13 +1212,13 @@ export function ChatBar({
                 <VoiceActivity state={voiceActivityState} />
                 <VoicePlaybackActivity />
                 {queueEdit && editingQueuedPrompt && (
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-[color-mix(in_srgb,var(--dt-composer-ring)_32%,transparent)] bg-accent/18 px-2 py-1">
-                    <div className="min-w-0 text-[0.7rem] text-muted-foreground/88">
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-(--tk-indigo-border) bg-(--tk-indigo-soft) px-2.5 py-1.5">
+                    <div className="min-w-0 text-[0.72rem] font-medium text-foreground/88">
                       Editing queued turn in composer
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <Button
-                        className="h-6 rounded-md px-2 text-[0.68rem]"
+                        className="h-6 rounded-lg px-2 text-[0.68rem]"
                         onClick={() => exitQueuedEdit('cancel')}
                         type="button"
                         variant="ghost"
@@ -1226,7 +1226,7 @@ export function ChatBar({
                         Cancel
                       </Button>
                       <Button
-                        className="h-6 rounded-md px-2 text-[0.68rem]"
+                        className="tk-btn-primary h-6 rounded-lg px-2.5 text-[0.68rem] text-white"
                         onClick={() => exitQueuedEdit('save')}
                         type="button"
                       >
@@ -1275,17 +1275,17 @@ export function ChatBarFallback() {
       )}
       data-slot="composer-root"
     >
-      <div className="composer-fallback-surface relative isolate h-(--composer-fallback-height) w-full rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))] shadow-composer">
+      <div className="composer-fallback-surface relative isolate h-(--composer-fallback-height) w-full rounded-[inherit] border border-(--tk-glass-border) shadow-composer">
         <div
           aria-hidden
           className={cn(
             'pointer-events-none absolute inset-0 -z-10 rounded-[inherit]',
-            'bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)]',
-            'backdrop-blur-[0.75rem] backdrop-saturate-[1.12]',
-            '[-webkit-backdrop-filter:blur(0.75rem)_saturate(1.12)]',
-            'transition-[background-color] duration-150 ease-out',
-            'group-data-[thread-scrolled-up]/composer:bg-[color-mix(in_srgb,var(--dt-card)_48%,transparent)]',
-            'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_85%,transparent)]'
+            'bg-(--tk-glass-elevated-bg)',
+            'backdrop-blur-[22px] backdrop-saturate-[1.42]',
+            '[-webkit-backdrop-filter:blur(22px)_saturate(1.42)]',
+            'transition-[background-color] duration-180 ease-out',
+            'group-data-[thread-scrolled-up]/composer:bg-(--tk-glass-bg)',
+            'group-focus-within/composer:bg-[color-mix(in_srgb,var(--dt-card)_92%,transparent)]'
           )}
         />
       </div>
