@@ -56,6 +56,9 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     "/api/v1/health",
     # Installer downloads. Derived from hermes_cli.download_targets so a target the
     # endpoint understands can never be one the allowlist silently 401s.
+    "/health",
+    "/healthz",
+    "/api/health",
 } | public_download_paths())
 
 

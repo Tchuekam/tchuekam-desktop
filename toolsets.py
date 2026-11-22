@@ -34,11 +34,11 @@ _HERMES_CORE_TOOLS = [
     # Terminal + process management
     "terminal", "process",
     # File manipulation
-    "read_file", "write_file", "patch", "search_files",
+    "read_file", "read_document", "write_file", "patch", "search_files",
     # Vision + image generation
     "vision_analyze", "image_generate",
     # Skills
-    "skills_list", "skill_view", "skill_manage",
+    "skills_list", "skill_view", "skill_manage", "skill_discover",
     # Browser automation
     "browser_navigate", "browser_snapshot", "browser_click",
     "browser_type", "browser_scroll", "browser_back",
@@ -46,8 +46,8 @@ _HERMES_CORE_TOOLS = [
     "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
     # Text-to-speech
     "text_to_speech",
-    # Planning & memory
-    "todo", "memory",
+    # Planning, autonomy & memory
+    "todo", "autonomous_plan", "self_inspect", "memory",
     # Session history search
     "session_search",
     # Clarifying questions
@@ -162,8 +162,8 @@ TOOLSETS = {
     },
     
     "skills": {
-        "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
-        "tools": ["skills_list", "skill_view", "skill_manage"],
+        "description": "Access, discover, create, edit, and manage skill documents across all 8 operational domains",
+        "tools": ["skills_list", "skill_view", "skill_manage", "skill_discover"],
         "includes": []
     },
     
@@ -193,8 +193,8 @@ TOOLSETS = {
 
     
     "file": {
-        "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
-        "tools": ["read_file", "write_file", "patch", "search_files"],
+        "description": "File manipulation and offline document reading tools: read text/documents (PDF, DOCX, XLSX, OCR), write, patch, and search",
+        "tools": ["read_file", "read_document", "write_file", "patch", "search_files"],
         "includes": []
     },
     
@@ -205,8 +205,8 @@ TOOLSETS = {
     },
     
     "todo": {
-        "description": "Task planning and tracking for multi-step work",
-        "tools": ["todo"],
+        "description": "Task planning, recoverable autonomous execution plans, and operational self-inspection",
+        "tools": ["todo", "autonomous_plan", "self_inspect"],
         "includes": []
     },
     

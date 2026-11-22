@@ -20,6 +20,9 @@ from agent.tool_result_classification import file_mutation_result_landed
 IDEMPOTENT_TOOL_NAMES = frozenset(
     {
         "read_file",
+        "read_document",
+        "self_inspect",
+        "skill_discover",
         "search_files",
         "web_search",
         "web_extract",
@@ -45,6 +48,7 @@ MUTATING_TOOL_NAMES = frozenset(
         "write_file",
         "patch",
         "todo",
+        "autonomous_plan",
         "memory",
         "skill_manage",
         "browser_click",

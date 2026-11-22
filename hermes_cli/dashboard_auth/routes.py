@@ -379,7 +379,34 @@ def _validate_post_login_target(raw: str) -> str:
 
 @router.post("/auth/logout", name="auth_logout")
 async def auth_logout(request: Request):
+    # Basic CSRF defense on POST /auth/logout: if Origin or Referer is sent by
+    # a browser, verify its host matches this dashboard Host (or allowed origins).
+    req_host = (request.headers.get("host") or "").split(":", 1)[0].lower()
+    src_url = request.headers.get("origin") or request.headers.get("referer") or ""
+    if src_url and req_host:
+        import urllib.parse as _up
+
+        src_host = (_up.urlparse(src_url).hostname or "").lower()
+        if src_host and src_host != req_host:
+            try:
+                from hermes_cli.web_server import _is_allowed_dashboard_origin
+
+                src_origin = f"{_up.urlparse(src_url).scheme}://{_up.urlparse(src_url).netloc}"
+                if not _is_allowed_dashboard_origin(src_origin):
+                    return JSONResponse({"detail": "Cross-site logout rejected"}, status_code=403)
+            except Exception:
+                return JSONResponse({"detail": "Cross-site logout rejected"}, status_code=403)
+
     _at, rt = read_session_cookies(request)
+    sess = getattr(request.state, "session", None)
+    if sess is None and _at:
+        for provider in list_providers():
+            try:
+                sess = provider.verify_session(access_token=_at)
+                if sess is not None:
+                    break
+            except Exception:
+                pass
     if rt:
         # Best-effort revoke. Try every provider so a session minted by
         # any registered provider is revoked correctly. Failures are
@@ -393,7 +420,6 @@ async def auth_logout(request: Request):
                     provider.name, e,
                 )
 
-    sess = getattr(request.state, "session", None)
     audit_log(
         AuditEvent.LOGOUT,
         provider=(sess.provider if sess else "unknown"),

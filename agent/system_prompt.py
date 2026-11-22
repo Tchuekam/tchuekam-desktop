@@ -33,6 +33,7 @@ from agent.prompt_builder import (
     MEMORY_GUIDANCE,
     OPENAI_MODEL_EXECUTION_GUIDANCE,
     PLATFORM_HINTS,
+    SELF_CONSCIOUSNESS_AND_AUTONOMY_GUIDANCE,
     SESSION_SEARCH_GUIDANCE,
     SKILLS_GUIDANCE,
     TASK_COMPLETION_GUIDANCE,
@@ -109,6 +110,8 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     # users who want a leaner prompt can turn it off.
     if getattr(agent, "_task_completion_guidance", True) and agent.valid_tool_names:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
+        if any(t in agent.valid_tool_names for t in ("self_inspect", "autonomous_plan", "skill_discover")):
+            stable_parts.append(SELF_CONSCIOUSNESS_AND_AUTONOMY_GUIDANCE)
 
     # Tool-aware behavioral guidance: only inject when the tools are loaded
     tool_guidance = []

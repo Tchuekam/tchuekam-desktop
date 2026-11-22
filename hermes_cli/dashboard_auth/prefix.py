@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import urllib.parse
 from typing import Optional
 
@@ -29,7 +30,8 @@ _log = logging.getLogger(__name__)
 # Characters that, if present in a public_url or prefix value, indicate
 # either a typo or a header-injection attempt. Reject the whole value
 # rather than try to sanitise — the operator can fix their config.
-_REJECT_CHARS = frozenset(('"', "'", "<", ">", " ", "\n", "\r", "\t"))
+_REJECT_CHARS = frozenset(('"', "'", "<", ">", "\\", " ", "\n", "\r", "\t"))
+_VALID_PREFIX_RE = re.compile(r"^/[A-Za-z0-9/_-]{1,63}$")
 
 
 def normalise_prefix(raw: Optional[str]) -> str:
@@ -37,9 +39,9 @@ def normalise_prefix(raw: Optional[str]) -> str:
 
     Returns a string like ``"/hermes"`` (no trailing slash) or ``""``
     when no prefix is set / the header is malformed. We deliberately
-    reject anything containing ``..`` or non-printable bytes so a
-    hostile proxy can't inject HTML or path-traversal sequences via the
-    prefix.
+    reject anything containing ``..`` or non-printable bytes or backslashes
+    so a hostile proxy can't inject HTML/JS or path-traversal sequences via
+    the prefix.
     """
     if not raw:
         return ""
@@ -53,9 +55,8 @@ def normalise_prefix(raw: Optional[str]) -> str:
         "//" in p
         or ".." in p
         or any(c in p for c in _REJECT_CHARS)
+        or not _VALID_PREFIX_RE.fullmatch(p)
     ):
-        return ""
-    if len(p) > 64:
         return ""
     return p
 

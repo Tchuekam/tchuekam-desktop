@@ -856,6 +856,13 @@ def handle_function_call(
     Returns:
         Function result as a JSON string.
     """
+    # Repair parameter aliases & normalize paths before schema type coercion
+    try:
+        from agent.self_consciousness import repair_and_normalize_tool_args
+        function_args = repair_and_normalize_tool_args(function_name, function_args)
+    except Exception:
+        pass
+
     # Coerce string arguments to their schema-declared types (e.g. "42"→42)
     function_args = coerce_tool_args(function_name, function_args)
 
@@ -994,7 +1001,28 @@ def handle_function_call(
         # to wrap every tool manually.  We use monotonic() so the value is
         # unaffected by wall-clock adjustments during the call.
         _dispatch_start = time.monotonic()
-        if function_name == "execute_code":
+        _sc_engine = None
+        _fallback_tool_used = None
+        try:
+            from agent.self_consciousness import get_self_consciousness_engine
+            _sc_engine = get_self_consciousness_engine()
+        except Exception:
+            _sc_engine = None
+
+        # Prevent duplicate identical file mutations in the same turn
+        _dedup_result = None
+        if _sc_engine is not None:
+            try:
+                _dedup_result = _sc_engine.check_duplicate_mutation(
+                    function_name, function_args or {}, task_id=task_id or "default"
+                )
+            except Exception:
+                _dedup_result = None
+
+        _retries_used = 0
+        if _dedup_result is not None:
+            result = _dedup_result
+        elif function_name == "execute_code":
             # Prefer the caller-provided list so subagents can't overwrite
             # the parent's tool set via the process-global.
             sandbox_enabled = (
@@ -1007,13 +1035,53 @@ def handle_function_call(
                 task_id=task_id,
                 enabled_tools=sandbox_enabled,
             )
+        elif _sc_engine is not None:
+            result, _retries_used = _sc_engine.dispatch_with_reliability(
+                function_name,
+                function_args,
+                lambda: registry.dispatch(
+                    function_name, function_args,
+                    task_id=task_id,
+                    user_task=user_task,
+                ),
+                task_id=task_id,
+            )
         else:
             result = registry.dispatch(
                 function_name, function_args,
                 task_id=task_id,
                 user_task=user_task,
             )
+
+        # Intelligent tool-level fallback & recovery (e.g. read_file on binary
+        # .docx/.pdf/.xlsx/.pptx/.rtf -> read_document; web tools when offline -> local findings)
+        if _sc_engine is not None and _dedup_result is None:
+            try:
+                result, _fallback_tool_used = _sc_engine.maybe_fallback_tool_result(
+                    function_name,
+                    function_args or {},
+                    result,
+                    task_id=task_id,
+                )
+            except Exception as _fb_err:
+                logger.debug("Self-consciousness fallback check error: %s", _fb_err)
+
         duration_ms = int((time.monotonic() - _dispatch_start) * 1000)
+
+        if _sc_engine is not None:
+            try:
+                _sc_engine.record_tool_execution(
+                    function_name,
+                    function_args,
+                    result,
+                    duration_ms,
+                    task_id=task_id or "",
+                    session_id=session_id or "",
+                    fallback_tool=_fallback_tool_used,
+                    retries=_retries_used,
+                )
+            except Exception as _rec_err:
+                logger.debug("Self-consciousness ledger record error: %s", _rec_err)
 
         try:
             from hermes_cli.plugins import invoke_hook
