@@ -139,11 +139,27 @@ function ConversationPill({
             : 'Listening'
 
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
+    <div className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-(--tk-cyan-border) bg-(--tk-voice-surface) px-1.5 py-0.5 shadow-(--tk-voice-shadow) backdrop-blur-md">
+      <span aria-hidden="true" className="hidden items-center gap-1.5 pl-2 pr-1 text-[0.7rem] font-medium text-foreground/85 sm:inline-flex">
+        <span
+          className={cn(
+            'size-1.5 rounded-full',
+            speaking || status === 'thinking'
+              ? 'tk-thinking-dot'
+              : listening
+                ? 'bg-(--tk-cyan) animate-pulse'
+                : 'bg-muted-foreground/60'
+          )}
+        />
+        <span>{shortStatus}</span>
+      </span>
       <Button
         aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
         aria-pressed={muted}
-        className={cn(GHOST_ICON_BTN, 'p-0', muted && 'bg-muted text-muted-foreground')}
+        className={cn(
+          'size-7 shrink-0 rounded-full p-0 text-(--ui-text-secondary) transition-colors hover:bg-(--tk-cyan-soft) hover:text-foreground',
+          muted && 'bg-muted/80 text-muted-foreground'
+        )}
         disabled={disabled}
         onClick={() => {
           triggerHaptic('selection')
