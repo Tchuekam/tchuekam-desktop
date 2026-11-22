@@ -42,7 +42,12 @@ cd /opt/data
 cd "$_hermes_orig_cwd"
 
 if [ $# -eq 0 ]; then
-    drop hermes dashboard --host 0.0.0.0 --port "${PORT:-9119}" --insecure --no-open
+    _insecure=""
+    case "${HERMES_DASHBOARD_INSECURE:-}" in
+        1|true|TRUE|True|yes|YES|Yes) _insecure="--insecure" ;;
+    esac
+    # shellcheck disable=SC2086
+    drop hermes dashboard --host 0.0.0.0 --port "${PORT:-9119}" --skip-build --no-open $_insecure
 fi
 
 if command -v "$1" >/dev/null 2>&1; then

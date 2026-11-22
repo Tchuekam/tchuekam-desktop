@@ -1,10 +1,10 @@
 [phases.setup]
-nixPkgs = ["python311", "nodejs_20", "ffmpeg", "ripgrep", "git"]
+nixPkgs = ["python311", "nodejs_22", "ffmpeg", "ripgrep", "git"]
 
 [phases.install]
 cmds = [
-    "pip install -e ."
+    "pip install -r requirements-backend.txt && pip install -e ."
 ]
 
 [start]
-cmd = "python -m hermes_cli.main dashboard --host 0.0.0.0 --port $PORT --insecure --skip-build --no-open"
+cmd = "sh -c 'INSECURE=\"\"; case \"${HERMES_DASHBOARD_INSECURE:-}\" in 1|true|TRUE|yes|YES) INSECURE=\"--insecure\" ;; esac; exec python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --skip-build --no-open $INSECURE'"

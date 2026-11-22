@@ -6,6 +6,8 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tchuekam_backend.domain.models import UserProfile, ApiKey
@@ -44,7 +46,13 @@ class ProfileService:
         if full_name is not None:
             profile.full_name = full_name
         if avatar_url is not None:
-            profile.avatar_url = avatar_url
+            clean_url = avatar_url.strip()
+            if clean_url and not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="URL d'avatar invalide (http:// ou https:// requis).",
+                )
+            profile.avatar_url = clean_url or None
         if phone_number is not None:
             profile.phone_number = phone_number
         if language is not None:
@@ -58,7 +66,14 @@ class ProfileService:
         if preferences_json is not None:
             profile.preferences_json = preferences_json
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ce nom d'utilisateur est déjà utilisé.",
+            )
         self.db.refresh(profile)
         self.audit_repo.log("PROFILE_UPDATED", user_id=user_id)
         return profile
@@ -96,8 +111,8 @@ class ProfileService:
     def list_api_keys(self, org_id: str, user_id: str) -> List[ApiKey]:
         return self.api_key_repo.list_by_org(org_id)
 
-    def revoke_api_key(self, key_id: str, user_id: str) -> bool:
-        success = self.api_key_repo.revoke(key_id)
+    def revoke_api_key(self, key_id: str, user_id: str, org_id: Optional[str] = None) -> bool:
+        success = self.api_key_repo.revoke(key_id, org_id=org_id)
         if success:
-            self.audit_repo.log("API_KEY_REVOKED", user_id=user_id, resource=key_id)
+            self.audit_repo.log("API_KEY_REVOKED", user_id=user_id, org_id=org_id, resource=key_id)
         return success

@@ -4,6 +4,7 @@ Service métier des Organisations (Création, Édition, Archivage, Restauration,
 
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tchuekam_backend.domain.models import Organization, OrganizationMembership, User
@@ -30,6 +31,12 @@ class OrganizationService:
         custom_domain: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Organization]]:
         """Créer une organisation et attribue le rôle OWNER au créateur."""
+        if logo_url is not None and logo_url.strip():
+            clean_logo = logo_url.strip()
+            if not (clean_logo.startswith("http://") or clean_logo.startswith("https://")):
+                return False, "URL du logo invalide (http:// ou https:// requis).", None
+            logo_url = clean_logo
+
         computed_slug = slug or re.sub(r"[^a-z0-9\-]", "", name.lower().replace(" ", "-"))
         if not computed_slug:
             computed_slug = f"org-{user_id[:8]}"
@@ -38,7 +45,11 @@ class OrganizationService:
         if existing_slug:
             return False, f"Le slug d'organisation '{computed_slug}' est déjà utilisé.", None
 
-        org = self.org_repo.create(name=name, slug=computed_slug, logo_url=logo_url, custom_domain=custom_domain)
+        try:
+            org = self.org_repo.create(name=name, slug=computed_slug, logo_url=logo_url, custom_domain=custom_domain)
+        except IntegrityError:
+            self.db.rollback()
+            return False, "Le slug ou domaine personnalisé est déjà utilisé.", None
 
         # 1. Création de l'adhésion OWNER
         self.membership_repo.add_org_member(org.id, user_id, role="OWNER", status="ACTIVE")
@@ -61,9 +72,18 @@ class OrganizationService:
         custom_domain: Optional[str] = None,
         settings_json: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Organization]]:
-        org = self.org_repo.update(
-            org_id, name=name, logo_url=logo_url, custom_domain=custom_domain, settings_json=settings_json
-        )
+        if logo_url is not None:
+            clean_logo = logo_url.strip()
+            if clean_logo and not (clean_logo.startswith("http://") or clean_logo.startswith("https://")):
+                return False, "URL du logo invalide (http:// ou https:// requis).", None
+            logo_url = clean_logo or None
+        try:
+            org = self.org_repo.update(
+                org_id, name=name, logo_url=logo_url, custom_domain=custom_domain, settings_json=settings_json
+            )
+        except IntegrityError:
+            self.db.rollback()
+            return False, "Domaine personnalisé ou paramètre unique déjà utilisé.", None
         if not org:
             return False, "Organisation introuvable.", None
         self.audit_repo.log("ORG_UPDATED", user_id=user_id, org_id=org_id)

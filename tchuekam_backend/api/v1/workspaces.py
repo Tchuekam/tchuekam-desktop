@@ -62,14 +62,18 @@ def update_workspace(
     db: Session = Depends(get_db),
 ):
     ws_service = WorkspaceService(db)
+    existing_ws = ws_service.workspace_repo.get_by_id(workspace_id)
+    if not existing_ws or existing_ws.org_id != org.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace introuvable.")
     updated_ws = ws_service.update_workspace(
         workspace_id=workspace_id,
         user_id=current_user.id,
         name=payload.name,
         description=payload.description,
         settings_json=payload.settings_json,
+        org_id=org.id,
     )
-    if not updated_ws or updated_ws.org_id != org.id:
+    if not updated_ws:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace introuvable.")
     return updated_ws
 

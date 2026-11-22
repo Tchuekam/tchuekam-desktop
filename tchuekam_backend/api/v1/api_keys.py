@@ -64,7 +64,7 @@ def revoke_api_key(
     db: Session = Depends(get_db),
 ):
     profile_service = ProfileService(db)
-    success = profile_service.revoke_api_key(key_id, current_user.id)
+    success = profile_service.revoke_api_key(key_id, current_user.id, org_id=org.id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clé API non trouvée.")
     return {"message": "Clé API révoquée avec succès."}

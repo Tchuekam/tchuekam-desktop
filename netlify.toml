@@ -1,10 +1,10 @@
 [build]
-  command = "npm run build"
+  command = "npm --prefix web ci && npm --prefix web run build"
   publish = "hermes_cli/web_dist"
 
 [[redirects]]
   from = "/api/*"
-  to = "https://tchuekam-backend-production.up.railway.app/api/:splat"
+  to = "https://tchuekam-agent-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
@@ -19,3 +19,5 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"

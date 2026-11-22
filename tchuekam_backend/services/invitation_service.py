@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from tchuekam_backend.core.security import generate_secure_token, hash_token
-from tchuekam_backend.domain.models import Invitation
+from tchuekam_backend.domain.models import Invitation, Workspace
 from tchuekam_backend.repositories.invitation_repository import InvitationRepository
 from tchuekam_backend.repositories.membership_repository import MembershipRepository
 from tchuekam_backend.repositories.user_repository import UserRepository
@@ -31,6 +31,11 @@ class InvitationService:
         workspace_id: Optional[str] = None,
         expires_in_days: int = 7,
     ) -> Tuple[bool, str, Optional[Invitation], Optional[str]]:
+        if workspace_id:
+            ws = self.db.query(Workspace).filter(Workspace.id == workspace_id).first()
+            if not ws or ws.org_id != org_id:
+                return False, "Workspace introuvable dans cette organisation.", None, None
+
         raw_token = generate_secure_token()
         token_h = hash_token(raw_token)
         expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)

@@ -59,7 +59,6 @@ class FileRecordResponseSchema(BaseModel):
     original_filename: str
     mime_type: str
     file_size_bytes: int
-    storage_path: str
     uploaded_by_id: Optional[str]
     created_at: datetime
 

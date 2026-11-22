@@ -46,8 +46,11 @@ class ApiKeyRepository:
     def list_by_user(self, user_id: str) -> List[ApiKey]:
         return self.db.query(ApiKey).filter(ApiKey.user_id == user_id).all()
 
-    def revoke(self, key_id: str) -> bool:
-        key = self.db.query(ApiKey).filter(ApiKey.id == key_id).first()
+    def revoke(self, key_id: str, org_id: Optional[str] = None) -> bool:
+        query = self.db.query(ApiKey).filter(ApiKey.id == key_id)
+        if org_id is not None:
+            query = query.filter(ApiKey.org_id == org_id)
+        key = query.first()
         if not key:
             return False
         self.db.delete(key)

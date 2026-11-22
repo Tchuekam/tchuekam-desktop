@@ -11,8 +11,17 @@ import time
 from typing import Any
 
 import numpy as np
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
+
+try:
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = 25_000_000
+except ImportError:
+    pass
+
+from tchuekam_backend.core.rate_limiter import rate_limiter
 
 from biocompute.experiments.exp001_visual_classification import run_experiment_001
 from biocompute.experiments.image_encoder import ImageToNeuralEncoder
@@ -55,18 +64,50 @@ def list_providers():
     }
 
 
+_MAX_BIOCOMPUTE_UPLOAD_BYTES = 2 * 1024 * 1024
+_BIOCOMPUTE_CHUNK_SIZE = 65_536
+
+
 @router.post("/experiment/run")
 async def run_playground_experiment(
+    request: Request,
     backend: str = Form("biocompute_simulator"),
     dataset: str = Form("MNIST"),
+    task: str = Form("Image Classification"),
     file: UploadFile | None = File(None),
 ):
+    client_ip = (
+        (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+    allowed, _ = rate_limiter.is_allowed(f"biocompute:{client_ip}", max_requests=30, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many experiment runs. Please try again in a minute.",
+        )
+
     t0 = time.perf_counter()
     encoder = ImageToNeuralEncoder(target_size=(28, 28), n_channels=16)
 
     # 1. Input image or synthetic digit pattern
     if file is not None:
-        file_bytes = await file.read()
+        chunks = []
+        total_bytes = 0
+        while True:
+            chunk = await file.read(_BIOCOMPUTE_CHUNK_SIZE)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > _MAX_BIOCOMPUTE_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413),
+                    detail="Uploaded image exceeds the 2 MB limit.",
+                )
+            chunks.append(chunk)
+        file_bytes = b"".join(chunks)
+        if not file_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
         image_2d = encoder.decode_image_bytes(file_bytes)
         source_label = "Uploaded Image"
     else:
@@ -149,6 +190,7 @@ async def run_playground_experiment(
 
     return {
         "ok": True,
+        "task": task,
         "input_source": source_label,
         "backend": backend,
         "dataset": dataset,

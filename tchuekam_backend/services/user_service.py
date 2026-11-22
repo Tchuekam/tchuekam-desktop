@@ -62,7 +62,18 @@ class UserService:
         if tok_expires < now:
             return False, "Le lien de vérification d'email a expiré."
 
-        tok.is_used = True
+        consumed = (
+            self.db.query(EmailVerificationToken)
+            .filter(
+                EmailVerificationToken.id == tok.id,
+                EmailVerificationToken.is_used == False,
+            )
+            .update({"is_used": True}, synchronize_session=False)
+        )
+        if consumed != 1:
+            self.db.rollback()
+            return False, "Jeton de vérification d'email invalide ou déjà utilisé."
+
         self.user_repo.mark_email_verified(tok.user_id)
         self.db.commit()
         self.audit_repo.log("USER_EMAIL_VERIFIED", user_id=tok.user_id)
@@ -113,9 +124,20 @@ class UserService:
         if tok_expires < now:
             return False, "Le lien de réinitialisation a expiré."
 
+        consumed = (
+            self.db.query(PasswordResetToken)
+            .filter(
+                PasswordResetToken.id == tok.id,
+                PasswordResetToken.is_used == False,
+            )
+            .update({"is_used": True}, synchronize_session=False)
+        )
+        if consumed != 1:
+            self.db.rollback()
+            return False, "Jeton de réinitialisation invalide ou déjà utilisé."
+
         pwd_hash = hash_password(new_password)
         self.user_repo.update_password(tok.user_id, pwd_hash)
-        tok.is_used = True
         self.db.commit()
 
         # Révocation des sessions existantes pour des raisons de sécurité
@@ -135,5 +157,6 @@ class UserService:
 
         pwd_hash = hash_password(new_password)
         self.user_repo.update_password(user.id, pwd_hash)
+        self.session_repo.revoke_all_user_sessions(user.id)
         self.audit_repo.log("USER_PASSWORD_CHANGED", user_id=user.id)
         return True, "Mot de passe modifié avec succès."

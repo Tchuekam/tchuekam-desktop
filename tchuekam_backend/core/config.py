@@ -22,7 +22,13 @@ _DEV_ENVIRONMENTS = {"development", "dev", "local", "test", "testing"}
 
 
 def _is_production() -> bool:
-    return os.getenv("ENVIRONMENT", "development").strip().lower() not in _DEV_ENVIRONMENTS
+    env_val = os.getenv("ENVIRONMENT")
+    if env_val is not None and env_val.strip() != "":
+        return env_val.strip().lower() not in _DEV_ENVIRONMENTS
+    return any(
+        os.getenv(k, "").strip().lower() not in {"", "0", "false", "no"}
+        for k in ("VERCEL", "RAILWAY_ENVIRONMENT", "RENDER")
+    )
 
 
 def _resolve_jwt_secret() -> str:
@@ -164,6 +170,15 @@ class Settings(BaseSettings):
     # CORS & WebSockets
     ALLOWED_ORIGINS: Union[List[str], str] = Field(default_factory=_resolve_allowed_origins)
 
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret_key(cls, v: str) -> str:
+        if _is_production() and (not v or len(v.strip()) < 32):
+            raise ValueError(
+                "TCHUEKAM_JWT_SECRET_KEY doit contenir au moins 32 caractères en production."
+            )
+        return v
+
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v: Any) -> List[str]:
@@ -174,12 +189,15 @@ class Settings(BaseSettings):
                     import json
                     parsed = json.loads(v)
                     if isinstance(parsed, list):
-                        return [str(x).strip() for x in parsed if str(x).strip()]
+                        origins = [str(x).strip() for x in parsed if str(x).strip()]
+                        return origins or _resolve_allowed_origins()
                 except Exception:
                     pass
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            return origins or _resolve_allowed_origins()
         elif isinstance(v, list):
-            return [str(origin).strip() for origin in v if str(origin).strip()]
+            origins = [str(origin).strip() for origin in v if str(origin).strip()]
+            return origins or _resolve_allowed_origins()
         return _resolve_allowed_origins()
     
     model_config = {"case_sensitive": True}
