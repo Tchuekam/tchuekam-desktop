@@ -440,3 +440,445 @@ export function upsertToolPart(
   } satisfies ChatMessagePart
 
   if (index === -1) {
+    return [...next, base]
+  }
+
+  next[index] = { ...next[index], ...base }
+
+  return next
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
+}
+
+function parseMaybeJsonObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function firstNonEmptyObject(...values: unknown[]): Record<string, unknown> {
+  for (const value of values) {
+    const parsed = parseMaybeJsonObject(value)
+
+    if (Object.keys(parsed).length > 0) {
+      return parsed
+    }
+  }
+
+  return {}
+}
+
+function liveToolArgs(payload: GatewayEventPayload | undefined): Record<string, unknown> {
+  const direct = firstNonEmptyObject(payload?.args, payload?.arguments)
+  const input = firstNonEmptyObject(payload?.input)
+  const fn = recordFromUnknown(input.function)
+
+  const nested = firstNonEmptyObject(
+    input.args,
+    input.arguments,
+    input.parameters,
+    input.input,
+    fn?.arguments,
+    fn?.args,
+    fn?.parameters
+  )
+
+  return {
+    ...input,
+    ...nested,
+    ...direct
+  }
+}
+
+function parseStoredToolResult(content: unknown): unknown {
+  if (content && typeof content === 'object') {
+    return content
+  }
+
+  const textContent = textFromUnknown(content)
+
+  if (!textContent.trim()) {
+    return ''
+  }
+
+  try {
+    return JSON.parse(textContent)
+  } catch {
+    return textContent
+  }
+}
+
+function toolPartFromStoredCall(call: unknown, fallbackIndex: number): ChatMessagePart {
+  const row = recordFromUnknown(call) ?? {}
+  const fn = recordFromUnknown(row.function)
+  const id = String(row.id || row.tool_call_id || `stored-tool-${fallbackIndex}`)
+
+  const toolName = String(
+    row.name || row.tool_name || fn?.name || (recordFromUnknown(row.input)?.name as string | undefined) || 'tool'
+  )
+
+  const args = firstNonEmptyObject(fn?.arguments, row.arguments, row.args, row.input)
+
+  return {
+    type: 'tool-call',
+    toolCallId: id,
+    toolName,
+    args: args as never,
+    argsText: Object.keys(args).length ? JSON.stringify(args) : ''
+  }
+}
+
+function applyStoredToolResult(messages: ChatMessage[], toolMessage: SessionMessage): boolean {
+  const toolCallId = toolMessage.tool_call_id || undefined
+  const toolName = toolMessage.tool_name || toolMessage.name || 'tool'
+  const content = toolMessage.content || toolMessage.text || toolMessage.context || toolMessage.name
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+
+    if (message.role !== 'assistant') {
+      continue
+    }
+
+    const partIndex = message.parts.findIndex(
+      part =>
+        part.type === 'tool-call' &&
+        ((toolCallId && part.toolCallId === toolCallId) || (!toolCallId && part.toolName === toolName))
+    )
+
+    if (partIndex < 0) {
+      continue
+    }
+
+    const parts = [...message.parts]
+    const existing = parts[partIndex]
+    parts[partIndex] = {
+      ...existing,
+      result: parseStoredToolResult(content),
+      isError: false
+    } as ChatMessagePart
+    messages[i] = { ...message, parts }
+
+    return true
+  }
+
+  return false
+}
+
+function applyStoredToolResultToParts(parts: ChatMessagePart[], toolMessage: SessionMessage): ChatMessagePart[] | null {
+  const toolCallId = toolMessage.tool_call_id || undefined
+  const toolName = toolMessage.tool_name || toolMessage.name || 'tool'
+  const content = toolMessage.content || toolMessage.text || toolMessage.context || toolMessage.name
+
+  const partIndex = parts.findIndex(
+    part =>
+      part.type === 'tool-call' &&
+      ((toolCallId && part.toolCallId === toolCallId) || (!toolCallId && part.toolName === toolName))
+  )
+
+  if (partIndex < 0) {
+    return null
+  }
+
+  const next = [...parts]
+  const existing = next[partIndex]
+  next[partIndex] = {
+    ...existing,
+    result: parseStoredToolResult(content),
+    isError: false
+  } as ChatMessagePart
+
+  return next
+}
+
+function storedToolMessagePart(toolMessage: SessionMessage, fallbackIndex: number): ChatMessagePart {
+  const name = toolMessage.tool_name || toolMessage.name || 'tool'
+  const context = textFromUnknown(toolMessage.context || toolMessage.text || toolMessage.content || '')
+  const args = context ? { context } : {}
+
+  return {
+    type: 'tool-call',
+    toolCallId: toolMessage.tool_call_id || `stored-tool-message-${fallbackIndex}`,
+    toolName: name,
+    args: args as never,
+    argsText: Object.keys(args).length ? JSON.stringify(args) : '',
+    result: context ? { context } : {},
+    isError: false
+  }
+}
+
+function withUniqueToolCallIds(messages: ChatMessage[]): ChatMessage[] {
+  const seen = new Set<string>()
+
+  return messages.map(message => {
+    let changed = false
+
+    const parts = message.parts.map((part, index) => {
+      if (part.type !== 'tool-call') {
+        return part
+      }
+
+      const id = part.toolCallId || `${message.id}-tool-${index}`
+
+      if (!seen.has(id)) {
+        seen.add(id)
+
+        if (part.toolCallId) {
+          return part
+        }
+
+        changed = true
+
+        return { ...part, toolCallId: id } as ChatMessagePart
+      }
+
+      changed = true
+      const uniqueId = `${id}-${message.id}-${index}`
+      seen.add(uniqueId)
+
+      return { ...part, toolCallId: uniqueId } as ChatMessagePart
+    })
+
+    return changed ? { ...message, parts } : message
+  })
+}
+
+export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = []
+  let pendingToolParts: ChatMessagePart[] = []
+  let pendingToolTimestamp: number | undefined
+  let activeAssistantIndex: null | number = null
+
+  const clearPendingTools = () => {
+    pendingToolParts = []
+    pendingToolTimestamp = undefined
+  }
+
+  const appendPartsToActiveAssistant = (parts: ChatMessagePart[], timestamp?: number): boolean => {
+    if (activeAssistantIndex === null) {
+      return false
+    }
+
+    const active = result[activeAssistantIndex]
+
+    if (!active || active.role !== 'assistant') {
+      activeAssistantIndex = null
+
+      return false
+    }
+
+    active.parts = [...active.parts, ...parts]
+    active.timestamp = timestamp ?? active.timestamp
+
+    return true
+  }
+
+  const flushPendingTools = (index: number) => {
+    if (!pendingToolParts.length) {
+      return
+    }
+
+    if (!appendPartsToActiveAssistant(pendingToolParts, pendingToolTimestamp)) {
+      result.push({
+        id: `${pendingToolTimestamp || Date.now()}-${index}-tools`,
+        role: 'assistant',
+        parts: pendingToolParts,
+        timestamp: pendingToolTimestamp
+      })
+      activeAssistantIndex = result.length - 1
+    }
+
+    clearPendingTools()
+  }
+
+  messages.forEach((message, index) => {
+    if (message.role === 'tool') {
+      const updatedPendingToolParts = applyStoredToolResultToParts(pendingToolParts, message)
+
+      if (updatedPendingToolParts) {
+        pendingToolParts = updatedPendingToolParts
+
+        return
+      }
+
+      if (applyStoredToolResult(result, message)) {
+        return
+      }
+
+      pendingToolParts = [...pendingToolParts, storedToolMessagePart(message, index)]
+      pendingToolTimestamp ??= message.timestamp
+
+      return
+    }
+
+    const content = message.content || message.text || message.context || message.name
+    const displayContent = displayContentForMessage(message.role, content)
+    const parts: ChatMessagePart[] = []
+
+    const reasoning =
+      message.reasoning ||
+      message.reasoning_content ||
+      (typeof message.reasoning_details === 'string' ? message.reasoning_details : '')
+
+    if (reasoning && message.role === 'assistant') {
+      parts.push(reasoningPart(reasoning))
+    }
+
+    if (displayContent) {
+      parts.push(message.role === 'assistant' ? assistantTextPart(displayContent) : textPart(displayContent))
+    }
+
+    if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
+      parts.push(...message.tool_calls.map((call, callIndex) => toolPartFromStoredCall(call, callIndex)))
+    }
+
+    if (!parts.length) {
+      if (message.role !== 'assistant') {
+        flushPendingTools(index)
+        activeAssistantIndex = null
+      }
+
+      return
+    }
+
+    const isToolOnlyAssistant =
+      message.role === 'assistant' && parts.length > 0 && parts.every(part => part.type === 'tool-call')
+
+    if (isToolOnlyAssistant) {
+      pendingToolParts = [...pendingToolParts, ...parts]
+      pendingToolTimestamp ??= message.timestamp
+
+      return
+    }
+
+    if (message.role === 'assistant') {
+      if (pendingToolParts.length) {
+        if (!appendPartsToActiveAssistant(pendingToolParts, message.timestamp ?? pendingToolTimestamp)) {
+          parts.unshift(...pendingToolParts)
+        }
+
+        clearPendingTools()
+      }
+
+      const activeAssistant =
+        activeAssistantIndex !== null && result[activeAssistantIndex]?.role === 'assistant'
+          ? result[activeAssistantIndex]
+          : null
+
+      const currentHasToolCall = parts.some(part => part.type === 'tool-call')
+      const activeHasToolCall = Boolean(activeAssistant?.parts.some(part => part.type === 'tool-call'))
+
+      if (activeAssistant && (currentHasToolCall || activeHasToolCall)) {
+        activeAssistant.parts = [...activeAssistant.parts, ...parts]
+        activeAssistant.timestamp = message.timestamp ?? activeAssistant.timestamp
+
+        return
+      }
+    } else {
+      flushPendingTools(index)
+    }
+
+    result.push({
+      id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
+      role: message.role,
+      parts,
+      timestamp: message.timestamp
+    })
+
+    activeAssistantIndex = message.role === 'assistant' ? result.length - 1 : null
+  })
+  flushPendingTools(messages.length)
+
+  return withUniqueToolCallIds(
+    result.filter(m => chatMessageText(m).trim() || m.parts.some(part => part.type !== 'text'))
+  )
+}
+
+export function preserveLocalAssistantErrors(
+  nextMessages: ChatMessage[],
+  currentMessages: ChatMessage[]
+): ChatMessage[] {
+  const localById = new Map(currentMessages.map(message => [message.id, message]))
+
+  const mergedNextMessages = nextMessages.map(message => {
+    if (message.role !== 'assistant' || message.error || message.hidden) {
+      return message
+    }
+
+    const local = localById.get(message.id)
+
+    if (!local || local.role !== 'assistant' || !local.error || local.hidden) {
+      return message
+    }
+
+    return {
+      ...message,
+      error: local.error,
+      pending: false
+    }
+  })
+
+  const existingIds = new Set(mergedNextMessages.map(message => message.id))
+  const preserveIds = new Set<string>()
+  const normalize = (value: string) => value.replace(/\s+/g, ' ').trim()
+  const tailUserInNext = [...mergedNextMessages].reverse().find(message => message.role === 'user' && !message.hidden)
+  const tailUserText = tailUserInNext ? normalize(chatMessageText(tailUserInNext)) : ''
+  const tailUserRefs = tailUserInNext ? (tailUserInNext.attachmentRefs ?? []).join('\n') : ''
+
+  const matchesTailUserInNext = (candidate: ChatMessage) =>
+    Boolean(tailUserInNext) &&
+    normalize(chatMessageText(candidate)) === tailUserText &&
+    (candidate.attachmentRefs ?? []).join('\n') === tailUserRefs
+
+  for (let index = 0; index < currentMessages.length; index += 1) {
+    const message = currentMessages[index]
+
+    if (message.role !== 'assistant' || !message.error || message.hidden || existingIds.has(message.id)) {
+      continue
+    }
+
+    preserveIds.add(message.id)
+
+    for (let probe = index - 1; probe >= 0; probe -= 1) {
+      const candidate = currentMessages[probe]
+
+      if (candidate.hidden) {
+        continue
+      }
+
+      if (candidate.role === 'user' && !existingIds.has(candidate.id) && !matchesTailUserInNext(candidate)) {
+        preserveIds.add(candidate.id)
+      }
+
+      break
+    }
+  }
+
+  if (preserveIds.size === 0) {
+    return mergedNextMessages
+  }
+
+  const preserved = currentMessages
+    .filter(message => preserveIds.has(message.id))
+    .map(message => ({ ...message, pending: false }))
+
+  return [...mergedNextMessages, ...preserved]
+}
+
+export function branchGroupForUser(userMessage: ChatMessage): string {
+  return `branch:${userMessage.id}`
+}
