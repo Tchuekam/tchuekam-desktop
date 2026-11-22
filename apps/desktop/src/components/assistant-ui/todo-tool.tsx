@@ -74,10 +74,11 @@ export const HoistedTodoPanel: FC<{ todos: TodoItem[] }> = ({ todos }) => {
   }
 
   const label = headerLabel(todos)
+  const completedCount = todos.filter(t => t.status === 'completed').length
 
   return (
     <section
-      className="mt-1 mb-3 inline-block w-fit max-w-full overflow-hidden rounded-2xl border border-border/70 bg-card align-top shadow-[0_1px_2px_0_hsl(var(--foreground)/0.04),0_1px_4px_-1px_hsl(var(--foreground)/0.06)]"
+      className="tk-glass mt-1.5 mb-3 inline-block w-fit max-w-full overflow-hidden rounded-xl align-top"
       data-slot="aui_todo-hoisted"
     >
       <header className="px-3 pt-3 pb-2">
