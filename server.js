@@ -5,21 +5,71 @@
 
 import http from 'http';
 import net from 'net';
-import tls from 'tls';
 import crypto from 'crypto';
 import { URL } from 'url';
 
 const PORT = parseInt(process.env.PORT || '10000', 10);
 const HOST = '0.0.0.0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PRODUCTION = NODE_ENV === 'production';
 const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 const DATABASE_URL = process.env.DATABASE_URL || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'insecure-default-secret';
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+
+const configuredJwtSecret = (process.env.JWT_SECRET || '').trim();
+if (IS_PRODUCTION && configuredJwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must be set and at least 32 characters in production.');
+}
+const JWT_SECRET = configuredJwtSecret || crypto.randomBytes(48).toString('base64url');
+void JWT_SECRET;
+
+const GATEWAY_TOKEN = (process.env.GATEWAY_TOKEN || '').trim();
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter((o) => o && o !== '*');
 
 let isShuttingDown = false;
 const activeSockets = new Set();
 const wsClients = new Set();
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  const cleanOrigin = origin.trim().replace(/\/+$/, '');
+  return ALLOWED_ORIGINS.includes(cleanOrigin);
+}
+
+function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function buildWsTextFrame(text) {
+  const payload = Buffer.from(text, 'utf8');
+  const len = payload.length;
+  let header;
+  if (len < 126) {
+    header = Buffer.from([0x81, len]);
+  } else if (len <= 0xffff) {
+    header = Buffer.alloc(4);
+    header[0] = 0x81;
+    header[1] = 126;
+    header.writeUInt16BE(len, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x81;
+    header[1] = 127;
+    header.writeBigUInt64BE(BigInt(len), 2);
+  }
+  return Buffer.concat([header, payload]);
+}
+
+function applySecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+}
 
 /**
  * Checks PostgreSQL database reachability via TCP/TLS socket
@@ -27,7 +77,7 @@ const wsClients = new Set();
 function checkDatabaseConnection(connString) {
   return new Promise((resolve) => {
     if (!connString) {
-      return resolve({ alive: false, error: 'DATABASE_URL not configured' });
+      return resolve({ alive: false });
     }
 
     try {
@@ -37,19 +87,19 @@ function checkDatabaseConnection(connString) {
 
       const socket = net.createConnection({ host, port, timeout: 4000 }, () => {
         socket.destroy();
-        resolve({ alive: true, host, port });
+        resolve({ alive: true });
       });
 
-      socket.on('error', (err) => {
-        resolve({ alive: false, error: err.message, host, port });
+      socket.on('error', () => {
+        resolve({ alive: false });
       });
 
       socket.on('timeout', () => {
         socket.destroy();
-        resolve({ alive: false, error: 'Connection timed out', host, port });
+        resolve({ alive: false });
       });
-    } catch (err) {
-      resolve({ alive: false, error: err.message });
+    } catch {
+      resolve({ alive: false });
     }
   });
 }
@@ -58,16 +108,21 @@ function checkDatabaseConnection(connString) {
  * Handle incoming HTTP requests
  */
 const server = http.createServer(async (req, res) => {
+  applySecurityHeaders(res);
+
   if (isShuttingDown) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Server is shutting down' }));
   }
 
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN.includes(',') ? '*' : CORS_ORIGIN);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin.trim().replace(/\/+$/, ''))) {
+    res.setHeader('Access-Control-Allow-Origin', origin.trim());
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  }
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -88,7 +143,6 @@ const server = http.createServer(async (req, res) => {
       status: isHealthy ? 'healthy' : 'degraded',
       service: 'tchuekam-agent-api',
       database: dbStatus.alive ? 'alive' : 'disconnected',
-      database_details: dbStatus,
       environment: NODE_ENV,
       version: '1.0.0',
       uptime_seconds: process.uptime(),
@@ -129,7 +183,7 @@ server.on('connection', (socket) => {
 /**
  * Native RFC 6455 WebSocket Gateway Upgrade Handler for /ws and /events
  */
-server.on('upgrade', (req, socket, head) => {
+server.on('upgrade', (req, socket) => {
   const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = reqUrl.pathname;
 
@@ -139,6 +193,27 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
+  const origin = req.headers.origin;
+  if (origin && !isOriginAllowed(origin)) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  let isAuthenticated = false;
+  if (GATEWAY_TOKEN) {
+    const authHeader = req.headers.authorization || '';
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const queryTok = (reqUrl.searchParams.get('token') || '').trim();
+    const candidate = bearer || queryTok;
+    if (!candidate || !timingSafeEqualStr(candidate, GATEWAY_TOKEN)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    isAuthenticated = true;
+  }
+
   const key = req.headers['sec-websocket-key'];
   if (!key) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -146,7 +221,6 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  // Calculate WebSocket accept hash
   const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
   const acceptKey = crypto.createHash('sha1').update(key + GUID).digest('base64');
 
@@ -160,21 +234,15 @@ server.on('upgrade', (req, socket, head) => {
   socket.write(responseHeaders.join('\r\n') + '\r\n\r\n');
   wsClients.add(socket);
 
-  // Send initial connected frame
   const welcomePayload = JSON.stringify({
     type: 'gateway:ready',
     service: 'tchuekam-agent-gateway',
     session: crypto.randomUUID(),
-    authenticated: true,
+    authenticated: isAuthenticated,
     timestamp: new Date().toISOString()
   });
 
-  const payloadBuffer = Buffer.from(welcomePayload);
-  const frame = Buffer.concat([
-    Buffer.from([0x81, payloadBuffer.length]), // FIN + Text frame
-    payloadBuffer
-  ]);
-  socket.write(frame);
+  socket.write(buildWsTextFrame(welcomePayload));
 
   socket.on('close', () => wsClients.delete(socket));
   socket.on('error', () => {
@@ -199,13 +267,11 @@ function gracefulShutdown(signal) {
   console.log(`\n[Tchuekam Agent] Received ${signal}. Commencing graceful shutdown (30s grace period)...`);
   isShuttingDown = true;
 
-  // Stop accepting new connections
   server.close(() => {
     console.log('[Tchuekam Agent] HTTP and WebSocket server closed cleanly.');
     process.exit(0);
   });
 
-  // Notify and close WebSocket clients
   for (const client of wsClients) {
     try {
       client.end();
@@ -213,7 +279,6 @@ function gracefulShutdown(signal) {
   }
   wsClients.clear();
 
-  // Force exit after 30 seconds if connections remain open
   const shutdownTimer = setTimeout(() => {
     console.warn('[Tchuekam Agent] Graceful shutdown timeout reached (30s). Forcing socket closure...');
     for (const socket of activeSockets) {
@@ -229,4 +294,3 @@ function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
