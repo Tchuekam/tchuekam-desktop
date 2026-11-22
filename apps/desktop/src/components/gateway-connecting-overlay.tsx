@@ -1,6 +1,9 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 
+import { isStandaloneWebRoute } from '@/app/routes'
+import { IS_WEB } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { $desktopBoot } from '@/store/boot'
 import { $gatewayState } from '@/store/session'
@@ -46,6 +49,7 @@ function scrambledTail(resolvedCount: number): string {
 }
 
 export function GatewayConnectingOverlay() {
+  const location = useLocation()
   const gatewayState = useStore($gatewayState)
   const boot = useStore($desktopBoot)
   const [previewing] = useState(forcedPreview)
@@ -140,6 +144,12 @@ export function GatewayConnectingOverlay() {
 
   // Boot failed — BootFailureOverlay owns the screen; don't linger behind it.
   if (boot.error && !previewing) {
+    return null
+  }
+
+  // Standalone web tools (/business, /mobile, /image-studio) work without an
+  // active chat gateway socket; never trap them behind a connecting splash.
+  if (IS_WEB && isStandaloneWebRoute(location.pathname) && !previewing) {
     return null
   }
 
