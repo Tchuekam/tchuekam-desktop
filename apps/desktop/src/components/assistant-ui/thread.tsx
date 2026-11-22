@@ -660,7 +660,7 @@ function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
 // specular top edge + soft ambient shadow); they only differ in border weight,
 // cursor, and padding-right (the read-only view reserves room for the restore icon).
 const USER_BUBBLE_BASE_CLASS =
-  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border bg-(--dt-user-bubble) px-3 py-2 text-left shadow-composer'
+  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border border-(--tk-glass-border) bg-(--dt-user-bubble) px-4 py-2.5 text-left shadow-(--tk-glass-shadow) backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-180 ease-out'
 
 const USER_ACTION_ICON_BUTTON_CLASS =
   'grid cursor-pointer place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
