@@ -191,3 +191,197 @@ ENV npm_config_install_links=false
 RUN npm install --prefer-offline --no-audit && \
     npx playwright install --with-deps chromium --only-shell && \
     npm cache clean --force && \
+    chown -R hermes:hermes /opt/hermes/node_modules /opt/hermes/ui-tui
+
+# ---------- Layer-cached Python dependency install ----------
+# Copy only pyproject.toml + uv.lock so the Python dep resolve + wheel
+# download + native-extension compile layer is cached unless those inputs
+# change.  Before this split the Python install sat after `COPY . .`, so
+# every source-only commit re-did ~4-5 min of dep work on cold builds.
+#
+# README.md is referenced by pyproject.toml's `readme =` field, but it's
+# excluded from the build context by .dockerignore's `*.md`.  uv's build
+# frontend stats the readme path during dep resolution, so we `touch` an
+# empty placeholder — the real README is restored by `COPY . .` below.
+#
+# `uv sync --frozen --no-install-project --extra all --extra messaging`
+# installs the deps reachable through the composite `[all]` extra
+# (handpicked set intended for the production image), plus gateway
+# messaging adapters that should work in the published image without a
+# first-boot lazy install.  We do NOT use `--all-extras`:
+# that would pull in `[rl]` (atroposlib + tinker + torch + wandb from
+# git), `[yc-bench]` (another git dep), and `[termux-all]` (Android
+# redundancy), none of which belong in the published container.
+#
+# Provider packages (anthropic, bedrock, azure-identity) are included
+# so Docker users can use these providers without requiring runtime
+# lazy-install access to PyPI (often blocked in containerized envs).
+#
+# The editable link is created after the source copy below.
+COPY --chown=hermes:hermes pyproject.toml uv.lock ./
+RUN touch ./README.md && \
+    uv sync --frozen --no-install-project --extra all --extra messaging --extra anthropic --extra bedrock --extra azure-identity && \
+    chown -R hermes:hermes .venv ./README.md
+
+# ---------- Source code ----------
+# .dockerignore excludes node_modules, so the installs above survive.
+COPY --chown=hermes:hermes . .
+
+# Build browser dashboard and terminal UI assets.
+RUN cd web && npm run build && \
+    cd ../ui-tui && npm run build
+
+# ---------- Permissions ----------
+# Make install dir world-readable so any HERMES_UID can read it at runtime.
+# The venv needs to be traversable too.
+# node_modules trees additionally need to be writable by the hermes user
+# so the runtime `npm install` triggered by _tui_need_npm_install() in
+# hermes_cli/main.py succeeds (see #18800). /opt/hermes/web is build-time
+# only (HERMES_WEB_DIST points at hermes_cli/web_dist) and is intentionally
+# not chowned here.
+# The .venv MUST remain hermes-writable so lazy_deps.py can install
+# remaining optional platform packages and future pin bumps at first use.
+# Without this, `uv pip install` fails with EACCES and adapters silently
+# fail to load.  See tools/lazy_deps.py.
+USER root
+RUN chmod -R a+rX /opt/hermes
+# Start as root so the s6-overlay stage2 hook can usermod/groupmod and chown
+# the data volume. Each supervised service then drops to the hermes user via
+# `s6-setuidgid hermes` in its run script. If HERMES_UID is unset, services
+# run as the default hermes user (UID 10000).
+
+# ---------- Link hermes-agent itself (editable) ----------
+# Deps are already installed in the cached layer above; `--no-deps` makes
+# this a fast (~1s) egg-link creation with no resolution or downloads.
+RUN uv pip install --no-cache-dir --no-deps -e "."
+
+# ---------- Bake build-time git revision ----------
+# .dockerignore excludes .git, so `git rev-parse HEAD` from inside the
+# container always returns nothing — meaning `hermes dump` reports
+# "(unknown)" and the startup banner drops its `· upstream <sha>` suffix.
+# That makes support triage from container bug reports impossible:
+# we can't tell which commit the user is actually running.
+#
+# Fix: write the commit SHA passed via the HERMES_GIT_SHA build-arg to
+# /opt/hermes/.hermes_build_sha at build time, and have
+# hermes_cli/build_info.py read it at runtime.  Both `hermes dump` and
+# banner.get_git_banner_state() try the baked SHA first, then fall back
+# to live `git rev-parse` for source installs (unchanged behaviour).
+#
+# The arg is optional — local `docker build` without --build-arg simply
+# omits the file, and the runtime falls back to live-git lookup.  CI
+# (.github/workflows/docker-publish.yml) passes ${{ github.sha }} so
+# every published image has it.
+ARG HERMES_GIT_SHA=
+RUN if [ -n "${HERMES_GIT_SHA}" ]; then \
+        printf '%s\n' "${HERMES_GIT_SHA}" > /opt/hermes/.hermes_build_sha && \
+        chown hermes:hermes /opt/hermes/.hermes_build_sha; \
+    fi
+
+# ---------- s6-overlay service wiring ----------
+# Static services declared at build time: main-hermes + dashboard.
+# Per-profile gateway services are registered dynamically at runtime by
+# the profile create/delete hooks (Phase 4); they live under
+# /run/service/ (tmpfs) and are reconciled on container restart by
+# /etc/cont-init.d/02-reconcile-profiles (Phase 4 Task 4.0).
+COPY docker/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+
+# stage2-hook handles UID/GID remap, volume chown, config seeding,
+# skills sync — all the work the old entrypoint.sh did before
+# `exec hermes`. Wired in as cont-init.d/01- so it
+# runs before user services start.
+#
+# 02-reconcile-profiles re-creates per-profile gateway s6 service
+# slots from $HERMES_HOME/profiles/<name>/ after a container restart
+# (the /run/service/ scandir is tmpfs and wiped on restart). Phase 4.
+RUN mkdir -p /etc/cont-init.d && \
+    printf '#!/command/with-contenv sh\nexec /opt/hermes/docker/stage2-hook.sh\n' \
+        > /etc/cont-init.d/01-hermes-setup && \
+    chmod +x /etc/cont-init.d/01-hermes-setup
+COPY --chmod=0755 docker/cont-init.d/015-supervise-perms /etc/cont-init.d/015-supervise-perms
+COPY --chmod=0755 docker/cont-init.d/02-reconcile-profiles /etc/cont-init.d/02-reconcile-profiles
+
+# ---------- Web app ----------
+# The browser build of apps/desktop, from the webapp_builder stage. Served at
+# the dashboard's own origin so the auth gate's SameSite=Lax cookies reach it.
+# To serve the older web/ dashboard SPA instead, point HERMES_WEB_DIST back at
+# /opt/hermes/hermes_cli/web_dist — it is still built into the image.
+COPY --from=webapp_builder --chown=hermes:hermes /build/apps/desktop/dist-web /opt/hermes/web-app
+
+# ---------- Runtime ----------
+ENV HERMES_WEB_DIST=/opt/hermes/web-app
+# Point the TUI launcher at the prebuilt bundle baked at build time (Layer 8:
+# `ui-tui && npm run build`). This makes _make_tui_argv take the prebuilt-bundle
+# fast path (`node --expose-gc /opt/hermes/ui-tui/dist/entry.js`) and skip the
+# _tui_need_npm_install / runtime `npm install` branch entirely — exactly the
+# nix/packaged-release path the launcher was designed for.
+#
+# Why this is required (not just an optimization): the root package-lock.json
+# describes the WHOLE monorepo workspace set (root + web + ui-tui + apps/*),
+# but the image only installs root/web/ui-tui (apps/* — the desktop app — is
+# never `npm install`ed here). So the actualized node_modules permanently
+# disagrees with the canonical lock, _tui_need_npm_install() returns True on
+# every launch, and the runtime `npm install` it triggers (a) can never
+# converge against the partial monorepo and (b) races itself across concurrent
+# embedded-chat (/api/pty) connections → ENOTEMPTY → the chat tab dies with a
+# 502 / "[session ended]". Pointing at the prebuilt bundle sidesteps the whole
+# check. (A separate launcher hardening is tracked independently.)
+ENV HERMES_TUI_DIR=/opt/hermes/ui-tui
+ENV HERMES_HOME=/opt/data
+
+# `docker exec` privilege-drop shim. When operators run
+# `docker exec <c> hermes ...` they default to root, and any file the
+# command writes under $HERMES_HOME (auth.json, .env, config.yaml) ends
+# up root-owned and unreadable to the supervised gateway (UID 10000).
+# The shim lives at /opt/hermes/bin/hermes, sits earliest on PATH, and
+# transparently re-exec's the real venv binary via `s6-setuidgid hermes`
+# when invoked as root. Non-root callers (supervised processes,
+# `--user hermes`, etc.) hit the short-circuit path with no overhead.
+# Recursion is impossible because the shim exec's the venv binary by
+# absolute path (/opt/hermes/.venv/bin/hermes). See the shim source for
+# the opt-out env var (HERMES_DOCKER_EXEC_AS_ROOT=1).
+COPY --chmod=0755 docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
+
+# Pre-s6 entrypoint.sh did `source .venv/bin/activate` which exported
+# the venv bin onto PATH; Architecture B's main-wrapper.sh does the
+# same for the container's main process, but `docker exec` and our
+# cont-init.d scripts don't pass through the wrapper. Expose the venv
+# bin globally so `docker exec <container> hermes ...` and any
+# subprocess that doesn't activate the venv first still find hermes.
+#
+# /opt/hermes/bin is prepended ahead of the venv so the privilege-drop
+# shim wins PATH resolution. The shim's last act is to exec the venv
+# binary by absolute path, so this PATH ordering is transparent to
+# every other consumer.
+ENV PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+RUN mkdir -p /opt/data
+
+# s6-overlay's /init is PID 1. It sets up the supervision tree, runs
+# /etc/cont-init.d/* (our stage2 hook), starts s6-rc services
+# declared in /etc/s6-overlay/s6-rc.d/, then exec's its remaining
+# argv as the container's "main program" with stdin/stdout/stderr
+# inherited (this is what makes interactive --tui work). When the
+# main program exits, /init begins stage 3 shutdown and the container
+# exits with the program's exit code. Replaces tini — see Phase 2 of
+# docs/plans/2026-05-07-s6-overlay-dynamic-subagent-gateways.md.
+#
+# We use the ENTRYPOINT+CMD split rather than CMD alone so the
+# wrapper is prepended to user-supplied args automatically:
+#
+#   docker run <image>                  → /init main-wrapper.sh   (CMD default)
+#   docker run <image> chat -q "hi"     → /init main-wrapper.sh chat -q hi
+#   docker run <image> sleep infinity   → /init main-wrapper.sh sleep infinity
+#   docker run <image> --tui            → /init main-wrapper.sh --tui
+#
+# main-wrapper.sh handles arg routing (bare-exec vs. hermes
+# subcommand vs. no-args), drops to the hermes user via s6-setuidgid,
+# and exec's the final program so its exit code becomes the container
+# exit code. Without the wrapper-as-ENTRYPOINT, leading-dash args
+# like `--version` would be intercepted by /init's POSIX shell.
+# Healthcheck to detect deadlocked gateway service
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-${HERMES_DASHBOARD_PORT:-9119}}/health || exit 1
+
+ENTRYPOINT [ "/init", "/opt/hermes/docker/main-wrapper.sh" ]
+CMD [ ]
+
