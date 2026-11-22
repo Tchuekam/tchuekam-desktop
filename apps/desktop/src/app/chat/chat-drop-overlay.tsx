@@ -17,9 +17,9 @@ export function ChatDropOverlay({ active }: { active: boolean }) {
       )}
       data-slot="chat-drop-overlay"
     >
-      <div className="absolute inset-2 rounded-2xl border-2 border-dashed border-[color-mix(in_srgb,var(--dt-composer-ring)_55%,transparent)] bg-[color-mix(in_srgb,var(--dt-card)_55%,transparent)] backdrop-blur-[2px] [-webkit-backdrop-filter:blur(2px)]" />
-      <div className="relative flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--dt-composer-ring)_45%,transparent)] bg-[color-mix(in_srgb,var(--dt-card)_92%,transparent)] px-4 py-2 text-[0.8125rem] font-medium text-foreground shadow-composer">
-        <Codicon className="text-(--ui-accent)" name="cloud-upload" size="1rem" />
+      <div className="absolute inset-3 rounded-2xl border-2 border-dashed border-(--tk-indigo-border) bg-[color-mix(in_srgb,var(--tk-indigo-soft)_60%,var(--tk-glass-bg))] backdrop-blur-sm [-webkit-backdrop-filter:blur(8px)]" />
+      <div className="tk-glass-elevated relative flex items-center gap-2.5 rounded-full border-(--tk-indigo-border) px-4 py-2 text-[0.8125rem] font-medium text-foreground">
+        <Codicon className="text-(--tk-indigo-text)" name="cloud-upload" size="1rem" />
         Drop files to attach
       </div>
     </div>
