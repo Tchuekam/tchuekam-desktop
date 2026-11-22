@@ -363,12 +363,12 @@ export function DocumentWorkspace({
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-foreground pt-(--titlebar-height)">
       {IS_DESKTOP ? <BusinessLocalAiModal /> : null}
-      {/* Apple-style Studio Navigation & Command Bar */}
-      <header className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/70 bg-card/85 px-3 py-2.5 shadow-xs backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
-        <div className="flex items-center gap-3">
+      {/* Studio Navigation & Command Bar */}
+      <header className="tk-glass-elevated flex flex-wrap items-center justify-between gap-2.5 border-b border-(--tk-glass-border) px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3 md:pl-[max(1.5rem,calc(var(--titlebar-controls-left,0px)+(var(--titlebar-control-size,22px)*2)+1.25rem))]">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             aria-label="Back to Business Hub"
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-semibold text-(--ui-text-secondary) transition-all hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground"
             onClick={onBack}
             type="button"
           >
@@ -379,7 +379,7 @@ export function DocumentWorkspace({
           <div className="relative flex items-center">
             <input
               aria-label="Document Title"
-              className="h-8 min-w-0 flex-1 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-semibold text-foreground transition-all focus:border-primary focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 sm:min-w-[14rem] sm:flex-initial"
+              className="h-8 min-w-0 flex-1 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-semibold text-foreground transition-all focus:border-(--tk-indigo) focus:bg-background focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow) sm:min-w-[14rem] sm:flex-initial"
               onChange={e =>
                 updateBusinessDocument(doc.id, current => ({
                   ...current,
@@ -390,17 +390,17 @@ export function DocumentWorkspace({
             />
           </div>
 
-          {/* Apple-style Autosave Pill Indicator */}
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/60 px-2.5 py-1 text-[0.6875rem] font-medium">
+          {/* Autosave Pill Indicator */}
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 py-1 text-[0.6875rem] font-medium">
             <span
               className={cn(
                 'size-1.5 rounded-full transition-colors',
                 autosave === 'saving'
-                  ? 'bg-amber-500 animate-pulse'
+                  ? 'bg-(--tk-cyan) animate-pulse'
                   : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
               )}
             />
-            <span className="text-muted-foreground">
+            <span className="text-(--ui-text-secondary)">
               {autosave === 'saving' ? 'Saving changes...' : 'Saved'}
             </span>
           </div>
