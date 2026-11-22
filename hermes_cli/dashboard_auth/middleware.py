@@ -46,6 +46,13 @@ _GATE_PUBLIC_PREFIXES: tuple[str, ...] = (
     "/api/auth/providers",
     "/assets/",
     "/favicon.ico",
+    "/manifest.webmanifest",
+    "/apple-touch-icon.png",
+    "/hermes.png",
+    "/hermes-sprite.png",
+    "/hermes-frames/",
+    "/icon-192.png",
+    "/icon-512.png",
     "/ds-assets/",
     "/fonts/",
     "/fonts-terminal/",
@@ -183,6 +190,9 @@ async def gated_auth_middleware(
     handle those binds via ``_SESSION_TOKEN``.
     """
     if not getattr(request.app.state, "auth_required", False):
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
         return await call_next(request)
 
     path = request.url.path
