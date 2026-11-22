@@ -335,14 +335,14 @@ const MarkdownTextImpl = () => {
         th: ({ className, ...props }: ComponentProps<'th'>) => (
           <th
             className={cn(
-              'px-2.5 py-1.5 text-left align-middle text-[0.75rem] font-medium text-muted-foreground',
+              'px-3 py-2 text-left align-middle text-[0.72rem] font-semibold uppercase tracking-[0.04em] text-(--ui-text-secondary)',
               className
             )}
             {...props}
           />
         ),
         td: ({ className, ...props }: ComponentProps<'td'>) => (
-          <td className={cn('px-2.5 py-1.5 align-top text-[0.8125rem] leading-snug', className)} {...props} />
+          <td className={cn('px-3 py-2 align-top text-[0.8125rem] leading-relaxed tabular-nums', className)} {...props} />
         ),
         img: MarkdownImage,
         SyntaxHighlighter: (props: SyntaxHighlighterProps) => <SyntaxHighlighter {...props} defer={isStreaming} />
