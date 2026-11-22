@@ -165,13 +165,14 @@ def clear_session_cookies(response: Response, *, prefix: str = "") -> None:
     """
     path = _cookie_path(prefix)
     for variant in _NAME_VARIANTS:
+        secure_kw = {"secure": True} if variant in ("__Host-", "__Secure-") else {}
         response.set_cookie(
             f"{variant}{SESSION_AT_COOKIE}", "", max_age=0,
-            path=path, httponly=True, samesite="lax",
+            path=path, httponly=True, samesite="lax", **secure_kw,
         )
         response.set_cookie(
             f"{variant}{SESSION_RT_COOKIE}", "", max_age=0,
-            path=path, httponly=True, samesite="lax",
+            path=path, httponly=True, samesite="lax", **secure_kw,
         )
 
 
@@ -189,9 +190,10 @@ def set_pkce_cookie(
 def clear_pkce_cookie(response: Response, *, prefix: str = "") -> None:
     path = _cookie_path(prefix)
     for variant in _NAME_VARIANTS:
+        secure_kw = {"secure": True} if variant in ("__Host-", "__Secure-") else {}
         response.set_cookie(
             f"{variant}{PKCE_COOKIE}", "", max_age=0,
-            path=path, httponly=True, samesite="lax",
+            path=path, httponly=True, samesite="lax", **secure_kw,
         )
 
 
