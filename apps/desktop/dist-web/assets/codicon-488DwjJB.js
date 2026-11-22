@@ -1,0 +1,1 @@
+import{$ as e}from"./studio-design-agent-Bg0b5iTb.js";import{t}from"./utils-hbwGB47t.js";var n=e();function r({className:e,name:r,size:i,spinning:a,style:o,...s}){return(0,n.jsx)(`i`,{"aria-hidden":`true`,className:t(`codicon`,`codicon-${r}`,a&&`codicon-modifier-spin`,e),style:{fontSize:i,...o},...s})}export{r as t};
