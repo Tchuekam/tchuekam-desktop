@@ -81,7 +81,7 @@ export const HoistedTodoPanel: FC<{ todos: TodoItem[] }> = ({ todos }) => {
       className="tk-glass mt-1.5 mb-3 inline-block w-fit max-w-full overflow-hidden rounded-xl align-top"
       data-slot="aui_todo-hoisted"
     >
-      <header className="px-3 pt-3 pb-2">
+      <header className="flex items-center justify-between gap-3 border-b border-(--tk-glass-border) px-3.5 py-2.5">
         <span
           className="block max-w-full truncate text-[0.85rem] font-semibold leading-tight tracking-tight text-foreground"
           title={label}
