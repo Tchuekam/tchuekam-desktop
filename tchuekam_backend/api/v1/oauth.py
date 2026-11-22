@@ -2,6 +2,8 @@
 Endpoints REST pour l'Authentification OAuth2 (Google, GitHub, Apple, Microsoft, Facebook).
 """
 
+import secrets
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -13,12 +15,20 @@ router = APIRouter(prefix="/oauth", tags=["OAuth & Social Logins"])
 
 
 @router.get("/{provider}/authorize", response_model=OAuthAuthorizeResponseSchema)
-def oauth_authorize(provider: str, redirect_uri: str, state: str = "default_state", db: Session = Depends(get_db)):
+def oauth_authorize(
+    provider: str,
+    redirect_uri: str,
+    state: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     oauth_service = OAuthService(db)
-    success, url = oauth_service.get_authorization_url(provider, redirect_uri=redirect_uri, state=state)
+    effective_state = state.strip() if state and state.strip() else secrets.token_urlsafe(24)
+    success, url = oauth_service.get_authorization_url(
+        provider, redirect_uri=redirect_uri, state=effective_state
+    )
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=url)
-    return {"authorization_url": url, "state": state}
+    return {"authorization_url": url, "state": effective_state}
 
 
 @router.post("/{provider}/callback", response_model=TokenResponseSchema)
