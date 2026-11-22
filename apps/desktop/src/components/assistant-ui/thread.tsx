@@ -273,7 +273,10 @@ const StatusRow: FC<{ children: ReactNode; label: string } & React.ComponentProp
   <div
     aria-label={label}
     aria-live="polite"
-    className={cn('flex max-w-full items-center gap-2 self-start text-sm text-muted-foreground/70', className)}
+    className={cn(
+      'flex max-w-full items-center gap-2.5 self-start rounded-full border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 py-1 text-xs text-(--ui-text-secondary) shadow-xs backdrop-blur-sm',
+      className
+    )}
     role="status"
     {...rest}
   >
@@ -286,8 +289,9 @@ const ResponseLoadingIndicator: FC = () => {
 
   return (
     <StatusRow data-slot="aui_response-loading" label="TchuekaM is loading a response">
-      <span aria-hidden="true" className="dither inline-block size-3 rounded-[2px] text-midground/80 animate-pulse" />
-      <ActivityTimerText seconds={elapsed} />
+      <span aria-hidden="true" className="tk-thinking-dot inline-block size-2 rounded-full" />
+      <span className="shimmer font-medium text-foreground/75">Thinking</span>
+      <ActivityTimerText className="tabular-nums text-[0.7rem] text-(--ui-text-tertiary)" seconds={elapsed} />
     </StatusRow>
   )
 }
