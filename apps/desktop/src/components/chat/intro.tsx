@@ -227,7 +227,7 @@ export function Intro({ personality, seed }: IntroProps) {
           {copy.body}
         </p>
 
-        <div className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {STARTERS.map(starter => (
             <StarterCard key={starter.label} {...starter} />
           ))}
