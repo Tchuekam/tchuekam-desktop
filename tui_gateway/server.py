@@ -4162,3 +4162,4167 @@ def _notification_event_belongs_elsewhere(session: dict, evt: dict) -> bool:
     started the process. Since all desktop sessions share one process-wide
     completion queue, each poller must skip events it doesn't own so a
     background job's completion surfaces in the session that launched it — not
+    whichever poller happened to dequeue first. Orphaned events (owner gone)
+    and global/system events (empty ``session_key``) return False so the
+    current poller still handles them rather than losing them.
+    """
+    evt_key = str(evt.get("session_key") or "")
+    if not evt_key:
+        return False
+    if evt_key == str(session.get("session_key") or ""):
+        return False
+    try:
+        snapshot = list(_sessions.values())
+    except Exception:
+        # If we can't safely enumerate live sessions, fail open so we don't
+        # crash the poller thread or drop the event.
+        return False
+
+    return any(
+        s is not session and str(s.get("session_key") or "") == evt_key
+        for s in snapshot
+    )
+
+
+def _notification_poller_loop(
+    stop_event: threading.Event, sid: str, session: dict
+) -> None:
+    """Poll completion_queue and dispatch notifications autonomously.
+
+    Runs in a daemon thread started by _init_session(). Emits a
+    status.update (kind=process) for user visibility, then chains an
+    agent turn via _run_prompt_submit if the session is idle.
+
+    NOTE: The completion_queue is global (one per process). If multiple
+    TUI sessions coexist, whichever poller wakes first grabs the event,
+    even if the process was started by a different session. This matches
+    CLI/gateway behavior (single session per process).
+    """
+    from tools.process_registry import process_registry, format_process_notification
+
+    while not stop_event.is_set() and not session.get("_finalized"):
+        try:
+            evt = process_registry.completion_queue.get(timeout=0.5)
+        except Exception:
+            continue
+
+        # Multiple desktop sessions share this one process-wide queue. Only
+        # consume events that belong to *this* session — otherwise a background
+        # process started in session A would surface its completion in whichever
+        # session's poller happened to wake first (Ben's "reported in a
+        # different session" bug). Leave foreign events for their owner.
+        if _notification_event_belongs_elsewhere(session, evt):
+            process_registry.completion_queue.put(evt)
+            time.sleep(0.1)
+            continue
+
+        _evt_sid = evt.get("session_id", "")
+        if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
+            continue
+
+        text = format_process_notification(evt)
+        if not text:
+            continue
+
+        _emit("status.update", sid, {"kind": "process", "text": text})
+
+        with session["history_lock"]:
+            if session.get("running"):
+                process_registry.completion_queue.put(evt)
+                continue
+            session["running"] = True
+
+        rid = f"__notif__{int(time.time() * 1000)}"
+        try:
+            _run_prompt_submit(rid, sid, session, text)
+        except Exception as exc:
+            print(
+                f"[tui_gateway] notification poller dispatch failed: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            with session["history_lock"]:
+                session["running"] = False
+
+    # Drain any remaining events after stop signal (process all pending
+    # before exiting so nothing is lost on shutdown). Events owned by other
+    # live sessions are set aside and re-queued so their poller still sees them.
+    deferred: list = []
+    while not process_registry.completion_queue.empty():
+        try:
+            evt = process_registry.completion_queue.get_nowait()
+        except Exception:
+            break
+        if _notification_event_belongs_elsewhere(session, evt):
+            deferred.append(evt)
+            continue
+        _evt_sid = evt.get("session_id", "")
+        if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
+            continue
+        text = format_process_notification(evt)
+        if not text:
+            continue
+
+        _emit("status.update", sid, {"kind": "process", "text": text})
+
+        with session["history_lock"]:
+            if session.get("running"):
+                process_registry.completion_queue.put(evt)
+                break
+            session["running"] = True
+
+        rid = f"__notif__{int(time.time() * 1000)}"
+        try:
+            _run_prompt_submit(rid, sid, session, text)
+        except Exception as exc:
+            print(
+                f"[tui_gateway] notification poller dispatch failed: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            with session["history_lock"]:
+                session["running"] = False
+
+    # Hand any other sessions' events back to the shared queue.
+    for evt in deferred:
+        process_registry.completion_queue.put(evt)
+
+
+def _start_notification_poller(sid: str, session: dict) -> threading.Event:
+    """Start the background notification poller for a TUI session."""
+    stop = threading.Event()
+    t = threading.Thread(
+        target=_notification_poller_loop,
+        args=(stop, sid, session),
+        daemon=True,
+    )
+    t.start()
+    return stop
+
+
+def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+    with session["history_lock"]:
+        history = list(session["history"])
+        history_version = int(session.get("history_version", 0))
+        images = list(session.get("attached_images", []))
+        session["attached_images"] = []
+        if not isinstance(session.get("inflight_turn"), dict):
+            _start_inflight_turn(session, text)
+    agent = session["agent"]
+    _emit("message.start", sid)
+
+    def run():
+        approval_token = None
+        session_tokens = []
+        goal_followup = None  # set by the post-turn goal hook below
+        try:
+            from tools.approval import (
+                reset_current_session_key,
+                set_current_session_key,
+            )
+
+            approval_token = set_current_session_key(session["session_key"])
+            session_tokens = _set_session_context(session["session_key"])
+            cwd = _session_cwd(session)
+            _register_session_cwd(session)
+            cols = session.get("cols", 80)
+            streamer = make_stream_renderer(cols)
+            prompt = text
+
+            if not session.get("restricted") and isinstance(prompt, str) and "@" in prompt:
+                from agent.context_references import preprocess_context_references
+                from agent.model_metadata import get_model_context_length
+
+                ctx_len = get_model_context_length(
+                    getattr(agent, "model", "") or _resolve_model(),
+                    base_url=getattr(agent, "base_url", "") or "",
+                    api_key=getattr(agent, "api_key", "") or "",
+                    provider=getattr(agent, "provider", "") or "",
+                    config_context_length=getattr(
+                        agent, "_config_context_length", None
+                    ),
+                )
+                ctx = preprocess_context_references(
+                    prompt,
+                    cwd=cwd,
+                    allowed_root=cwd,
+                    context_length=ctx_len,
+                )
+                if ctx.blocked:
+                    _emit(
+                        "error",
+                        sid,
+                        {
+                            "message": "\n".join(ctx.warnings)
+                            or "Context injection refused."
+                        },
+                    )
+                    return
+                prompt = ctx.message
+
+            # Decide image routing per-turn based on active provider/model.
+            # "native" → pass pixels to the main model as OpenAI-style content
+            # parts (adapters translate for Anthropic/Gemini/Bedrock/etc.).
+            # "text"   → pre-analyze with vision_analyze and prepend the text.
+            # See agent/image_routing.py for the full decision table.
+            run_message: Any = prompt
+            if images:
+                try:
+                    from agent.image_routing import (
+                        decide_image_input_mode,
+                        build_native_content_parts,
+                    )
+                    from agent.auxiliary_client import (
+                        _read_main_model,
+                        _read_main_provider,
+                    )
+                    from hermes_cli.config import load_config as _tui_load_config
+
+                    _cfg = _tui_load_config()
+                    _mode = decide_image_input_mode(
+                        _read_main_provider(),
+                        _read_main_model(),
+                        _cfg,
+                    )
+                    if getattr(agent, "api_mode", "") == "codex_app_server":
+                        _mode = "text"
+                except Exception as _img_exc:
+                    print(
+                        f"[tui_gateway] image_routing decision failed, defaulting to text: {_img_exc}",
+                        file=sys.stderr,
+                    )
+                    _mode = "text"
+
+                if _mode == "native":
+                    try:
+                        _parts, _skipped = build_native_content_parts(
+                            prompt,
+                            images,
+                        )
+                        if _skipped:
+                            print(
+                                f"[tui_gateway] native image attachment skipped {len(_skipped)} unreadable path(s)",
+                                file=sys.stderr,
+                            )
+                        if any(p.get("type") == "image_url" for p in _parts):
+                            run_message = _parts
+                        else:
+                            run_message = _enrich_with_attached_images(prompt, images)
+                    except Exception as _img_exc:
+                        print(
+                            f"[tui_gateway] native attach failed, falling back to text: {_img_exc}",
+                            file=sys.stderr,
+                        )
+                        run_message = _enrich_with_attached_images(prompt, images)
+                else:
+                    run_message = _enrich_with_attached_images(prompt, images)
+
+            def _stream(delta):
+                with session["history_lock"]:
+                    _append_inflight_delta(session, delta)
+                payload = {"text": delta}
+                if streamer and (r := streamer.feed(delta)) is not None:
+                    payload["rendered"] = r
+                _emit("message.delta", sid, payload)
+
+            run_kwargs = {
+                "conversation_history": list(history),
+                "stream_callback": _stream,
+            }
+            try:
+                if "task_id" in inspect.signature(agent.run_conversation).parameters:
+                    run_kwargs["task_id"] = session["session_key"]
+            except (TypeError, ValueError):
+                pass
+            result = agent.run_conversation(run_message, **run_kwargs)
+
+            last_reasoning = None
+            status_note = None
+            if isinstance(result, dict):
+                if isinstance(result.get("messages"), list):
+                    with session["history_lock"]:
+                        current_version = int(session.get("history_version", 0))
+                        if current_version == history_version:
+                            session["history"] = result["messages"]
+                            session["history_version"] = history_version + 1
+                        else:
+                            # History mutated externally during the turn
+                            # (undo/compress/retry/rollback now guard on
+                            # session.running, but this is the defensive
+                            # backstop for any path that slips past).
+                            # Surface the desync rather than silently
+                            # dropping the agent's output — the UI can
+                            # show the response and warn that it was
+                            # not persisted.
+                            print(
+                                f"[tui_gateway] prompt.submit: history_version mismatch "
+                                f"(expected={history_version} current={current_version}) — "
+                                f"agent output NOT written to session history",
+                                file=sys.stderr,
+                            )
+                            status_note = (
+                                "History changed during this turn — the response above is visible "
+                                "but was not saved to session history."
+                            )
+
+                # If auto-compression fired inside run_conversation(), agent.session_id
+                # may have rotated. Sync session_key before downstream title/goal/finalize
+                # handling uses it. Preserve pending_title (user intent) so it can be
+                # applied to the continuation. Restart slash worker so subsequent
+                # worker-backed commands (/title etc.) target the live session.
+                # Fix for #20001.
+                _sync_session_key_after_compress(
+                    sid, session, clear_pending_title=False, restart_slash_worker=True,
+                )
+
+                raw = result.get("final_response", "")
+                status = (
+                    "interrupted"
+                    if result.get("interrupted")
+                    else "error" if result.get("error") else "complete"
+                )
+                # When the backend produced no visible response AND reported a
+                # real error (e.g. invalid model slug → provider 4xx), surface
+                # that error as the visible text instead of shipping an empty
+                # turn to Ink. Mirrors classic CLI behavior at cli.py where
+                # (failed|partial) + no final_response → "Error: <detail>".
+                # Leaves the None-with-no-error path untouched: an empty
+                # successful turn still renders as empty, and the existing
+                # "(empty)" sentinel handling stays in its own lane.
+                if (not raw) and result.get("error") and (
+                    result.get("failed") or result.get("partial")
+                ):
+                    raw = f"Error: {result.get('error')}"
+                lr = result.get("last_reasoning")
+                if isinstance(lr, str) and lr.strip():
+                    last_reasoning = lr.strip()
+            else:
+                raw = str(result)
+                status = "complete"
+
+            payload = {"text": raw, "usage": _get_usage(agent), "status": status}
+            if last_reasoning:
+                payload["reasoning"] = last_reasoning
+            if status_note:
+                payload["warning"] = status_note
+            rendered = render_message(raw, cols)
+            if rendered:
+                payload["rendered"] = rendered
+            with session["history_lock"]:
+                _clear_inflight_turn(session)
+            _emit("message.complete", sid, payload)
+
+            # ── /goal continuation (Ralph-style loop) ─────────────────
+            # After every TUI turn, if a /goal is active, ask the judge
+            # whether the goal is done and — if not and we're still under
+            # budget — queue a continuation prompt to run after this
+            # thread releases session["running"]. The verdict message
+            # ("✓ Goal achieved" / "⏸ budget exhausted") is surfaced as
+            # a system line so the user sees progress regardless of
+            # outcome. Mirrors gateway/run._post_turn_goal_continuation.
+            if status == "complete" and isinstance(raw, str) and raw.strip():
+                try:
+                    from hermes_cli.goals import GoalManager
+
+                    sid_key = session.get("session_key") or ""
+                    if sid_key:
+                        try:
+                            goals_cfg = _load_cfg().get("goals") or {}
+                            goal_max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+                        except Exception:
+                            goal_max_turns = 20
+                        goal_mgr = GoalManager(
+                            session_id=sid_key,
+                            default_max_turns=goal_max_turns,
+                        )
+                        if goal_mgr.is_active():
+                            decision = goal_mgr.evaluate_after_turn(
+                                raw,
+                                user_initiated=True,
+                            )
+                            verdict_msg = decision.get("message") or ""
+                            if verdict_msg:
+                                _emit(
+                                    "status.update",
+                                    sid,
+                                    {"kind": "goal", "text": verdict_msg},
+                                )
+                            if decision.get("should_continue"):
+                                cont_prompt = decision.get("continuation_prompt") or ""
+                                if cont_prompt:
+                                    goal_followup = cont_prompt
+                except Exception as _goal_exc:
+                    print(
+                        f"[tui_gateway] goal continuation hook failed: "
+                        f"{type(_goal_exc).__name__}: {_goal_exc}",
+                        file=sys.stderr,
+                    )
+
+            # Apply pending_title now that the DB row exists.
+            _pending = session.get("pending_title")
+            if _pending and status == "complete":
+                _pdb = _get_db()
+                if _pdb:
+                    _session_key = session.get("session_key") or sid
+                    try:
+                        if _pdb.set_session_title(_session_key, _pending):
+                            session["pending_title"] = None
+                    except ValueError as exc:
+                        # Invalid/duplicate title — non-retryable, drop it.
+                        # Auto-title will take over. Fix for #19029.
+                        session["pending_title"] = None
+                        logger.info(
+                            "Dropping pending title for session %s: %s",
+                            _session_key, exc,
+                        )
+                    except Exception:
+                        # Transient DB failure — keep pending_title for retry.
+                        pass
+
+            if (
+                not session.get("restricted")
+                and status == "complete"
+                and isinstance(raw, str)
+                and raw.strip()
+                and isinstance(text, str)
+                and text.strip()
+            ):
+                try:
+                    from agent.title_generator import maybe_auto_title
+
+                    maybe_auto_title(
+                        _get_db(),
+                        session.get("session_key") or sid,
+                        text,
+                        raw,
+                        session.get("history", []),
+                    )
+                except Exception:
+                    pass
+
+            # CLI parity: when voice-mode TTS is on, speak the agent reply
+            # (cli.py:_voice_speak_response).  Only the final text — tool
+            # calls / reasoning already stream separately and would be
+            # noisy to read aloud.
+            if (
+                not session.get("restricted")
+                and status == "complete"
+                and isinstance(raw, str)
+                and raw.strip()
+                and _voice_tts_enabled()
+            ):
+                try:
+                    from hermes_cli.voice import speak_text
+
+                    spoken = raw
+                    threading.Thread(
+                        target=speak_text, args=(spoken,), daemon=True
+                    ).start()
+                except ImportError:
+                    logger.warning("voice TTS skipped: hermes_cli.voice unavailable")
+                except Exception as e:
+                    logger.warning("voice TTS dispatch failed: %s", e)
+        except Exception as e:
+            import traceback
+
+            trace = traceback.format_exc()
+            try:
+                os.makedirs(os.path.dirname(_CRASH_LOG), exist_ok=True)
+                with open(_CRASH_LOG, "a", encoding="utf-8") as f:
+                    f.write(
+                        f"\n=== turn-dispatcher exception · "
+                        f"{time.strftime('%Y-%m-%d %H:%M:%S')} · sid={sid} ===\n"
+                    )
+                    f.write(trace)
+            except Exception:
+                pass
+            print(
+                f"[gateway-turn] {type(e).__name__}: {e}", file=sys.stderr, flush=True
+            )
+            _emit("error", sid, {"message": str(e)})
+        finally:
+            try:
+                if approval_token is not None:
+                    reset_current_session_key(approval_token)
+            except Exception:
+                pass
+            _clear_session_context(session_tokens)
+            with session["history_lock"]:
+                session["running"] = False
+                session["last_active"] = time.time()
+                _clear_inflight_turn(session)
+            _emit("session.info", sid, _session_info(agent, session))
+
+        # Chain a goal-continuation turn if the judge said so. We do
+        # this AFTER the finally releases session["running"], so the
+        # nested _run_prompt_submit doesn't deadlock on the busy
+        # guard. A real user prompt that races us wins because
+        # prompt.submit sets running=True under the history_lock and
+        # we check that guard before re-firing.
+        if goal_followup:
+            with session["history_lock"]:
+                if session.get("running"):
+                    # User already sent something — their turn wins,
+                    # the judge will re-run on the next turn anyway.
+                    return
+                session["running"] = True
+            try:
+                _run_prompt_submit(rid, sid, session, goal_followup)
+            except Exception as _cont_exc:
+                print(
+                    f"[tui_gateway] goal continuation dispatch failed: "
+                    f"{type(_cont_exc).__name__}: {_cont_exc}",
+                    file=sys.stderr,
+                )
+                with session["history_lock"]:
+                    session["running"] = False
+
+        # Drain completion notifications that arrived during this turn.
+        # The background poller handles between-turn delivery; this is
+        # the safety net for events that arrived mid-turn.
+        try:
+            from tools.process_registry import process_registry
+
+            for _evt, synth in process_registry.drain_notifications():
+                with session["history_lock"]:
+                    if session.get("running"):
+                        process_registry.completion_queue.put(_evt)
+                        break
+                    session["running"] = True
+                try:
+                    _run_prompt_submit(rid, sid, session, synth)
+                except Exception as _n_exc:
+                    print(
+                        f"[tui_gateway] completion notification dispatch failed: "
+                        f"{type(_n_exc).__name__}: {_n_exc}",
+                        file=sys.stderr,
+                    )
+                    with session["history_lock"]:
+                        session["running"] = False
+        except Exception as _drain_exc:
+            print(
+                f"[tui_gateway] completion queue drain failed: "
+                f"{type(_drain_exc).__name__}: {_drain_exc}",
+                file=sys.stderr,
+            )
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@method("clipboard.paste")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    try:
+        from hermes_cli.clipboard import has_clipboard_image, save_clipboard_image
+    except Exception as e:
+        return _err(rid, 5027, f"clipboard unavailable: {e}")
+
+    session["image_counter"] = session.get("image_counter", 0) + 1
+    img_dir = _hermes_home / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    img_path = (
+        img_dir
+        / f"clip_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session['image_counter']}.png"
+    )
+
+    # Save-first: mirrors CLI keybinding path; more robust than has_image() precheck
+    if not save_clipboard_image(img_path):
+        session["image_counter"] = max(0, session["image_counter"] - 1)
+        msg = (
+            "Clipboard has image but extraction failed"
+            if has_clipboard_image()
+            else "No image found in clipboard"
+        )
+        return _ok(rid, {"attached": False, "message": msg})
+
+    session.setdefault("attached_images", []).append(str(img_path))
+    return _ok(
+        rid,
+        {
+            "attached": True,
+            "path": str(img_path),
+            "count": len(session["attached_images"]),
+            **_image_meta(img_path),
+        },
+    )
+
+
+def _cache_remote_image_for_attach(url: str) -> tuple[Path, str]:
+    """Download a safe remote https:// image (<= 10 MB) into web_uploads."""
+    import httpx
+    from tools.url_safety import is_safe_url
+
+    if not url.lower().startswith("https://") or not is_safe_url(url):
+        raise ValueError("Unsafe or unsupported image URL")
+
+    max_bytes = 10 * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    with httpx.Client(timeout=15.0, follow_redirects=False) as client:
+        with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            for chunk in resp.iter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("Remote image exceeds 10 MB limit")
+                chunks.append(chunk)
+    data = b"".join(chunks)
+
+    ext = None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        ext = ".png"
+    elif data.startswith(b"\xff\xd8\xff"):
+        ext = ".jpg"
+    elif data[:6] in (b"GIF87a", b"GIF89a"):
+        ext = ".gif"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        ext = ".webp"
+    if ext is None:
+        raise ValueError("Remote URL did not return a supported image format")
+
+    uploads_dir = (get_hermes_home() / "tmp" / "web_uploads").resolve()
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    dest = uploads_dir / f"remote_{secrets.token_hex(12)}{ext}"
+    dest.write_bytes(data)
+    return dest, ext
+
+
+@method("image.attach")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    raw = str(params.get("path", "") or "").strip()
+    if not raw:
+        return _err(rid, 4015, "path required")
+    is_restricted = bool(session.get("restricted"))
+    try:
+        from cli import (
+            _IMAGE_EXTENSIONS,
+            _detect_file_drop,
+            _resolve_attachment_path,
+            _split_path_input,
+        )
+
+        if raw.lower().startswith("https://"):
+            try:
+                image_path, _ = _cache_remote_image_for_attach(raw)
+                remainder = ""
+            except Exception as exc:
+                return _err(rid, 4016, f"image not found: {exc}")
+        elif is_restricted:
+            # Restricted public web sessions may only attach uploaded temp images
+            # from ~/.hermes/tmp/web_uploads (or safe https:// URLs handled above).
+            uploads_dir = (get_hermes_home() / "tmp" / "web_uploads").resolve()
+            try:
+                candidate = Path(raw).resolve()
+                if not candidate.is_relative_to(uploads_dir) or not candidate.is_file():
+                    return _err(rid, 4016, f"image not found: {raw}")
+                image_path = candidate
+                remainder = ""
+            except Exception:
+                return _err(rid, 4016, f"image not found: {raw}")
+        else:
+            dropped = _detect_file_drop(raw)
+            if dropped:
+                image_path = dropped["path"]
+                remainder = dropped["remainder"]
+            else:
+                path_token, remainder = _split_path_input(raw)
+                image_path = _resolve_attachment_path(path_token)
+                if image_path is None:
+                    return _err(rid, 4016, f"image not found: {path_token}")
+        if image_path.suffix.lower() not in _IMAGE_EXTENSIONS:
+            return _err(rid, 4016, f"unsupported image: {image_path.name}")
+        session.setdefault("attached_images", []).append(str(image_path))
+        return _ok(
+            rid,
+            {
+                "attached": True,
+                "path": str(image_path),
+                "count": len(session["attached_images"]),
+                "remainder": remainder,
+                "text": remainder or f"[User attached image: {image_path.name}]",
+                **_image_meta(image_path),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5027, str(e))
+
+
+@method("image.detach")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    raw = str(params.get("path", "") or "").strip()
+    if not raw:
+        return _err(rid, 4015, "path required")
+    images = session.setdefault("attached_images", [])
+    before = len(images)
+    session["attached_images"] = [path for path in images if path != raw]
+    return _ok(
+        rid,
+        {
+            "detached": len(session["attached_images"]) != before,
+            "count": len(session["attached_images"]),
+        },
+    )
+
+
+@method("input.detect_drop")
+def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    try:
+        from cli import _detect_file_drop
+
+        raw = str(params.get("text", "") or "")
+        dropped = _detect_file_drop(raw)
+        if not dropped:
+            return _ok(rid, {"matched": False})
+
+        drop_path = dropped["path"]
+        remainder = dropped["remainder"]
+        if dropped["is_image"]:
+            session.setdefault("attached_images", []).append(str(drop_path))
+            text = remainder or f"[User attached image: {drop_path.name}]"
+            return _ok(
+                rid,
+                {
+                    "matched": True,
+                    "is_image": True,
+                    "path": str(drop_path),
+                    "count": len(session["attached_images"]),
+                    "text": text,
+                    **_image_meta(drop_path),
+                },
+            )
+
+        text = f"[User attached file: {drop_path}]" + (
+            f"\n{remainder}" if remainder else ""
+        )
+        return _ok(
+            rid,
+            {
+                "matched": True,
+                "is_image": False,
+                "path": str(drop_path),
+                "name": drop_path.name,
+                "text": text,
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5027, str(e))
+
+
+@method("prompt.background")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    text, parent = params.get("text", ""), params.get("session_id", "")
+    if not text:
+        return _err(rid, 4012, "text required")
+    task_id = f"bg_{uuid.uuid4().hex[:6]}"
+
+    def run():
+        session_tokens = _set_session_context(task_id, cwd=_session_cwd(session))
+        try:
+            from run_agent import AIAgent
+
+            result = AIAgent(
+                **_background_agent_kwargs(session["agent"], task_id)
+            ).run_conversation(
+                user_message=text,
+                task_id=task_id,
+            )
+            _emit(
+                "background.complete",
+                parent,
+                {
+                    "task_id": task_id,
+                    "text": (
+                        result.get("final_response", str(result))
+                        if isinstance(result, dict)
+                        else str(result)
+                    ),
+                },
+            )
+        except Exception as e:
+            _emit(
+                "background.complete",
+                parent,
+                {"task_id": task_id, "text": f"error: {e}"},
+            )
+        finally:
+            _clear_session_context(session_tokens)
+
+    threading.Thread(target=run, daemon=True).start()
+    return _ok(rid, {"task_id": task_id})
+
+
+@method("preview.restart")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+
+    url = str(params.get("url") or "").strip()
+    cwd = str(params.get("cwd") or "").strip()
+    context = str(params.get("context") or "").strip()
+
+    if not url:
+        return _err(rid, 4012, "url required")
+
+    task_id = f"preview_{uuid.uuid4().hex[:6]}"
+    parent = params.get("session_id", "")
+    parent_history = _preview_restart_history(session)
+    has_history = bool(parent_history)
+    prompt = "\n".join(
+        line
+        for line in [
+            "The desktop preview pane cannot load a local server URL.",
+            "",
+            f"Preview URL: {url}",
+            f"Current working directory: {cwd or '(unknown)'}",
+            "",
+            f"Preview console:\n{context}" if context else "",
+            "" if context else "",
+            (
+                "The conversation history above is from the user's main session — including the commands you (the assistant) previously ran to start servers, edit files, or check ports. Use it to figure out exactly which server should be running at this Preview URL. The user did not start a brand new task; recover what they had working."
+                if has_history
+                else None
+            ),
+            "Restart exactly the app intended for the Preview URL, not Hermes Desktop itself.",
+            "The Preview URL and port are the target. Preserve that target unless you conclude it is impossible.",
+            "If the prior conversation shows a specific command that bound this URL/port, prefer re-running THAT exact command (in the same cwd) over guessing a new one.",
+            "First inspect what process, if any, owns the Preview URL port. If a stale server exists, inspect its cwd and prefer that cwd over the Hermes/Desktop process cwd.",
+            "The Current working directory is only a hint. Do not assume it is the preview app root when the port owner or files indicate another root.",
+            "If the console shows a module-script MIME error for src/main.tsx or similar, a static server is serving source files. Do not restart python -m http.server or any dumb static server for that app.",
+            "For module-script MIME failures, inspect package.json/vite config in the candidate app root and start the real dev server/bundler (for example npm/pnpm/yarn dev) so module transforms happen.",
+            "Before declaring success, verify the Preview URL responds with the intended app, not Hermes Desktop. If it serves Hermes/Desktop UI or another unrelated app, stop that process and report failure.",
+            "Do not modify files. Do not ask the user unless blocked.",
+            "Prefer existing project scripts or commands when they are clear.",
+            "If a stale process owns the needed port, handle it safely.",
+            "Start long-running servers detached/in the background, then return immediately.",
+            "Do not run a foreground dev server command that blocks this background task.",
+            "Keep the final response short: what command/server was started, or why it could not be restarted.",
+        ]
+        if line
+    )
+
+    # Normalize defensively: a malformed client path (embedded NUL, etc.) must
+    # not blow up the whole restart — treat it as "no validated cwd".
+    try:
+        preview_cwd = os.path.abspath(os.path.expanduser(cwd)) if cwd else ""
+        if preview_cwd and not os.path.isdir(preview_cwd):
+            preview_cwd = ""
+    except Exception:
+        preview_cwd = ""
+
+    def run():
+        # Pin the validated preview cwd, else the parent workspace — never an
+        # invalid client path, which would silently fall back to the launch dir.
+        session_tokens = _set_session_context(task_id, cwd=(preview_cwd or _session_cwd(session)))
+        try:
+            from run_agent import AIAgent
+            from tools.terminal_tool import register_task_env_overrides
+
+            if preview_cwd:
+                register_task_env_overrides(task_id, {"cwd": preview_cwd})
+
+            history_note = (
+                f" (with {len(parent_history)} parent-session messages of context)"
+                if parent_history
+                else ""
+            )
+            _emit(
+                "preview.restart.progress",
+                parent,
+                {"task_id": task_id, "text": f"Starting hidden restart agent{history_note}"},
+            )
+            result = AIAgent(
+                **_ephemeral_preview_agent_kwargs(session["agent"], task_id),
+                **_preview_restart_callbacks(parent, task_id),
+            ).run_conversation(
+                user_message=prompt,
+                task_id=task_id,
+                conversation_history=parent_history or None,
+            )
+            text = (
+                result.get("final_response", str(result))
+                if isinstance(result, dict)
+                else str(result)
+            )
+            _emit("preview.restart.complete", parent, {"task_id": task_id, "text": text})
+        except Exception as e:
+            _emit(
+                "preview.restart.complete",
+                parent,
+                {"task_id": task_id, "text": f"error: {e}"},
+            )
+        finally:
+            try:
+                from tools.terminal_tool import clear_task_env_overrides
+
+                clear_task_env_overrides(task_id)
+            except Exception:
+                pass
+            _clear_session_context(session_tokens)
+
+    threading.Thread(target=run, daemon=True).start()
+    return _ok(rid, {"task_id": task_id})
+
+
+# ── Methods: respond ─────────────────────────────────────────────────
+
+
+def _respond(rid, params, key):
+    r = params.get("request_id", "")
+    with _state_lock:
+        entry = _pending.get(r)
+        if not entry:
+            return _err(rid, 4009, f"no pending {key} request")
+        owner_sid, ev = entry
+        owner_session = _sessions.get(owner_sid)
+        if owner_session is not None and not _can_access_session(owner_session):
+            return _err(rid, -32003, "Session access denied")
+        _answers[r] = params.get(key, "")
+        ev.set()
+    return _ok(rid, {"status": "ok"})
+
+
+@method("clarify.respond")
+def _(rid, params: dict) -> dict:
+    return _respond(rid, params, "answer")
+
+
+@method("sudo.respond")
+def _(rid, params: dict) -> dict:
+    return _respond(rid, params, "password")
+
+
+@method("secret.respond")
+def _(rid, params: dict) -> dict:
+    return _respond(rid, params, "value")
+
+
+@method("approval.respond")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    try:
+        from tools.approval import resolve_gateway_approval
+
+        return _ok(
+            rid,
+            {
+                "resolved": resolve_gateway_approval(
+                    session["session_key"],
+                    params.get("choice", "deny"),
+                    resolve_all=params.get("all", False),
+                )
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5004, str(e))
+
+
+# ── Methods: config ──────────────────────────────────────────────────
+
+
+@method("model.switch")
+def _(rid, params: dict) -> dict:
+    """Switch model/provider for one live session cleanly (no slash.exec / global leak in WS mode)."""
+    sid = str(params.get("session_id") or "")
+    session, err = _sess({"session_id": sid}, rid)
+    if err:
+        return err
+    if session.get("running"):
+        return _err(
+            rid,
+            4009,
+            "session busy — /interrupt the current turn before switching models",
+        )
+    raw = str(params.get("model") or params.get("value") or "").strip()
+    if not raw:
+        return _err(rid, 4002, "model value required")
+    provider = str(params.get("provider") or "").strip()
+    if provider and "--provider" not in raw:
+        raw = f"{raw} --provider {provider}"
+    if params.get("persist_global") and not session.get("restricted") and "--global" not in raw:
+        raw = f"{raw} --global"
+    try:
+        result = _apply_model_switch(sid, session, raw)
+        return _ok(rid, {"value": result["value"], "warning": result.get("warning", "")})
+    except Exception as exc:
+        return _err(rid, 5001, str(exc))
+
+
+@method("config.set")
+def _(rid, params: dict) -> dict:
+    key, value = params.get("key", ""), params.get("value", "")
+    session = _sessions.get(params.get("session_id", ""))
+
+    if key == "model":
+        try:
+            if not value:
+                return _err(rid, 4002, "model value required")
+            if session:
+                # Reject during an in-flight turn.  agent.switch_model()
+                # mutates self.model / self.provider / self.base_url /
+                # self.client in place; the worker thread running
+                # agent.run_conversation is reading those on every
+                # iteration.  A mid-turn swap can send an HTTP request
+                # with the new base_url but old model (or vice versa),
+                # producing 400/404s the user never asked for.  Parity
+                # with the gateway's running-agent /model guard.
+                if session.get("running"):
+                    return _err(
+                        rid,
+                        4009,
+                        "session busy — /interrupt the current turn before switching models",
+                    )
+                if session.get("agent") is None:
+                    session_id = params.get("session_id", "")
+                    _start_agent_build(session_id, session)
+                    init_err = _wait_agent(session, rid)
+                    if init_err:
+                        return init_err
+                    if session.get("agent") is None:
+                        return _err(rid, 5032, "agent initialization failed")
+                result = _apply_model_switch(
+                    params.get("session_id", ""), session, value
+                )
+            else:
+                result = _apply_model_switch("", {"agent": None}, value)
+            return _ok(
+                rid,
+                {"key": key, "value": result["value"], "warning": result["warning"]},
+            )
+        except Exception as e:
+            return _err(rid, 5001, str(e))
+
+    if key == "fast":
+        raw = str(value or "").strip().lower()
+        agent = session.get("agent") if session else None
+        if agent is not None:
+            current_fast = getattr(agent, "service_tier", None) == "priority"
+        else:
+            current_fast = _load_service_tier() == "priority"
+
+        if raw in {"status"}:
+            return _ok(
+                rid,
+                {"key": key, "value": "fast" if current_fast else "normal"},
+            )
+
+        if raw in {"", "toggle"}:
+            nv = "normal" if current_fast else "fast"
+        elif raw in {"fast", "on"}:
+            nv = "fast"
+        elif raw in {"normal", "off"}:
+            nv = "normal"
+        else:
+            return _err(rid, 4002, f"unknown fast mode: {value}")
+
+        overrides = None
+        if nv == "fast":
+            from hermes_cli.models import resolve_fast_mode_overrides
+
+            target_model = (
+                getattr(agent, "model", None) if agent is not None else _resolve_model()
+            )
+            if not target_model:
+                return _err(
+                    rid,
+                    4002,
+                    "fast mode is not available without a selected model",
+                )
+            overrides = resolve_fast_mode_overrides(target_model)
+            if overrides is None:
+                return _err(
+                    rid,
+                    4002,
+                    "fast mode is not available for this model",
+                )
+
+        _write_config_key("agent.service_tier", nv)
+        if agent is not None:
+            agent.service_tier = "priority" if nv == "fast" else None
+            current_overrides = dict(getattr(agent, "request_overrides", {}) or {})
+            current_overrides.pop("service_tier", None)
+            current_overrides.pop("speed", None)
+            if nv == "fast":
+                current_overrides.update(overrides)
+            agent.request_overrides = current_overrides
+            _emit(
+                "session.info",
+                params.get("session_id", ""),
+                _session_info(agent, session),
+            )
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key == "busy":
+        raw = str(value or "").strip().lower()
+        if raw in {"", "status"}:
+            return _ok(rid, {"key": key, "value": _load_busy_input_mode()})
+        if raw not in {"queue", "steer", "interrupt"}:
+            return _err(rid, 4002, f"unknown busy mode: {value}")
+        _write_config_key("display.busy_input_mode", raw)
+        return _ok(rid, {"key": key, "value": raw})
+
+    if key == "verbose":
+        cycle = ["off", "new", "all", "verbose"]
+        cur = (
+            session.get("tool_progress_mode", _load_tool_progress_mode())
+            if session
+            else _load_tool_progress_mode()
+        )
+        if value and value != "cycle":
+            nv = str(value).strip().lower()
+            if nv not in cycle:
+                return _err(rid, 4002, f"unknown verbose mode: {value}")
+        else:
+            try:
+                idx = cycle.index(cur)
+            except ValueError:
+                idx = 2
+            nv = cycle[(idx + 1) % len(cycle)]
+        _write_config_key("display.tool_progress", nv)
+        if session:
+            session["tool_progress_mode"] = nv
+            agent = session.get("agent")
+            if agent is not None:
+                agent.verbose_logging = nv == "verbose"
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key == "yolo":
+        try:
+            if session:
+                from tools.approval import (
+                    disable_session_yolo,
+                    enable_session_yolo,
+                    is_session_yolo_enabled,
+                )
+
+                current = is_session_yolo_enabled(session["session_key"])
+                if current:
+                    disable_session_yolo(session["session_key"])
+                    nv = "0"
+                else:
+                    enable_session_yolo(session["session_key"])
+                    nv = "1"
+            else:
+                current = is_truthy_value(os.environ.get("HERMES_YOLO_MODE"))
+                if current:
+                    os.environ.pop("HERMES_YOLO_MODE", None)
+                    nv = "0"
+                else:
+                    os.environ["HERMES_YOLO_MODE"] = "1"
+                    nv = "1"
+            return _ok(rid, {"key": key, "value": nv})
+        except Exception as e:
+            return _err(rid, 5001, str(e))
+
+    if key == "reasoning":
+        try:
+            from hermes_constants import parse_reasoning_effort
+
+            arg = str(value or "").strip().lower()
+            if arg in {"show", "on"}:
+                cfg = _load_cfg()
+                display = (
+                    cfg.get("display") if isinstance(cfg.get("display"), dict) else {}
+                )
+                sections = (
+                    display.get("sections")
+                    if isinstance(display.get("sections"), dict)
+                    else {}
+                )
+                display["show_reasoning"] = True
+                sections["thinking"] = "expanded"
+                display["sections"] = sections
+                cfg["display"] = display
+                _save_cfg(cfg)
+                if session:
+                    session["show_reasoning"] = True
+                return _ok(rid, {"key": key, "value": "show"})
+            if arg in {"hide", "off"}:
+                cfg = _load_cfg()
+                display = (
+                    cfg.get("display") if isinstance(cfg.get("display"), dict) else {}
+                )
+                sections = (
+                    display.get("sections")
+                    if isinstance(display.get("sections"), dict)
+                    else {}
+                )
+                display["show_reasoning"] = False
+                sections["thinking"] = "hidden"
+                display["sections"] = sections
+                cfg["display"] = display
+                _save_cfg(cfg)
+                if session:
+                    session["show_reasoning"] = False
+                return _ok(rid, {"key": key, "value": "hide"})
+
+            parsed = parse_reasoning_effort(arg)
+            if parsed is None:
+                return _err(rid, 4002, f"unknown reasoning value: {value}")
+            _write_config_key("agent.reasoning_effort", arg)
+            if session and session.get("agent") is not None:
+                session["agent"].reasoning_config = parsed
+            return _ok(rid, {"key": key, "value": arg})
+        except Exception as e:
+            return _err(rid, 5001, str(e))
+
+    if key == "details_mode":
+        nv = str(value or "").strip().lower()
+        if nv not in _DETAIL_MODES:
+            return _err(rid, 4002, f"unknown details_mode: {value}")
+        cfg = _load_cfg()
+        display = cfg.get("display") if isinstance(cfg.get("display"), dict) else {}
+        sections = (
+            display.get("sections") if isinstance(display.get("sections"), dict) else {}
+        )
+        display["details_mode"] = nv
+        for section in _DETAIL_SECTION_NAMES:
+            sections[section] = nv
+        display["sections"] = sections
+        cfg["display"] = display
+        _save_cfg(cfg)
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key.startswith("details_mode."):
+        # Per-section override: `details_mode.<section>` writes to
+        # `display.sections.<section>`. Empty value clears the explicit
+        # override and lets frontend resolution apply built-in section defaults
+        # before the global details_mode.
+        section = key.split(".", 1)[1]
+        if section not in _DETAIL_SECTION_NAMES:
+            return _err(rid, 4002, f"unknown section: {section}")
+
+        cfg = _load_cfg()
+        display = cfg.get("display") if isinstance(cfg.get("display"), dict) else {}
+        sections_cfg = (
+            display.get("sections") if isinstance(display.get("sections"), dict) else {}
+        )
+
+        nv = str(value or "").strip().lower()
+        if not nv:
+            sections_cfg.pop(section, None)
+            display["sections"] = sections_cfg
+            cfg["display"] = display
+            _save_cfg(cfg)
+            return _ok(rid, {"key": key, "value": ""})
+
+        if nv not in _DETAIL_MODES:
+            return _err(rid, 4002, f"unknown details_mode: {value}")
+
+        sections_cfg[section] = nv
+        display["sections"] = sections_cfg
+        cfg["display"] = display
+        _save_cfg(cfg)
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key == "thinking_mode":
+        nv = str(value or "").strip().lower()
+        allowed_tm = frozenset({"collapsed", "truncated", "full"})
+        if nv not in allowed_tm:
+            return _err(rid, 4002, f"unknown thinking_mode: {value}")
+        _write_config_key("display.thinking_mode", nv)
+        # Backward compatibility bridge: keep details_mode aligned.
+        _write_config_key(
+            "display.details_mode", "expanded" if nv == "full" else "collapsed"
+        )
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key == "compact":
+        raw = str(value or "").strip().lower()
+        cfg0 = _load_cfg()
+        d0 = cfg0.get("display") if isinstance(cfg0.get("display"), dict) else {}
+        cur_b = bool(d0.get("tui_compact", False))
+        if raw in {"", "toggle"}:
+            nv_b = not cur_b
+        elif raw == "on":
+            nv_b = True
+        elif raw == "off":
+            nv_b = False
+        else:
+            return _err(rid, 4002, f"unknown compact value: {value}")
+        _write_config_key("display.tui_compact", nv_b)
+        return _ok(rid, {"key": key, "value": "on" if nv_b else "off"})
+
+    if key == "statusbar":
+        raw = str(value or "").strip().lower()
+        display = _load_cfg().get("display")
+        d0 = display if isinstance(display, dict) else {}
+        current = _coerce_statusbar(d0.get("tui_statusbar", "top"))
+
+        if raw in {"", "toggle"}:
+            nv = "top" if current == "off" else "off"
+        elif raw == "on":
+            nv = "top"
+        elif raw in _STATUSBAR_MODES:
+            nv = raw
+        else:
+            return _err(rid, 4002, f"unknown statusbar value: {value}")
+
+        _write_config_key("display.tui_statusbar", nv)
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key == "mouse":
+        # Explicit None check rather than `value or ""` so falsy non-string
+        # inputs (0, False) reach the alias map as themselves — both map to
+        # 'off' via _MOUSE_TRACKING_ALIASES — instead of being collapsed to
+        # '' and triggering the toggle path. The slash command always passes
+        # a string, but programmatic JSON-RPC callers may send booleans.
+        raw = ("" if value is None else str(value)).strip().lower()
+        cfg = _load_cfg()
+        display = cfg.get("display") if isinstance(cfg.get("display"), dict) else {}
+        current = _display_mouse_tracking(display)
+
+        if raw in {"", "toggle"}:
+            nv = "all" if current == "off" else "off"
+        elif raw in _MOUSE_TRACKING_ALIASES:
+            nv = _MOUSE_TRACKING_ALIASES[raw]
+        else:
+            return _err(rid, 4002, f"unknown mouse value: {value}")
+
+        _write_config_key("display.mouse_tracking", nv)
+        return _ok(rid, {"key": key, "value": nv})
+
+    if key == "indicator":
+        # Use an explicit None check rather than `value or ""` so falsy
+        # non-string inputs (0, False, []) still surface as themselves
+        # in the error message instead of looking like a blank value.
+        raw = ("" if value is None else str(value)).strip().lower()
+        if raw not in _INDICATOR_STYLES:
+            return _err(
+                rid,
+                4002,
+                f"unknown indicator: {raw!r}; pick one of {'|'.join(_INDICATOR_STYLES)}",
+            )
+        _write_config_key("display.tui_status_indicator", raw)
+        return _ok(rid, {"key": key, "value": raw})
+
+    if key in {"cwd", "terminal.cwd", "workdir"}:
+        raw = str(value or "").strip()
+        if not raw:
+            return _err(rid, 4002, "cwd required")
+        cwd = os.path.abspath(os.path.expanduser(raw))
+        if not os.path.isdir(cwd):
+            return _err(rid, 4002, f"working directory does not exist: {raw}")
+        _write_config_key("terminal.cwd", cwd)
+        os.environ["TERMINAL_CWD"] = cwd
+        return _ok(
+            rid,
+            {"key": "terminal.cwd", "value": cwd, "cwd": cwd, "branch": _git_branch_for_cwd(cwd)},
+        )
+
+    if key in {"prompt", "personality", "skin"}:
+        try:
+            cfg = _load_cfg()
+            if key == "prompt":
+                if value == "clear":
+                    cfg.pop("custom_prompt", None)
+                    nv = ""
+                else:
+                    cfg["custom_prompt"] = value
+                    nv = value
+                _save_cfg(cfg)
+            elif key == "personality":
+                sid_key = params.get("session_id", "")
+                pname, new_prompt = _validate_personality(str(value or ""), cfg)
+                _write_config_key("display.personality", pname)
+                _write_config_key("agent.system_prompt", new_prompt)
+                nv = str(value or "none")
+                history_reset, info = _apply_personality_to_session(
+                    sid_key, session, new_prompt, pname
+                )
+            else:
+                _write_config_key(f"display.{key}", value)
+                nv = value
+                if key == "skin":
+                    _emit("skin.changed", "", resolve_skin())
+            resp = {"key": key, "value": nv}
+            if key == "personality":
+                resp["history_reset"] = history_reset
+                if info is not None:
+                    resp["info"] = info
+            return _ok(rid, resp)
+        except Exception as e:
+            return _err(rid, 5001, str(e))
+
+    return _err(rid, 4002, f"unknown config key: {key}")
+
+
+@method("config.get")
+def _(rid, params: dict) -> dict:
+    key = params.get("key", "")
+    if key == "provider":
+        try:
+            from hermes_cli.models import list_available_providers, normalize_provider
+
+            model = _resolve_model()
+            parts = model.split("/", 1)
+            return _ok(
+                rid,
+                {
+                    "model": model,
+                    "provider": (
+                        normalize_provider(parts[0]) if len(parts) > 1 else "unknown"
+                    ),
+                    "providers": list_available_providers(),
+                },
+            )
+        except Exception as e:
+            return _err(rid, 5013, str(e))
+    if key == "profile":
+        from hermes_constants import display_hermes_home
+
+        return _ok(rid, {"home": str(_hermes_home), "display": display_hermes_home()})
+    if key == "project":
+        cfg_terminal = _load_cfg().get("terminal") or {}
+        raw = str(params.get("cwd", "") or cfg_terminal.get("cwd", "") or "").strip()
+        cwd = _completion_cwd({"cwd": raw} if raw else {})
+        return _ok(rid, {"cwd": cwd, "branch": _git_branch_for_cwd(cwd)})
+    if key == "full":
+        return _ok(rid, {"config": _load_cfg()})
+    if key == "prompt":
+        return _ok(rid, {"prompt": _load_cfg().get("custom_prompt", "")})
+    if key == "skin":
+        return _ok(
+            rid, {"value": (_load_cfg().get("display") or {}).get("skin", "default")}
+        )
+    if key == "indicator":
+        # Normalize so a hand-edited config.yaml with stray casing or
+        # an unknown value reads back the SAME value the TUI actually
+        # rendered (frontend's `normalizeIndicatorStyle` falls back to
+        # `_INDICATOR_DEFAULT` for the same inputs).  Otherwise
+        # `/indicator` would print one thing while the UI shows another.
+        raw = (_load_cfg().get("display") or {}).get("tui_status_indicator", "")
+        norm = str(raw).strip().lower()
+        return _ok(
+            rid,
+            {"value": norm if norm in _INDICATOR_STYLES else _INDICATOR_DEFAULT},
+        )
+    if key == "personality":
+        return _ok(
+            rid,
+            {"value": (_load_cfg().get("display") or {}).get("personality") or "none"},
+        )
+    if key == "reasoning":
+        cfg = _load_cfg()
+        effort = str(
+            (cfg.get("agent") or {}).get("reasoning_effort", "medium") or "medium"
+        )
+        display = (
+            "show"
+            if bool((cfg.get("display") or {}).get("show_reasoning", False))
+            else "hide"
+        )
+        return _ok(rid, {"value": effort, "display": display})
+    if key == "fast":
+        return _ok(
+            rid,
+            {
+                "value": (
+                    "fast"
+                    if (session := _sessions.get(params.get("session_id", "")))
+                    and getattr(session.get("agent"), "service_tier", None)
+                    == "priority"
+                    else ("fast" if _load_service_tier() == "priority" else "normal")
+                ),
+            },
+        )
+    if key == "busy":
+        return _ok(rid, {"value": _load_busy_input_mode()})
+    if key == "details_mode":
+        allowed_dm = frozenset({"hidden", "collapsed", "expanded"})
+        raw = (
+            str(
+                (_load_cfg().get("display") or {}).get("details_mode", "collapsed")
+                or "collapsed"
+            )
+            .strip()
+            .lower()
+        )
+        nv = raw if raw in allowed_dm else "collapsed"
+        return _ok(rid, {"value": nv})
+    if key == "thinking_mode":
+        allowed_tm = frozenset({"collapsed", "truncated", "full"})
+        cfg = _load_cfg()
+        raw = (
+            str((cfg.get("display") or {}).get("thinking_mode", "") or "")
+            .strip()
+            .lower()
+        )
+        if raw in allowed_tm:
+            nv = raw
+        else:
+            dm = (
+                str(
+                    (cfg.get("display") or {}).get("details_mode", "collapsed")
+                    or "collapsed"
+                )
+                .strip()
+                .lower()
+            )
+            nv = "full" if dm == "expanded" else "collapsed"
+        return _ok(rid, {"value": nv})
+    if key == "compact":
+        on = bool((_load_cfg().get("display") or {}).get("tui_compact", False))
+        return _ok(rid, {"value": "on" if on else "off"})
+    if key == "statusbar":
+        display = _load_cfg().get("display")
+        raw = (
+            display.get("tui_statusbar", "top") if isinstance(display, dict) else "top"
+        )
+        return _ok(rid, {"value": _coerce_statusbar(raw)})
+    if key == "mouse":
+        display = _load_cfg().get("display")
+        return _ok(rid, {"value": _display_mouse_tracking(display)})
+    if key == "mtime":
+        cfg_path = _hermes_home / "config.yaml"
+        try:
+            return _ok(
+                rid, {"mtime": cfg_path.stat().st_mtime if cfg_path.exists() else 0}
+            )
+        except Exception:
+            return _ok(rid, {"mtime": 0})
+    return _err(rid, 4002, f"unknown config key: {key}")
+
+
+@method("setup.status")
+def _(rid, params: dict) -> dict:
+    try:
+        from hermes_cli.main import _has_any_provider_configured
+
+        return _ok(rid, {"provider_configured": bool(_has_any_provider_configured())})
+    except Exception as e:
+        return _err(rid, 5016, str(e))
+
+
+@method("setup.runtime_check")
+def _(rid, params: dict) -> dict:
+    """Strict provider check: does the configured/default model actually resolve to a usable runtime?
+
+    Unlike setup.status (which returns True if ANY provider auth state is
+    discoverable, including indirect fallbacks like ``gh auth token`` for
+    Copilot), this runs the same resolve_runtime_provider() call the agent
+    uses on session creation. It returns ok=False with the auth error message
+    when the user's configured model cannot actually be served, so UIs can
+    surface onboarding before the user submits a doomed prompt.
+    """
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from hermes_cli.auth import has_usable_secret
+        from hermes_cli.main import _has_any_provider_configured
+
+        runtime = resolve_runtime_provider(requested=None)
+        provider_configured = bool(_has_any_provider_configured())
+        provider = runtime.get("provider") or "provider"
+        source = str(runtime.get("source") or "")
+        if not provider_configured and provider == "bedrock" and source in {
+            "iam-role",
+            "aws-sdk-default-chain",
+        }:
+            return _ok(
+                rid,
+                {
+                    "ok": False,
+                    "provider": provider,
+                    "model": runtime.get("model"),
+                    "source": source,
+                    "error": "No Hermes provider is configured.",
+                },
+            )
+
+        api_key = runtime.get("api_key")
+        api_key_text = "" if callable(api_key) else str(api_key or "").strip()
+        credential_ok = (
+            callable(api_key)
+            or api_key_text in {"aws-sdk", "no-key-required"}
+            or has_usable_secret(api_key_text)
+            or bool(runtime.get("command"))
+        )
+
+        if not credential_ok:
+            return _ok(
+                rid,
+                {
+                    "ok": False,
+                    "provider": provider,
+                    "model": runtime.get("model"),
+                    "source": runtime.get("source"),
+                    "error": f"No usable credentials found for {provider}.",
+                },
+            )
+
+        return _ok(
+            rid,
+            {
+                "ok": True,
+                "provider": runtime.get("provider"),
+                "model": runtime.get("model"),
+                "source": runtime.get("source"),
+            },
+        )
+    except Exception as e:
+        return _ok(rid, {"ok": False, "error": str(e)})
+
+
+# ── Methods: tools & system ──────────────────────────────────────────
+
+
+@method("process.stop")
+def _(rid, params: dict) -> dict:
+    try:
+        from tools.process_registry import process_registry
+
+        return _ok(rid, {"killed": process_registry.kill_all()})
+    except Exception as e:
+        return _err(rid, 5010, str(e))
+
+
+@method("reload.mcp")
+def _(rid, params: dict) -> dict:
+    session = _sessions.get(params.get("session_id", ""))
+    try:
+        # Gate: /reload-mcp invalidates the prompt cache for this session.
+        # Respect the ``approvals.mcp_reload_confirm`` config toggle — if
+        # set (default true) AND the caller did not pass ``confirm=true``
+        # in params, surface a warning to the transcript instead of just
+        # reloading silently.  Users pass confirm=true either by
+        # re-invoking after reading the warning, or by setting the
+        # config key to false permanently.
+        user_confirm = bool(params.get("confirm", False))
+        if not user_confirm:
+            try:
+                from hermes_cli.config import load_config as _load_config
+
+                _cfg = _load_config()
+                _approvals = _cfg.get("approvals") if isinstance(_cfg, dict) else None
+                _confirm_required = True
+                if isinstance(_approvals, dict):
+                    _confirm_required = bool(_approvals.get("mcp_reload_confirm", True))
+            except Exception:
+                _confirm_required = True
+            if _confirm_required:
+                # Return a structured response the Ink client can surface
+                # as a warning/confirmation without actually reloading yet.
+                # Ink's ops.ts reads ``status`` and prints ``message`` to
+                # the transcript; a follow-up invocation with confirm=true
+                # (or an `always` choice that flips the config) proceeds.
+                return _ok(
+                    rid,
+                    {
+                        "status": "confirm_required",
+                        "message": (
+                            "⚠️  /reload-mcp invalidates the prompt cache (next "
+                            "message re-sends full input tokens). Reply `/reload-mcp "
+                            "now` to proceed, or `/reload-mcp always` to proceed and "
+                            "silence this prompt permanently."
+                        ),
+                    },
+                )
+
+        from tools.mcp_tool import shutdown_mcp_servers, discover_mcp_tools
+
+        shutdown_mcp_servers()
+        discover_mcp_tools()
+        if session and session.get("agent") is not None:
+            agent = session["agent"]
+            # Rebuild the cached agent's tool snapshot so the current session
+            # picks up added/removed MCP tools without `/new` (which discards
+            # history).  The agent snapshots tools once at build and never
+            # re-reads the registry, so an explicit rebuild is required here.
+            # The user already consented to the prompt-cache invalidation via
+            # the confirm gate above.  Mirrors gateway/run.py::_execute_mcp_reload.
+            try:
+                from model_tools import get_tool_definitions
+
+                new_defs = get_tool_definitions(
+                    enabled_toolsets=_load_enabled_toolsets(),
+                    quiet_mode=True,
+                )
+                agent.tools = new_defs
+                agent.valid_tool_names = (
+                    {t["function"]["name"] for t in new_defs} if new_defs else set()
+                )
+            except Exception as _exc:
+                logger.warning(
+                    "Failed to refresh cached agent tools after /reload-mcp: %s",
+                    _exc,
+                )
+            _emit(
+                "session.info",
+                params.get("session_id", ""),
+                _session_info(agent, session),
+            )
+
+        # Honor `always=true` by persisting the opt-out to config.
+        if bool(params.get("always", False)):
+            try:
+                from cli import save_config_value as _save_cfg
+
+                _save_cfg("approvals.mcp_reload_confirm", False)
+            except Exception as _exc:
+                logger.warning("Failed to persist mcp_reload_confirm=false: %s", _exc)
+
+        return _ok(rid, {"status": "reloaded"})
+    except Exception as e:
+        return _err(rid, 5015, str(e))
+
+
+@method("reload.env")
+def _(rid, params: dict) -> dict:
+    """Re-read ``~/.hermes/.env`` into the gateway process via
+    ``hermes_cli.config.reload_env``, matching classic CLI's ``/reload``
+    handler.  Newly added API keys take effect on the next agent call
+    without restarting the TUI.
+
+    The credential pool / provider routing for any *already-constructed*
+    agent does not auto-rebuild — that's the same behaviour as classic
+    CLI's ``/reload``.  Users who want a brand-new credential resolution
+    should follow with ``/new``.
+    """
+    try:
+        from hermes_cli.config import reload_env
+
+        count = reload_env()
+        return _ok(rid, {"updated": int(count)})
+    except Exception as e:
+        return _err(rid, 5015, str(e))
+
+
+_TUI_HIDDEN: frozenset[str] = frozenset(
+    {
+        "sethome",
+        "set-home",
+        "commands",
+        "approve",
+        "deny",
+    }
+)
+
+_TUI_EXTRA: list[tuple[str, str, str]] = [
+    ("/compact", "Toggle compact display mode", "TUI"),
+    ("/logs", "Show recent gateway log lines", "TUI"),
+    (
+        "/mouse",
+        "Set mouse tracking preset [on|off|toggle|wheel|buttons|all]",
+        "TUI",
+    ),
+    ("/sessions", "Switch between live TUI sessions", "TUI"),
+]
+
+# Commands that queue messages onto _pending_input in the CLI.
+# In the TUI the slash worker subprocess has no reader for that queue,
+# so slash.exec rejects them → TUI falls through to command.dispatch.
+_PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
+    {
+        "retry",
+        "queue",
+        "q",
+        "steer",
+        "plan",
+        "goal",
+        "undo",
+    }
+)
+
+_WORKER_BLOCKED_COMMANDS: frozenset[str] = frozenset({"snapshot", "snap"})
+
+
+@method("commands.catalog")
+def _(rid, params: dict) -> dict:
+    """Registry-backed slash metadata for the TUI — categorized, no aliases."""
+    try:
+        from hermes_cli.commands import (
+            COMMAND_REGISTRY,
+            SUBCOMMANDS,
+            _build_description,
+        )
+
+        all_pairs: list[list[str]] = []
+        canon: dict[str, str] = {}
+        categories: list[dict] = []
+        cat_map: dict[str, list[list[str]]] = {}
+        cat_order: list[str] = []
+
+        for cmd in COMMAND_REGISTRY:
+            if cmd.name in _TUI_HIDDEN or cmd.gateway_only:
+                continue
+
+            c = f"/{cmd.name}"
+            canon[c.lower()] = c
+            for a in cmd.aliases:
+                canon[f"/{a}".lower()] = c
+
+            desc = _build_description(cmd)
+            all_pairs.append([c, desc])
+
+            cat = cmd.category
+            if cat not in cat_map:
+                cat_map[cat] = []
+                cat_order.append(cat)
+            cat_map[cat].append([c, desc])
+
+        for name, desc, cat in _TUI_EXTRA:
+            all_pairs.append([name, desc])
+            if cat not in cat_map:
+                cat_map[cat] = []
+                cat_order.append(cat)
+            cat_map[cat].append([name, desc])
+
+        warning = ""
+        try:
+            qcmds = _load_cfg().get("quick_commands", {}) or {}
+            if isinstance(qcmds, dict) and qcmds:
+                bucket = "User commands"
+                if bucket not in cat_map:
+                    cat_map[bucket] = []
+                    cat_order.append(bucket)
+                for qname, qc in sorted(qcmds.items()):
+                    if not isinstance(qc, dict):
+                        continue
+                    key = f"/{qname}"
+                    canon[key.lower()] = key
+                    qtype = qc.get("type", "")
+                    if qtype == "exec":
+                        default_desc = f"exec: {qc.get('command', '')}"
+                    elif qtype == "alias":
+                        default_desc = f"alias → {qc.get('target', '')}"
+                    else:
+                        default_desc = qtype or "quick command"
+                    qdesc = str(qc.get("description") or default_desc)
+                    qdesc = qdesc[:120] + ("…" if len(qdesc) > 120 else "")
+                    all_pairs.append([key, qdesc])
+                    cat_map[bucket].append([key, qdesc])
+        except Exception as e:
+            if not warning:
+                warning = f"quick_commands discovery unavailable: {e}"
+
+        skill_count = 0
+        try:
+            from agent.skill_commands import scan_skill_commands
+
+            for k, info in sorted(scan_skill_commands().items()):
+                d = str(info.get("description", "Skill"))
+                all_pairs.append([k, d[:120] + ("…" if len(d) > 120 else "")])
+                skill_count += 1
+        except Exception as e:
+            warning = f"skill discovery unavailable: {e}"
+
+        for cat in cat_order:
+            categories.append({"name": cat, "pairs": cat_map[cat]})
+
+        sub = {k: v[:] for k, v in SUBCOMMANDS.items()}
+        return _ok(
+            rid,
+            {
+                "pairs": all_pairs,
+                "sub": sub,
+                "canon": canon,
+                "categories": categories,
+                "skill_count": skill_count,
+                "warning": warning,
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5020, str(e))
+
+
+def _cli_exec_blocked(argv: list[str]) -> str | None:
+    """Return user hint if this argv must not run headless in the gateway process."""
+    if not argv:
+        return "bare `hermes` is interactive — use `/hermes chat -q …` or run `hermes` in another terminal"
+    a0 = argv[0].lower()
+    if a0 == "setup":
+        return "`hermes setup` needs a full terminal — run it outside the TUI"
+    if a0 == "gateway":
+        return "`hermes gateway` is long-running — run it in another terminal"
+    if a0 == "sessions" and len(argv) > 1 and argv[1].lower() == "browse":
+        return "`hermes sessions browse` is interactive — use /resume here, or run browse in another terminal"
+    if a0 == "config" and len(argv) > 1 and argv[1].lower() == "edit":
+        return "`hermes config edit` needs $EDITOR in a real terminal"
+    return None
+
+
+@method("cli.exec")
+def _(rid, params: dict) -> dict:
+    """Run `python -m hermes_cli.main` with argv; capture stdout/stderr (non-interactive only)."""
+    argv = params.get("argv", [])
+    if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
+        return _err(rid, 4003, "argv must be list[str]")
+    hint = _cli_exec_blocked(argv)
+    if hint:
+        return _ok(rid, {"blocked": True, "hint": hint, "code": -1, "output": ""})
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "hermes_cli.main", *argv],
+            capture_output=True,
+            text=True,
+            timeout=min(int(params.get("timeout", 240)), 600),
+            cwd=os.getcwd(),
+            env=os.environ.copy(),
+        )
+        parts = [r.stdout or "", r.stderr or ""]
+        out = "\n".join(p for p in parts if p).strip() or "(no output)"
+        return _ok(
+            rid, {"blocked": False, "code": r.returncode, "output": out[:48_000]}
+        )
+    except subprocess.TimeoutExpired:
+        return _err(rid, 5016, "cli.exec: timeout")
+    except Exception as e:
+        return _err(rid, 5017, str(e))
+
+
+@method("command.resolve")
+def _(rid, params: dict) -> dict:
+    try:
+        from hermes_cli.commands import resolve_command
+
+        r = resolve_command(params.get("name", ""))
+        if r:
+            return _ok(
+                rid,
+                {
+                    "canonical": r.name,
+                    "description": r.description,
+                    "category": r.category,
+                },
+            )
+        return _err(rid, 4011, f"unknown command: {params.get('name')}")
+    except Exception as e:
+        return _err(rid, 5012, str(e))
+
+
+def _resolve_name(name: str) -> str:
+    try:
+        from hermes_cli.commands import resolve_command
+
+        r = resolve_command(name)
+        return r.name if r else name
+    except Exception:
+        return name
+
+
+@method("command.dispatch")
+def _(rid, params: dict) -> dict:
+    name, arg = params.get("name", "").lstrip("/"), params.get("arg", "")
+    resolved = _resolve_name(name)
+    if resolved != name:
+        name = resolved
+    session = _sessions.get(params.get("session_id", ""))
+
+    qcmds = _load_cfg().get("quick_commands", {})
+    if name in qcmds:
+        qc = qcmds[name]
+        if qc.get("type") == "exec":
+            r = subprocess.run(
+                qc.get("command", ""),
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            output = (
+                (r.stdout or "")
+                + ("\n" if r.stdout and r.stderr else "")
+                + (r.stderr or "")
+            ).strip()[:4000]
+            if r.returncode != 0:
+                return _err(
+                    rid,
+                    4018,
+                    output or f"quick command failed with exit code {r.returncode}",
+                )
+            return _ok(rid, {"type": "exec", "output": output})
+        if qc.get("type") == "alias":
+            return _ok(rid, {"type": "alias", "target": qc.get("target", "")})
+
+    try:
+        from hermes_cli.plugins import (
+            get_plugin_command_handler,
+            resolve_plugin_command_result,
+        )
+
+        handler = get_plugin_command_handler(name)
+        if handler:
+            result = resolve_plugin_command_result(handler(arg))
+            return _ok(rid, {"type": "plugin", "output": str(result or "")})
+    except Exception:
+        pass
+
+    try:
+        from agent.skill_commands import (
+            scan_skill_commands,
+            build_skill_invocation_message,
+        )
+
+        cmds = scan_skill_commands()
+        key = f"/{name}"
+        if key in cmds:
+            msg = build_skill_invocation_message(
+                key, arg, task_id=session.get("session_key", "") if session else ""
+            )
+            if msg:
+                return _ok(
+                    rid,
+                    {
+                        "type": "skill",
+                        "message": msg,
+                        "name": cmds[key].get("name", name),
+                    },
+                )
+    except Exception:
+        pass
+
+    # ── Commands that queue messages onto _pending_input in the CLI ───
+    # In the TUI the slash worker subprocess has no reader for that queue,
+    # so we handle them here and return a structured payload.
+
+    if name in {"queue", "q"}:
+        if not arg:
+            return _err(rid, 4004, "usage: /queue <prompt>")
+        return _ok(rid, {"type": "send", "message": arg})
+
+    if name == "retry":
+        if not session:
+            return _err(rid, 4001, "no active session to retry")
+        if session.get("running"):
+            return _err(
+                rid, 4009, "session busy — /interrupt the current turn before /retry"
+            )
+        history = session.get("history", [])
+        if not history:
+            return _err(rid, 4018, "no previous user message to retry")
+        # Walk backwards to find the last user message
+        last_user_idx = None
+        for i in range(len(history) - 1, -1, -1):
+            if history[i].get("role") == "user":
+                last_user_idx = i
+                break
+        if last_user_idx is None:
+            return _err(rid, 4018, "no previous user message to retry")
+        content = history[last_user_idx].get("content", "")
+        if isinstance(content, list):
+            content = " ".join(
+                p.get("text", "")
+                for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            )
+        if not content:
+            return _err(rid, 4018, "last user message is empty")
+        # Truncate history: remove everything from the last user message onward
+        # (mirrors CLI retry_last() which strips the failed exchange)
+        with session["history_lock"]:
+            session["history"] = history[:last_user_idx]
+            session["history_version"] = int(session.get("history_version", 0)) + 1
+        return _ok(rid, {"type": "send", "message": content})
+
+    if name == "steer":
+        if not arg:
+            return _err(rid, 4004, "usage: /steer <prompt>")
+        agent = session.get("agent") if session else None
+        if agent and hasattr(agent, "steer"):
+            try:
+                accepted = agent.steer(arg)
+                if accepted:
+                    return _ok(
+                        rid,
+                        {
+                            "type": "exec",
+                            "output": f"⏩ Steer queued — arrives after the next tool call: {arg[:80]}{'...' if len(arg) > 80 else ''}",
+                        },
+                    )
+            except Exception:
+                pass
+        # Fallback: no active run, treat as next-turn message
+        return _ok(rid, {"type": "send", "message": arg})
+
+    if name == "goal":
+        if not session:
+            return _err(rid, 4001, "no active session")
+        try:
+            from hermes_cli.goals import GoalManager
+        except Exception as exc:
+            return _err(rid, 5030, f"goals unavailable: {exc}")
+
+        sid_key = session.get("session_key") or ""
+        if not sid_key:
+            return _err(rid, 4001, "no session key")
+
+        try:
+            goals_cfg = _load_cfg().get("goals") or {}
+            max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+        except Exception:
+            max_turns = 20
+        mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns)
+
+        lower = arg.strip().lower()
+        if not arg.strip() or lower == "status":
+            return _ok(rid, {"type": "exec", "output": mgr.status_line()})
+        if lower == "pause":
+            state = mgr.pause(reason="user-paused")
+            out = "No goal set." if state is None else f"⏸ Goal paused: {state.goal}"
+            return _ok(rid, {"type": "exec", "output": out})
+        if lower == "resume":
+            state = mgr.resume()
+            if state is None:
+                return _ok(rid, {"type": "exec", "output": "No goal to resume."})
+            return _ok(
+                rid,
+                {
+                    "type": "exec",
+                    "output": (
+                        f"▶ Goal resumed: {state.goal}\n"
+                        "Send any message to continue, or wait — I'll take the next step on the next turn."
+                    ),
+                },
+            )
+        if lower in {"clear", "stop", "done"}:
+            had = mgr.has_goal()
+            mgr.clear()
+            return _ok(
+                rid,
+                {
+                    "type": "exec",
+                    "output": "✓ Goal cleared." if had else "No active goal.",
+                },
+            )
+
+        # Otherwise — treat the remaining text as the new goal.
+        try:
+            state = mgr.set(arg)
+        except ValueError as exc:
+            return _err(rid, 4004, f"invalid goal: {exc}")
+
+        notice = (
+            f"⊙ Goal set ({state.max_turns}-turn budget): {state.goal}\n"
+            "I'll keep working until the goal is done, you pause/clear it, or the budget is exhausted.\n"
+            "Controls: /goal status · /goal pause · /goal resume · /goal clear"
+        )
+        # Send the goal text as the kickoff prompt. The TUI client sees
+        # {type: send, notice, message} → renders `notice` as a sys line,
+        # then submits `message` as a user turn. The post-turn judge
+        # wired in _run_prompt_submit takes over from there.
+        return _ok(
+            rid,
+            {"type": "send", "notice": notice, "message": state.goal},
+        )
+
+    if name == "undo":
+        # /undo [N]: back up N user turns (default 1), soft-delete the
+        # truncated rows on disk, and prefill the composer with the text
+        # of the user message we backed up to so it can be edited and
+        # resubmitted. N=1 is the Claude-Code-style single-step undo;
+        # /undo 3 backs up three user turns at once. See issue #21910.
+        if not session:
+            return _err(rid, 4001, "no active session to undo")
+        if session.get("running"):
+            return _err(
+                rid, 4009, "session busy — /interrupt the current turn before /undo"
+            )
+        db = _get_db()
+        if db is None:
+            return _db_unavailable_error(rid, code=5008)
+        session_key = session.get("session_key", "")
+        if not session_key:
+            return _err(rid, 4001, "no session key for undo")
+        # Parse the optional count argument (e.g. "/undo 3" → 3).
+        n = 1
+        arg_str = (arg or "").strip()
+        if arg_str:
+            try:
+                n = int(arg_str.split()[0])
+            except (ValueError, IndexError):
+                return _err(rid, 4004, f"undo: invalid count {arg_str!r} — use /undo or /undo N")
+        if n < 1:
+            n = 1
+        try:
+            recents = db.list_recent_user_messages(session_key, limit=max(n, 10))
+        except Exception as e:
+            return _err(rid, 5008, f"undo: failed to load history: {e}")
+        if not recents:
+            return _err(rid, 4018, "no user messages to undo")
+        # recents[0] is the most-recent user turn; pick the Nth-from-last.
+        # If N exceeds the number of user turns, back up to the oldest.
+        target_idx = min(n - 1, len(recents) - 1)
+        target_id = recents[target_idx]["id"]
+        try:
+            result = db.rewind_to_message(session_key, target_id)
+        except ValueError as e:
+            return _err(rid, 4004, f"undo: {e}")
+        except Exception as e:
+            return _err(rid, 5008, f"undo: {e}")
+        # Reload the active-only transcript into the in-memory session
+        # history so subsequent turns see the truncated view.
+        try:
+            active = db.get_messages_as_conversation(session_key)
+        except Exception:
+            active = []
+        with session["history_lock"]:
+            session["history"] = list(active)
+            session["history_version"] = int(session.get("history_version", 0)) + 1
+        # Notify memory providers — same hook /branch fires, plus the
+        # rewound flag so providers caching per-turn document state
+        # know to invalidate. See #6672 + #21910.
+        agent = session.get("agent")
+        if agent is not None:
+            mm = getattr(agent, "_memory_manager", None)
+            if mm is not None:
+                try:
+                    mm.on_session_switch(
+                        session_key,
+                        parent_session_id="",
+                        reset=False,
+                        rewound=True,
+                    )
+                except Exception:
+                    pass
+            if hasattr(agent, "_invalidate_system_prompt"):
+                try:
+                    agent._invalidate_system_prompt()
+                except Exception:
+                    pass
+            if hasattr(agent, "_last_flushed_db_idx"):
+                try:
+                    agent._last_flushed_db_idx = len(active)
+                except Exception:
+                    pass
+        target_msg = result.get("target_message") or {}
+        target_text = target_msg.get("content") or ""
+        if isinstance(target_text, list):
+            parts = [
+                p.get("text", "") for p in target_text
+                if isinstance(p, dict) and p.get("type") == "text"
+            ]
+            target_text = "\n".join(t for t in parts if t)
+        if not isinstance(target_text, str):
+            target_text = ""
+        rewound_count = result.get("rewound_count", 0)
+        turns_undone = target_idx + 1
+        turn_word = "turn" if turns_undone == 1 else "turns"
+        notice = (
+            f"↶ Undid {turns_undone} {turn_word} ({rewound_count} message(s)). "
+            "Edit and resubmit, or send a new message."
+        )
+        return _ok(
+            rid,
+            {"type": "prefill", "message": target_text, "notice": notice},
+        )
+
+    if name in {"snapshot", "snap"}:
+        subcommand = arg.split(maxsplit=1)[0].lower() if arg else ""
+        if subcommand in {"restore", "rewind"}:
+            return _ok(
+                rid,
+                {
+                    "type": "exec",
+                    "output": (
+                        "/snapshot restore is blocked in the TUI because it changes "
+                        "config/state on disk while the live agent has cached settings. "
+                        "Run it in the classic CLI, then restart the TUI."
+                    ),
+                },
+            )
+
+    return _err(rid, 4018, f"not a quick/plugin/skill command: {name}")
+
+
+# ── Methods: paste ────────────────────────────────────────────────────
+
+_paste_counter = 0
+
+
+@method("paste.collapse")
+def _(rid, params: dict) -> dict:
+    global _paste_counter
+    text = params.get("text", "")
+    if not text:
+        return _err(rid, 4004, "empty paste")
+
+    _paste_counter += 1
+    line_count = text.count("\n") + 1
+    paste_dir = _hermes_home / "pastes"
+    paste_dir.mkdir(parents=True, exist_ok=True)
+
+    from datetime import datetime
+
+    paste_file = (
+        paste_dir / f"paste_{_paste_counter}_{datetime.now().strftime('%H%M%S')}.txt"
+    )
+    paste_file.write_text(text, encoding="utf-8")
+
+    placeholder = (
+        f"[Pasted text #{_paste_counter}: {line_count} lines \u2192 {paste_file}]"
+    )
+    return _ok(
+        rid, {"placeholder": placeholder, "path": str(paste_file), "lines": line_count}
+    )
+
+
+# ── Methods: complete ─────────────────────────────────────────────────
+
+_FUZZY_CACHE_TTL_S = 5.0
+_FUZZY_CACHE_MAX_FILES = 20000
+_FUZZY_FALLBACK_EXCLUDES = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".next",
+        ".cache",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        "dist",
+        "build",
+        "target",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+    }
+)
+_fuzzy_cache_lock = threading.Lock()
+_fuzzy_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def _list_repo_files(root: str) -> list[str]:
+    """Return file paths relative to ``root``.
+
+    Uses ``git ls-files`` from the repo top (resolved via
+    ``rev-parse --show-toplevel``) so the listing covers tracked + untracked
+    files anywhere in the repo, then converts each path back to be relative
+    to ``root``. Files outside ``root`` (parent directories of cwd, sibling
+    subtrees) are excluded so the picker stays scoped to what's reachable
+    from the gateway's cwd. Falls back to a bounded ``os.walk(root)`` when
+    ``root`` isn't inside a git repo. Result cached per-root for
+    ``_FUZZY_CACHE_TTL_S`` so rapid keystrokes don't respawn git processes.
+    """
+    now = time.monotonic()
+    with _fuzzy_cache_lock:
+        cached = _fuzzy_cache.get(root)
+        if cached and now - cached[0] < _FUZZY_CACHE_TTL_S:
+            return cached[1]
+
+    files: list[str] = []
+    try:
+        top_result = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            timeout=2.0,
+            check=False,
+        )
+        if top_result.returncode == 0:
+            top = top_result.stdout.decode("utf-8", "replace").strip()
+            list_result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    top,
+                    "ls-files",
+                    "-z",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                ],
+                capture_output=True,
+                timeout=2.0,
+                check=False,
+            )
+            if list_result.returncode == 0:
+                for p in list_result.stdout.decode("utf-8", "replace").split("\0"):
+                    if not p:
+                        continue
+                    rel = os.path.relpath(os.path.join(top, p), root).replace(
+                        os.sep, "/"
+                    )
+                    # Skip parents/siblings of cwd — keep the picker scoped
+                    # to root-and-below, matching Cmd-P workspace semantics.
+                    if rel.startswith("../"):
+                        continue
+                    files.append(rel)
+                    if len(files) >= _FUZZY_CACHE_MAX_FILES:
+                        break
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    if not files:
+        # Fallback walk: skip vendor/build dirs + dot-dirs so the walk stays
+        # tractable. Dotfiles themselves survive — the ranker decides based
+        # on whether the query starts with `.`.
+        try:
+            for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+                dirnames[:] = [
+                    d
+                    for d in dirnames
+                    if d not in _FUZZY_FALLBACK_EXCLUDES and not d.startswith(".")
+                ]
+                rel_dir = os.path.relpath(dirpath, root)
+                for f in filenames:
+                    rel = f if rel_dir == "." else f"{rel_dir}/{f}"
+                    files.append(rel.replace(os.sep, "/"))
+                    if len(files) >= _FUZZY_CACHE_MAX_FILES:
+                        break
+                if len(files) >= _FUZZY_CACHE_MAX_FILES:
+                    break
+        except OSError:
+            pass
+
+    with _fuzzy_cache_lock:
+        _fuzzy_cache[root] = (now, files)
+
+    return files
+
+
+def _fuzzy_basename_rank(name: str, query: str) -> tuple[int, int] | None:
+    """Rank ``name`` against ``query``; lower is better. Returns None to reject.
+
+    Tiers (kind):
+      0 — exact basename
+      1 — basename prefix (e.g. `app` → `appChrome.tsx`)
+      2 — word-boundary / camelCase hit (e.g. `chrome` → `appChrome.tsx`)
+      3 — substring anywhere in basename
+      4 — subsequence match (every query char appears in order)
+
+    Secondary key is `len(name)` so shorter names win ties.
+    """
+    if not query:
+        return (3, len(name))
+
+    nl = name.lower()
+    ql = query.lower()
+
+    if nl == ql:
+        return (0, len(name))
+
+    if nl.startswith(ql):
+        return (1, len(name))
+
+    # Word-boundary split: `foo-bar_baz.qux` → ["foo","bar","baz","qux"].
+    # camelCase split: `appChrome` → ["app","Chrome"]. Cheap approximation;
+    # falls through to substring/subsequence if it misses.
+    parts: list[str] = []
+    buf = ""
+    for ch in name:
+        if ch in "-_." or (ch.isupper() and buf and not buf[-1].isupper()):
+            if buf:
+                parts.append(buf)
+            buf = ch if ch not in "-_." else ""
+        else:
+            buf += ch
+    if buf:
+        parts.append(buf)
+    for p in parts:
+        if p.lower().startswith(ql):
+            return (2, len(name))
+
+    if ql in nl:
+        return (3, len(name))
+
+    i = 0
+    for ch in nl:
+        if ch == ql[i]:
+            i += 1
+            if i == len(ql):
+                return (4, len(name))
+
+    return None
+
+
+@method("complete.path")
+def _(rid, params: dict) -> dict:
+    word = params.get("word", "")
+    if not word:
+        return _ok(rid, {"items": []})
+
+    items: list[dict] = []
+    try:
+        root = _completion_cwd(params)
+        is_context = word.startswith("@")
+        query = word[1:] if is_context else word
+
+        if is_context and not query:
+            items = [
+                {"text": "@diff", "display": "@diff", "meta": "git diff"},
+                {"text": "@staged", "display": "@staged", "meta": "staged diff"},
+                {"text": "@file:", "display": "@file:", "meta": "attach file"},
+                {"text": "@folder:", "display": "@folder:", "meta": "attach folder"},
+                {"text": "@url:", "display": "@url:", "meta": "fetch url"},
+                {"text": "@git:", "display": "@git:", "meta": "git log"},
+            ]
+            return _ok(rid, {"items": items})
+
+        # Accept both `@folder:path` and the bare `@folder` form so the user
+        # sees directory listings as soon as they finish typing the keyword,
+        # without first accepting the static `@folder:` hint.
+        if is_context and query in {"file", "folder"}:
+            prefix_tag, path_part = query, ""
+        elif is_context and query.startswith(("file:", "folder:")):
+            prefix_tag, _, tail = query.partition(":")
+            path_part = tail
+        else:
+            prefix_tag = ""
+            path_part = query if is_context else query
+
+        # Fuzzy basename search across the repo when the user types a bare
+        # name with no path separator — `@appChrome` surfaces every file
+        # whose basename matches, regardless of directory depth. Matches what
+        # editors like Cursor / VS Code do for Cmd-P. Path-ish queries (with
+        # `/`, `./`, `~/`, `/abs`) fall through to the directory-listing
+        # path so explicit navigation intent is preserved.
+        if (
+            is_context
+            and path_part
+            and len(path_part.strip()) >= 2
+            and "/" not in path_part
+            and prefix_tag != "folder"
+        ):
+            ranked: list[tuple[tuple[int, int], str, str]] = []
+            for rel in _list_repo_files(root):
+                basename = os.path.basename(rel)
+                if basename.startswith(".") and not path_part.startswith("."):
+                    continue
+                rank = _fuzzy_basename_rank(basename, path_part)
+                if rank is None:
+                    continue
+                ranked.append((rank, rel, basename))
+
+            ranked.sort(key=lambda r: (r[0], len(r[1]), r[1]))
+            tag = prefix_tag or "file"
+            for _, rel, basename in ranked[:30]:
+                items.append(
+                    {
+                        "text": f"@{tag}:{rel}",
+                        "display": basename,
+                        "meta": os.path.dirname(rel),
+                    }
+                )
+
+            return _ok(rid, {"items": items})
+
+        expanded = _normalize_completion_path(path_part) if path_part else "."
+        if expanded == "." or not expanded:
+            search_dir, match = ".", ""
+        elif expanded.endswith("/"):
+            search_dir, match = expanded, ""
+        else:
+            search_dir = os.path.dirname(expanded) or "."
+            match = os.path.basename(expanded)
+
+        search_dir = (
+            search_dir if os.path.isabs(search_dir) else os.path.join(root, search_dir)
+        )
+        if not os.path.isdir(search_dir):
+            return _ok(rid, {"items": []})
+
+        want_dir = prefix_tag == "folder"
+        match_lower = match.lower()
+        for entry in sorted(os.listdir(search_dir)):
+            if match and not entry.lower().startswith(match_lower):
+                continue
+            if is_context and entry in _FUZZY_FALLBACK_EXCLUDES:
+                continue
+            if is_context and not prefix_tag and entry.startswith("."):
+                continue
+            full = os.path.join(search_dir, entry)
+            is_dir = os.path.isdir(full)
+            # Explicit `@folder:` / `@file:` — honour the user's filter.  Skip
+            # the opposite kind instead of auto-rewriting the completion tag,
+            # which used to defeat the prefix and let `@folder:` list files.
+            if prefix_tag and want_dir != is_dir:
+                continue
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            suffix = "/" if is_dir else ""
+
+            if is_context and prefix_tag:
+                text = f"@{prefix_tag}:{rel}{suffix}"
+            elif is_context:
+                kind = "folder" if is_dir else "file"
+                text = f"@{kind}:{rel}{suffix}"
+            elif word.startswith("~"):
+                text = "~/" + os.path.relpath(full, os.path.expanduser("~")) + suffix
+            elif word.startswith("./"):
+                text = "./" + rel + suffix
+            else:
+                text = rel + suffix
+
+            items.append(
+                {
+                    "text": text,
+                    "display": entry + suffix,
+                    "meta": "dir" if is_dir else "",
+                }
+            )
+            if len(items) >= 30:
+                break
+    except Exception as e:
+        return _err(rid, 5021, str(e))
+
+    return _ok(rid, {"items": items})
+
+
+def _details_completion_item(value: str, meta: str = "") -> dict:
+    return {"text": value, "display": value, "meta": meta}
+
+
+def _details_root_completion_item(
+    value: str, meta: str, needs_leading_space: bool
+) -> dict:
+    return _details_completion_item(
+        f" {value}" if needs_leading_space else value,
+        meta,
+    )
+
+
+def _details_completions(text: str) -> list[dict] | None:
+    if not text.lower().startswith("/details"):
+        return None
+
+    stripped = text.strip()
+    if stripped and not "/details".startswith(stripped.lower().split()[0]):
+        return None
+
+    body = text[len("/details") :]
+    if body.startswith(" "):
+        body = body[1:]
+    parts = body.split()
+    has_trailing_space = text.endswith(" ")
+    sections = ("thinking", "tools", "subagents", "activity")
+    modes = ("hidden", "collapsed", "expanded")
+
+    if not body or (len(parts) == 0 and has_trailing_space):
+        return [
+            *[
+                _details_root_completion_item(
+                    mode, "global mode", not has_trailing_space
+                )
+                for mode in modes
+            ],
+            _details_root_completion_item(
+                "cycle", "cycle global mode", not has_trailing_space
+            ),
+            *[
+                _details_root_completion_item(
+                    section, "section override", not has_trailing_space
+                )
+                for section in sections
+            ],
+        ]
+
+    if len(parts) == 1 and not has_trailing_space:
+        prefix = parts[0].lower()
+        candidates = [*modes, "cycle", *sections]
+        return [
+            _details_completion_item(
+                candidate,
+                (
+                    "section override"
+                    if candidate in sections
+                    else "cycle global mode" if candidate == "cycle" else "global mode"
+                ),
+            )
+            for candidate in candidates
+            if candidate.startswith(prefix) and candidate != prefix
+        ]
+
+    if len(parts) == 1 and has_trailing_space and parts[0].lower() in sections:
+        return [
+            *[
+                _details_completion_item(mode, f"set {parts[0].lower()}")
+                for mode in modes
+            ],
+            _details_completion_item("reset", f"clear {parts[0].lower()} override"),
+        ]
+
+    if len(parts) == 2 and not has_trailing_space and parts[0].lower() in sections:
+        prefix = parts[1].lower()
+        return [
+            _details_completion_item(
+                candidate,
+                (
+                    f"clear {parts[0].lower()} override"
+                    if candidate == "reset"
+                    else f"set {parts[0].lower()}"
+                ),
+            )
+            for candidate in (*modes, "reset")
+            if candidate.startswith(prefix) and candidate != prefix
+        ]
+
+    return []
+
+
+@method("complete.slash")
+def _(rid, params: dict) -> dict:
+    text = params.get("text", "")
+    if not text.startswith("/"):
+        return _ok(rid, {"items": []})
+
+    try:
+        from hermes_cli.commands import SlashCommandCompleter
+        from prompt_toolkit.document import Document
+        from prompt_toolkit.formatted_text import to_plain_text
+
+        from agent.skill_commands import get_skill_commands
+        from agent.skill_bundles import get_skill_bundles
+
+        completer = SlashCommandCompleter(
+            skill_commands_provider=lambda: get_skill_commands(),
+            skill_bundles_provider=lambda: get_skill_bundles(),
+        )
+        doc = Document(text, len(text))
+        items = [
+            {
+                "text": c.text,
+                # prompt_toolkit gives us FormattedText (a list of (style,
+                # text) tuples) for display/display_meta. Serialize both as
+                # plain strings — the TUI's CompletionItem.display contract
+                # is a string, and sending the raw list trips Ink's row
+                # layout into 1-char truncation of the next column.
+                "display": to_plain_text(c.display) if c.display else c.text,
+                "meta": to_plain_text(c.display_meta) if c.display_meta else "",
+            }
+            for c in completer.get_completions(doc, None)
+        ][:30]
+        text_lower = text.lower()
+        extras = [
+            {
+                "text": "/compact",
+                "display": "/compact",
+                "meta": "Toggle compact display mode",
+            },
+            {
+                "text": "/details",
+                "display": "/details",
+                "meta": "Control agent detail visibility",
+            },
+            {
+                "text": "/logs",
+                "display": "/logs",
+                "meta": "Show recent gateway log lines",
+            },
+            {
+                "text": "/mouse",
+                "display": "/mouse",
+                "meta": "Set mouse tracking preset [on|off|toggle|wheel|buttons|all]",
+            },
+        ]
+        for extra in extras:
+            if extra["text"].startswith(text_lower) and not any(
+                item["text"] == extra["text"] for item in items
+            ):
+                items.append(extra)
+
+        details_items = _details_completions(text)
+        if details_items is not None:
+            return _ok(
+                rid,
+                {
+                    "items": details_items,
+                    "replace_from": text.rfind(" ") + 1 if " " in text else len(text),
+                },
+            )
+
+        return _ok(
+            rid,
+            {"items": items, "replace_from": text.rfind(" ") + 1 if " " in text else 1},
+        )
+    except Exception as e:
+        return _err(rid, 5020, str(e))
+
+
+@method("model.options")
+def _(rid, params: dict) -> dict:
+    try:
+        from hermes_cli.inventory import build_models_payload, load_picker_context
+
+        session = _sessions.get(params.get("session_id", ""))
+        agent = session.get("agent") if session else None
+        # Layer agent-session state on top of disk config — once an agent
+        # is spawned, IT owns the live provider/model/base_url. Empty
+        # agent attributes must NOT clobber disk config (with_overrides
+        # is truthy-only).
+        ctx = load_picker_context().with_overrides(
+            current_provider=getattr(agent, "provider", "") if agent else "",
+            current_model=(
+                (getattr(agent, "model", "") if agent else "") or _resolve_model()
+            ),
+            current_base_url=getattr(agent, "base_url", "") if agent else "",
+        )
+        # picker_hints + canonical_order produce the TUI's required shape:
+        # `authenticated`/`auth_type`/`key_env`/`warning` per row, in
+        # CANONICAL_PROVIDERS declaration order. include_unconfigured=True
+        # so the picker can show the full provider universe (with the
+        # setup-hint warning attached) instead of only authed rows.
+        # Curated model lists are preserved — list_authenticated_providers
+        # populates `models` from the curated catalog, not provider_model_ids
+        # (which would pull non-agentic models like TTS/embeddings/etc.).
+        payload = build_models_payload(
+            ctx,
+            include_unconfigured=True,
+            picker_hints=True,
+            canonical_order=True,
+            pricing=True,
+            capabilities=True,
+            max_models=50,
+        )
+        return _ok(rid, payload)
+    except Exception as e:
+        return _err(rid, 5033, str(e))
+
+
+@method("model.save_key")
+def _(rid, params: dict) -> dict:
+    """Save an API key for a provider, then return its refreshed model list.
+
+    Params:
+        slug: provider slug (e.g. "deepseek", "xai")
+        api_key: the key value to save
+
+    Returns the provider dict with models populated (same shape as
+    model.options entries) on success.
+    """
+    try:
+        from hermes_cli.auth import PROVIDER_REGISTRY
+        from hermes_cli.config import is_managed, save_env_value
+        from hermes_cli.inventory import build_models_payload, load_picker_context
+
+        slug = (params.get("slug") or "").strip()
+        api_key = (params.get("api_key") or "").strip()
+        if not slug or not api_key:
+            return _err(rid, 4001, "slug and api_key are required")
+
+        if is_managed():
+            return _err(rid, 4006, "managed install — credentials are read-only")
+
+        pconfig = PROVIDER_REGISTRY.get(slug)
+        if not pconfig:
+            return _err(rid, 4002, f"unknown provider: {slug}")
+        if pconfig.auth_type != "api_key":
+            return _err(
+                rid,
+                4003,
+                f"{pconfig.name} uses {pconfig.auth_type} auth — "
+                f"run `hermes model` to configure",
+            )
+        if not pconfig.api_key_env_vars:
+            return _err(rid, 4004, f"no env var defined for {pconfig.name}")
+
+        # Save the key to ~/.hermes/.env
+        env_var = pconfig.api_key_env_vars[0]
+        save_env_value(env_var, api_key)
+        # Also set in current process so the refreshed inventory sees it.
+        import os
+
+        os.environ[env_var] = api_key
+
+        # Refresh provider data via the shared inventory builder so this
+        # surface stays in lock-step with model.options + dashboard
+        # /api/model/options. picker_hints=True ensures the returned row
+        # carries `authenticated` for the TUI frontend.
+        session = _sessions.get(params.get("session_id", ""))
+        agent = session.get("agent") if session else None
+        ctx = load_picker_context().with_overrides(
+            current_provider=getattr(agent, "provider", "") if agent else "",
+            current_model=(
+                (getattr(agent, "model", "") if agent else "") or _resolve_model()
+            ),
+            current_base_url=getattr(agent, "base_url", "") if agent else "",
+        )
+        payload = build_models_payload(
+            ctx, picker_hints=True, max_models=50,
+        )
+        provider_data = next(
+            (p for p in payload["providers"] if p["slug"] == slug), None
+        )
+        if provider_data is None:
+            # Key was saved but provider didn't appear — still return success.
+            provider_data = {
+                "slug": slug,
+                "name": pconfig.name,
+                "is_current": False,
+                "models": [],
+                "total_models": 0,
+                "authenticated": True,
+            }
+        # picker_hints sets `authenticated` from the row state, but the
+        # synthetic fallback above doesn't go through that path.
+        provider_data["authenticated"] = True
+        return _ok(rid, {"provider": provider_data})
+    except Exception as e:
+        return _err(rid, 5034, str(e))
+
+
+@method("model.disconnect")
+def _(rid, params: dict) -> dict:
+    """Remove credentials for a provider.
+
+    Params:
+        slug: provider slug (e.g. "deepseek", "xai")
+
+    Returns success status and the provider's slug.
+    """
+    try:
+        from hermes_cli.auth import PROVIDER_REGISTRY, clear_provider_auth
+        from hermes_cli.config import remove_env_value
+
+        slug = (params.get("slug") or "").strip()
+        if not slug:
+            return _err(rid, 4001, "slug is required")
+
+        pconfig = PROVIDER_REGISTRY.get(slug)
+        cleared_env = False
+        cleared_auth = False
+
+        # Remove API key env vars from .env and process
+        if pconfig and pconfig.api_key_env_vars:
+            for ev in pconfig.api_key_env_vars:
+                if remove_env_value(ev):
+                    cleared_env = True
+
+        # Clear OAuth / credential pool state
+        cleared_auth = clear_provider_auth(slug)
+
+        if not cleared_env and not cleared_auth:
+            return _err(rid, 4005, f"no credentials found for {slug}")
+
+        provider_name = pconfig.name if pconfig else slug
+        return _ok(
+            rid,
+            {
+                "slug": slug,
+                "name": provider_name,
+                "disconnected": True,
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5035, str(e))
+
+
+# ── Methods: slash.exec ──────────────────────────────────────────────
+
+
+def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
+    """Apply side effects that must also hit the gateway's live agent."""
+    parts = command.lstrip("/").split(None, 1)
+    if not parts:
+        return ""
+    name, arg, agent = (
+        parts[0],
+        (parts[1].strip() if len(parts) > 1 else ""),
+        session.get("agent"),
+    )
+
+    # Reject agent-mutating commands during an in-flight turn.  These
+    # all do read-then-mutate on live agent/session state that the
+    # worker thread running agent.run_conversation is using.  Parity
+    # with the session.compress / session.undo guards and the gateway
+    # runner's running-agent /model guard.
+    _MUTATES_WHILE_RUNNING = {"model", "personality", "prompt", "compress"}
+    if name in _MUTATES_WHILE_RUNNING and session.get("running"):
+        return f"session busy — /interrupt the current turn before running /{name}"
+
+    try:
+        if name == "model" and arg and agent:
+            result = _apply_model_switch(sid, session, arg)
+            return result.get("warning", "")
+        elif name == "personality" and arg and agent:
+            pname, new_prompt = _validate_personality(arg, _load_cfg())
+            _apply_personality_to_session(sid, session, new_prompt, pname)
+        elif name == "prompt" and agent:
+            cfg = _load_cfg()
+            new_prompt = _prompt_text((cfg.get("agent") or {}).get("system_prompt", ""))
+            agent.ephemeral_system_prompt = new_prompt or None
+            agent._cached_system_prompt = None
+        elif name == "compress" and agent:
+            _compress_session_history(session, arg)
+            _sync_session_key_after_compress(sid, session)
+            _emit("session.info", sid, _session_info(agent, session))
+        elif name == "fast" and agent:
+            mode = arg.lower()
+            if mode in {"fast", "on"}:
+                agent.service_tier = "priority"
+            elif mode in {"normal", "off"}:
+                agent.service_tier = None
+            _emit("session.info", sid, _session_info(agent, session))
+        elif name == "reload-mcp" and agent and hasattr(agent, "reload_mcp_tools"):
+            agent.reload_mcp_tools()
+        elif name == "stop":
+            from tools.process_registry import process_registry
+
+            process_registry.kill_all()
+    except Exception as e:
+        return f"live session sync failed: {e}"
+    return ""
+
+
+@method("slash.exec")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+
+    cmd = params.get("command", "").strip()
+    if not cmd:
+        return _err(rid, 4004, "empty command")
+
+    # Skill slash commands and _pending_input commands must NOT go through the
+    # slash worker — see _PENDING_INPUT_COMMANDS definition above. Plugin
+    # commands must also avoid the worker, but unlike skills/pending-input they
+    # still return normal slash.exec output so the TUI keeps the pager path.
+    _cmd_text = cmd.lstrip("/") if cmd.startswith("/") else cmd
+    _cmd_parts = _cmd_text.split(maxsplit=1)
+    _cmd_base = (_cmd_parts[0] if _cmd_parts else "").lower()
+    _cmd_arg = _cmd_parts[1] if len(_cmd_parts) > 1 else ""
+
+    if _cmd_base in _PENDING_INPUT_COMMANDS:
+        return _err(
+            rid, 4018, f"pending-input command: use command.dispatch for /{_cmd_base}"
+        )
+
+    if _cmd_base in _WORKER_BLOCKED_COMMANDS:
+        subcommand = _cmd_arg.split(maxsplit=1)[0].lower() if _cmd_arg else ""
+        if subcommand in {"restore", "rewind"}:
+            return _err(
+                rid,
+                4018,
+                "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore",
+            )
+
+    try:
+        from agent.skill_commands import get_skill_commands
+
+        _cmd_key = f"/{_cmd_base}"
+        if _cmd_key in get_skill_commands():
+            return _err(
+                rid, 4018, f"skill command: use command.dispatch for {_cmd_key}"
+            )
+    except Exception:
+        pass
+
+    plugin_handler = None
+    resolve_plugin_command_result = None
+    if _cmd_base:
+        try:
+            from hermes_cli.plugins import (
+                get_plugin_command_handler,
+                resolve_plugin_command_result,
+            )
+
+            plugin_handler = get_plugin_command_handler(_cmd_base)
+        except Exception:
+            plugin_handler = None
+            resolve_plugin_command_result = None
+
+    if plugin_handler and resolve_plugin_command_result:
+        try:
+            result = resolve_plugin_command_result(plugin_handler(_cmd_arg))
+            return _ok(rid, {"output": str(result or "(no output)")})
+        except Exception as e:
+            return _ok(rid, {"output": f"Plugin command error: {e}"})
+
+    worker = session.get("slash_worker")
+    if not worker:
+        try:
+            worker = _SlashWorker(
+                session["session_key"],
+                getattr(session.get("agent"), "model", _resolve_model()),
+            )
+            session["slash_worker"] = worker
+        except Exception as e:
+            return _err(rid, 5030, f"slash worker start failed: {e}")
+
+    try:
+        output = worker.run(cmd)
+        warning = _mirror_slash_side_effects(params.get("session_id", ""), session, cmd)
+        payload = {"output": output or "(no output)"}
+        if warning:
+            payload["warning"] = warning
+        return _ok(rid, payload)
+    except Exception as e:
+        try:
+            worker.close()
+        except Exception:
+            pass
+        session["slash_worker"] = None
+        return _err(rid, 5030, str(e))
+
+
+# ── Methods: voice ───────────────────────────────────────────────────
+
+
+_voice_sid_lock = threading.Lock()
+_voice_event_sid: str = ""
+
+
+def _voice_emit(event: str, payload: dict | None = None) -> None:
+    """Emit a voice event toward the session that most recently turned the
+    mode on. Voice is process-global (one microphone), so there's only ever
+    one sid to target; the TUI handler treats an empty sid as "active
+    session". Kept separate from _emit to make the lack of per-call sid
+    argument explicit."""
+    with _voice_sid_lock:
+        sid = _voice_event_sid
+    _emit(event, sid, payload)
+
+
+def _voice_mode_enabled() -> bool:
+    """Current voice-mode flag (runtime-only, CLI parity).
+
+    cli.py initialises ``_voice_mode = False`` at startup and only flips
+    it via ``/voice on``; it never reads a persisted enable bit from
+    config.yaml.  We match that: no config lookup, env var only.  This
+    avoids the TUI auto-starting in REC the next time the user opens it
+    just because they happened to enable voice in a prior session.
+    """
+    return os.environ.get("HERMES_VOICE", "").strip() == "1"
+
+
+def _voice_tts_enabled() -> bool:
+    """Whether agent replies should be spoken back via TTS (runtime only)."""
+    return os.environ.get("HERMES_VOICE_TTS", "").strip() == "1"
+
+
+def _voice_cfg_dict() -> dict:
+    """Shape-safe accessor for the ``voice:`` block in config.yaml.
+
+    ``_load_cfg()`` returns raw ``yaml.safe_load()`` output, so both the
+    root AND ``voice`` may be any YAML scalar / list / None. A hand-edit
+    like ``voice: true`` or a malformed top-level config that parses to
+    a scalar would otherwise break ``.get("…")`` and take every
+    ``voice.*`` branch down with it (Copilot round-3..7 review on
+    #19835). Coerce through ``isinstance`` at every level so malformed
+    config falls back to an empty dict instead of crashing /voice.
+    """
+    cfg = _load_cfg()
+    voice_cfg = cfg.get("voice") if isinstance(cfg, dict) else None
+
+    return voice_cfg if isinstance(voice_cfg, dict) else {}
+
+
+def _voice_record_key() -> str:
+    """Current ``voice.record_key`` value, documented default on error."""
+    record_key = _voice_cfg_dict().get("record_key")
+
+    return str(record_key) if isinstance(record_key, str) and record_key else "ctrl+b"
+
+
+@method("voice.toggle")
+def _(rid, params: dict) -> dict:
+    """CLI parity for the ``/voice`` slash command.
+
+    Subcommands:
+
+    * ``status`` — report mode + TTS flags (default when action is unknown).
+    * ``on`` / ``off`` — flip voice *mode* (the umbrella bit). Turning it
+      off also tears down any active continuous recording loop. Does NOT
+      start recording on its own; recording is driven by ``voice.record``
+      (Ctrl+B) after mode is on, matching cli.py's enable/Ctrl+B split.
+    * ``tts`` — toggle speech-output of agent replies. Requires mode on
+      (mirrors CLI's _toggle_voice_tts guard).
+    """
+    action = params.get("action", "status")
+
+    if action == "status":
+        # Mirror CLI's _show_voice_status: include STT/TTS provider
+        # availability so the user can tell at a glance *why* voice mode
+        # isn't working ("STT provider: MISSING ..." is the common case).
+        # ``record_key`` mirrors the configured ``voice.record_key`` so the
+        # TUI can both bind it (frontend ``isVoiceToggleKey``) and display
+        # it in /voice status — previously the TUI hardcoded Ctrl+B and
+        # ignored the config (#18994).
+        payload: dict = {
+            "enabled": _voice_mode_enabled(),
+            "record_key": _voice_record_key(),
+            "tts": _voice_tts_enabled(),
+        }
+        try:
+            from tools.voice_mode import check_voice_requirements
+
+            reqs = check_voice_requirements()
+            payload["available"] = bool(reqs.get("available"))
+            payload["audio_available"] = bool(reqs.get("audio_available"))
+            payload["stt_available"] = bool(reqs.get("stt_available"))
+            payload["details"] = reqs.get("details") or ""
+        except Exception as e:
+            # check_voice_requirements pulls optional transcription deps —
+            # swallow so /voice status always returns something useful.
+            logger.warning("voice.toggle status: requirements probe failed: %s", e)
+
+        return _ok(rid, payload)
+
+    if action in {"on", "off"}:
+        enabled = action == "on"
+        # Runtime-only flag (CLI parity) — no _write_config_key, so the
+        # next TUI launch starts with voice OFF instead of auto-REC from a
+        # persisted stale toggle.
+        os.environ["HERMES_VOICE"] = "1" if enabled else "0"
+
+        if not enabled:
+            # Disabling the mode must tear the continuous loop down; the
+            # loop holds the microphone and would otherwise keep running.
+            try:
+                from hermes_cli.voice import stop_continuous
+
+                stop_continuous()
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.warning("voice: stop_continuous failed during toggle off: %s", e)
+
+            # Clear TTS so it can be toggled independently after voice is off.
+            os.environ["HERMES_VOICE_TTS"] = "0"
+
+        return _ok(
+            rid,
+            {
+                "enabled": enabled,
+                "record_key": _voice_record_key(),
+                "tts": _voice_tts_enabled(),
+            },
+        )
+
+    if action == "tts":
+        if not _voice_mode_enabled():
+            return _err(rid, 4014, "enable voice mode first: /voice on")
+        new_value = not _voice_tts_enabled()
+        # Runtime-only flag (CLI parity) — see voice.toggle on/off above.
+        os.environ["HERMES_VOICE_TTS"] = "1" if new_value else "0"
+        # Include ``record_key`` on every branch so a /voice tts toggle
+        # doesn't reset the TUI's cached shortcut to the default when a
+        # user has a custom binding configured (Copilot review, round 2
+        # on #19835). Keeps parity with the status/on/off branches above.
+        return _ok(
+            rid,
+            {
+                "enabled": True,
+                "record_key": _voice_record_key(),
+                "tts": new_value,
+            },
+        )
+
+    return _err(rid, 4013, f"unknown voice action: {action}")
+
+
+@method("voice.record")
+def _(rid, params: dict) -> dict:
+    """VAD-bounded push-to-talk capture, CLI-parity.
+
+    ``start`` begins one VAD-bounded capture and emits ``voice.transcript``
+    after silence stops the recorder. ``stop`` forces transcription of the
+    active buffer, matching classic CLI push-to-talk. The voice wrapper retains
+    no-speech counts across single-shot starts, so three consecutive silent
+    captures emit ``voice.transcript`` with ``no_speech_limit=True``.
+    """
+    action = params.get("action", "start")
+
+    if action not in {"start", "stop"}:
+        return _err(rid, 4019, f"unknown voice action: {action}")
+
+    try:
+        if action == "start":
+            if not _voice_mode_enabled():
+                return _err(rid, 4015, "voice mode is off — enable with /voice on")
+
+            with _voice_sid_lock:
+                global _voice_event_sid
+                _voice_event_sid = params.get("session_id") or _voice_event_sid
+
+            from hermes_cli.voice import start_continuous
+
+            # Shape-safe lookups: malformed ``voice:`` YAML (bool/scalar/list)
+            # must not crash /voice with a 5025 — fall back to VAD defaults.
+            #
+            # Exclude ``bool`` from the numeric check since Python's bool is
+            # a subclass of int — a hand-edit like ``silence_threshold: true``
+            # would otherwise forward as ``1`` instead of falling back to
+            # the documented 200 / 3.0 defaults (Copilot round-12 on #19835).
+            voice_cfg = _voice_cfg_dict()
+            threshold = voice_cfg.get("silence_threshold")
+            duration = voice_cfg.get("silence_duration")
+            safe_threshold = (
+                threshold
+                if isinstance(threshold, (int, float))
+                and not isinstance(threshold, bool)
+                else 200
+            )
+            safe_duration = (
+                duration
+                if isinstance(duration, (int, float)) and not isinstance(duration, bool)
+                else 3.0
+            )
+            started = start_continuous(
+                on_transcript=lambda t: _voice_emit("voice.transcript", {"text": t}),
+                on_status=lambda s: _voice_emit("voice.status", {"state": s}),
+                on_silent_limit=lambda: _voice_emit(
+                    "voice.transcript", {"no_speech_limit": True}
+                ),
+                silence_threshold=safe_threshold,
+                silence_duration=safe_duration,
+                auto_restart=False,
+            )
+            if started is False:
+                return _ok(rid, {"status": "busy"})
+            return _ok(rid, {"status": "recording"})
+
+        # action == "stop"
+        with _voice_sid_lock:
+            _voice_event_sid = params.get("session_id") or _voice_event_sid
+
+        from hermes_cli.voice import stop_continuous
+
+        stop_continuous(force_transcribe=True)
+        return _ok(rid, {"status": "stopped"})
+    except ImportError:
+        return _err(
+            rid, 5025, "voice module not available — install audio dependencies"
+        )
+    except Exception as e:
+        return _err(rid, 5025, str(e))
+
+
+@method("voice.tts")
+def _(rid, params: dict) -> dict:
+    text = params.get("text", "")
+    if not text:
+        return _err(rid, 4020, "text required")
+    try:
+        from hermes_cli.voice import speak_text
+
+        threading.Thread(target=speak_text, args=(text,), daemon=True).start()
+        return _ok(rid, {"status": "speaking"})
+    except ImportError:
+        return _err(rid, 5026, "voice module not available")
+    except Exception as e:
+        return _err(rid, 5026, str(e))
+
+
+# ── Methods: insights ────────────────────────────────────────────────
+
+
+@method("insights.get")
+def _(rid, params: dict) -> dict:
+    days = params.get("days", 30)
+    db = _get_db()
+    if db is None:
+        return _db_unavailable_error(rid, code=5017)
+    try:
+        cutoff = time.time() - days * 86400
+        rows = [
+            s
+            for s in db.list_sessions_rich(limit=500)
+            if (s.get("started_at") or 0) >= cutoff
+        ]
+        return _ok(
+            rid,
+            {
+                "days": days,
+                "sessions": len(rows),
+                "messages": sum(s.get("message_count", 0) for s in rows),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5017, str(e))
+
+
+# ── Methods: rollback ────────────────────────────────────────────────
+
+
+@method("rollback.list")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    try:
+
+        def go(mgr, cwd):
+            if not mgr.enabled:
+                return _ok(rid, {"enabled": False, "checkpoints": []})
+            return _ok(
+                rid,
+                {
+                    "enabled": True,
+                    "checkpoints": [
+                        {
+                            "hash": c.get("hash", ""),
+                            "timestamp": c.get("timestamp", ""),
+                            "message": c.get("message", ""),
+                        }
+                        for c in mgr.list_checkpoints(cwd)
+                    ],
+                },
+            )
+
+        return _with_checkpoints(session, go)
+    except Exception as e:
+        return _err(rid, 5020, str(e))
+
+
+@method("rollback.restore")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    target = params.get("hash", "")
+    file_path = params.get("file_path", "")
+    if not target:
+        return _err(rid, 4014, "hash required")
+    # Full-history rollback mutates session history.  Rejecting during
+    # an in-flight turn prevents prompt.submit from silently dropping
+    # the agent's output (version mismatch path) or clobbering the
+    # rollback (version-matches path).  A file-scoped rollback only
+    # touches disk, so we allow it.
+    if not file_path and session.get("running"):
+        return _err(
+            rid,
+            4009,
+            "session busy — /interrupt the current turn before full rollback.restore",
+        )
+    try:
+
+        def go(mgr, cwd):
+            resolved = _resolve_checkpoint_hash(mgr, cwd, target)
+            result = mgr.restore(cwd, resolved, file_path=file_path or None)
+            if result.get("success") and not file_path:
+                removed = 0
+                with session["history_lock"]:
+                    history = session.get("history", [])
+                    while history and history[-1].get("role") in {"assistant", "tool"}:
+                        history.pop()
+                        removed += 1
+                    if history and history[-1].get("role") == "user":
+                        history.pop()
+                        removed += 1
+                    if removed:
+                        session["history_version"] = (
+                            int(session.get("history_version", 0)) + 1
+                        )
+                result["history_removed"] = removed
+            return result
+
+        return _ok(rid, _with_checkpoints(session, go))
+    except Exception as e:
+        return _err(rid, 5021, str(e))
+
+
+@method("rollback.diff")
+def _(rid, params: dict) -> dict:
+    session, err = _sess(params, rid)
+    if err:
+        return err
+    target = params.get("hash", "")
+    if not target:
+        return _err(rid, 4014, "hash required")
+    try:
+        r = _with_checkpoints(
+            session,
+            lambda mgr, cwd: mgr.diff(cwd, _resolve_checkpoint_hash(mgr, cwd, target)),
+        )
+        raw = r.get("diff", "")[:4000]
+        payload = {"stat": r.get("stat", ""), "diff": raw}
+        rendered = render_diff(raw, session.get("cols", 80))
+        if rendered:
+            payload["rendered"] = rendered
+        return _ok(rid, payload)
+    except Exception as e:
+        return _err(rid, 5022, str(e))
+
+
+# ── Methods: browser / plugins / cron / skills ───────────────────────
+
+
+def _resolve_browser_cdp_url() -> str:
+    """Return the configured browser CDP override without network I/O.
+
+    ``/browser status`` must be fast — calling
+    ``tools.browser_tool._get_cdp_override`` would invoke
+    ``_resolve_cdp_override``, which performs an HTTP probe to
+    ``.../json/version`` for discovery-style URLs.  That probe has
+    a multi-second timeout and would block the TUI on a slow or
+    unreachable host even though status only needs to report whether
+    an override is set.
+
+    Mirrors the env/config precedence of ``_get_cdp_override`` (env
+    var first, then ``browser.cdp_url`` from config.yaml) without the
+    websocket-resolution step, so the answer reflects user intent
+    even when the configured host is not currently reachable.  The
+    actual WS normalization happens in ``browser_navigate`` on the
+    next tool call.
+    """
+    env_url = os.environ.get("BROWSER_CDP_URL", "").strip()
+    if env_url:
+        return env_url
+    try:
+        from hermes_cli.config import read_raw_config
+
+        cfg = read_raw_config()
+        browser_cfg = cfg.get("browser", {}) if isinstance(cfg, dict) else {}
+        if isinstance(browser_cfg, dict):
+            return str(browser_cfg.get("cdp_url", "") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _is_default_local_cdp(parsed) -> bool:
+    """Match the discovery-style local default; never the concrete WS form.
+
+    A user-supplied ``ws://127.0.0.1:9222/devtools/browser/<id>`` is a
+    real, connectable endpoint — collapsing it to bare ``http://...:9222``
+    would strip the path and break the connect.
+    """
+    try:
+        port = parsed.port or 80
+    except ValueError:
+        return False
+
+    discovery_path = parsed.path in {"", "/", "/json", "/json/version"}
+    return (
+        parsed.scheme in {"http", "ws"}
+        and parsed.hostname in {"127.0.0.1", "localhost"}
+        and port == 9222
+        and discovery_path
+    )
+
+
+def _http_ok(url: str, timeout: float) -> bool:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return 200 <= getattr(resp, "status", 200) < 300
+    except Exception:
+        return False
+
+
+def _probe_urls(parsed) -> list[str]:
+    scheme = {"ws": "http", "wss": "https"}.get(parsed.scheme, parsed.scheme)
+    root = f"{scheme}://{parsed.netloc}".rstrip("/")
+    return [f"{root}/json/version", f"{root}/json"]
+
+
+def _normalize_cdp_url(parsed) -> str:
+    # Concrete ``/devtools/browser/<id>`` endpoints (Browserbase et al.)
+    # are connectable as-is. Discovery-style inputs collapse to bare
+    # ``scheme://host:port`` so ``_resolve_cdp_override`` can append
+    # ``/json/version`` later without doubling the path.
+    if parsed.path.startswith("/devtools/browser/"):
+        return parsed.geturl()
+    return parsed._replace(path="", params="", query="", fragment="").geturl()
+
+
+def _failure_messages(url: str, port: int, system: str) -> list[str]:
+    from hermes_cli.browser_connect import manual_chrome_debug_command
+
+    command = manual_chrome_debug_command(port, system)
+    hint = (
+        ["Start a Chromium-family browser with remote debugging, then retry /browser connect:", command]
+        if command
+        else [
+            "No supported Chromium-family browser executable was found in this environment.",
+            f"Install one or start a Chromium-family browser with --remote-debugging-port={port}, then retry /browser connect.",
+        ]
+    )
+    return [
+        f"Browser CDP is not reachable at {url}.",
+        *hint,
+        "Browser not connected — start a Chromium-family browser with remote debugging and retry /browser connect",
+    ]
+
+
+@method("browser.manage")
+def _(rid, params: dict) -> dict:
+    action = params.get("action", "status")
+
+    if action == "status":
+        url = _resolve_browser_cdp_url()
+        return _ok(rid, {"connected": bool(url), "url": url})
+
+    if action == "disconnect":
+        return _browser_disconnect(rid)
+
+    if action != "connect":
+        return _err(rid, 4015, f"unknown action: {action}")
+
+    return _browser_connect(rid, params)
+
+
+def _browser_connect(rid, params: dict) -> dict:
+    import platform
+
+    from hermes_cli.browser_connect import DEFAULT_BROWSER_CDP_URL
+    from tools.browser_tool import cleanup_all_browsers
+    from urllib.parse import urlparse
+
+    raw_url = params.get("url")
+    if raw_url is not None and not isinstance(raw_url, str):
+        return _err(
+            rid, 4015, f"browser url must be a string, got {type(raw_url).__name__}"
+        )
+    url = (raw_url or "").strip() or DEFAULT_BROWSER_CDP_URL
+
+    sid = params.get("session_id") or ""
+    system = platform.system()
+    messages: list[str] = []
+
+    def announce(message: str, *, level: str = "info") -> None:
+        messages.append(message)
+        # Without a session id the TUI prints `messages` from the
+        # response; emitting an event would double-render. Only stream
+        # progress when there's a real session to scope it to.
+        if sid:
+            _emit("browser.progress", sid, {"message": message, "level": level})
+
+    parsed = urlparse(url if "://" in url else f"http://{url}")
+    if parsed.scheme not in {"http", "https", "ws", "wss"}:
+        return _err(rid, 4015, f"unsupported browser url: {url}")
+    if not parsed.hostname:
+        return _err(rid, 4015, f"missing host in browser url: {url}")
+    try:
+        port = parsed.port or (443 if parsed.scheme in {"https", "wss"} else 80)
+    except ValueError:
+        return _err(rid, 4015, f"invalid port in browser url: {url}")
+
+    # Always normalize default-local to 127.0.0.1:9222 so downstream
+    # comparisons + messaging match what we'll actually persist.
+    if _is_default_local_cdp(parsed):
+        url = DEFAULT_BROWSER_CDP_URL
+        parsed = urlparse(url)
+        port = parsed.port or 9222
+
+    try:
+        # ws[s]://.../devtools/browser/<id> endpoints (hosted CDP
+        # providers) don't serve the HTTP discovery path; just check
+        # TCP-level reachability and let browser_navigate handshake.
+        if parsed.scheme in {"ws", "wss"} and parsed.path.startswith(
+            "/devtools/browser/"
+        ):
+            import socket
+
+            try:
+                with socket.create_connection((parsed.hostname, port), timeout=2.0):
+                    pass
+            except OSError as e:
+                return _err(rid, 5031, f"could not reach browser CDP at {url}: {e}")
+        else:
+            probes = _probe_urls(parsed)
+            ok = any(_http_ok(p, timeout=2.0) for p in probes)
+
+            if not ok and _is_default_local_cdp(parsed):
+                from hermes_cli.browser_connect import try_launch_chrome_debug
+
+                announce(
+                    "Chromium-family browser isn't running with remote debugging — attempting to launch..."
+                )
+
+                if try_launch_chrome_debug(port, system):
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        if any(_http_ok(p, timeout=1.0) for p in probes):
+                            ok = True
+                            break
+
+                if ok:
+                    announce(f"Chromium-family browser launched and listening on port {port}")
+                else:
+                    for line in _failure_messages(url, port, system)[1:]:
+                        announce(line, level="error")
+                    return _ok(
+                        rid, {"connected": False, "url": url, "messages": messages}
+                    )
+            elif not ok:
+                return _err(rid, 5031, f"could not reach browser CDP at {url}")
+            elif _is_default_local_cdp(parsed):
+                announce(f"Chromium-family browser is already listening on port {port}")
+
+        normalized = _normalize_cdp_url(parsed)
+
+        # Order matters: reap sessions BEFORE publishing the new env
+        # so an in-flight tool call sees the old supervisor closed,
+        # then again AFTER so the default task's cached supervisor
+        # is drained against the new URL.
+        cleanup_all_browsers()
+        os.environ["BROWSER_CDP_URL"] = normalized
+        cleanup_all_browsers()
+    except Exception as e:
+        return _err(rid, 5031, str(e))
+
+    payload: dict[str, object] = {"connected": True, "url": normalized}
+    if messages:
+        payload["messages"] = messages
+    return _ok(rid, payload)
+
+
+def _browser_disconnect(rid) -> dict:
+    # Reap, drop the env override, reap again — closes the same swap
+    # window covered by ``_browser_connect``.
+    def reap() -> None:
+        try:
+            from tools.browser_tool import cleanup_all_browsers
+
+            cleanup_all_browsers()
+        except Exception:
+            pass
+
+    reap()
+    os.environ.pop("BROWSER_CDP_URL", None)
+    reap()
+    return _ok(rid, {"connected": False})
+
+
+@method("plugins.list")
+def _(rid, params: dict) -> dict:
+    try:
+        from hermes_cli.plugins import get_plugin_manager
+
+        return _ok(
+            rid,
+            {
+                "plugins": [
+                    {
+                        "name": n,
+                        "version": getattr(i, "version", "?"),
+                        "enabled": getattr(i, "enabled", True),
+                    }
+                    for n, i in get_plugin_manager()._plugins.items()
+                ]
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5032, str(e))
+
+
+@method("config.show")
+def _(rid, params: dict) -> dict:
+    try:
+        cfg = _load_cfg()
+        model = _resolve_model()
+        api_key = os.environ.get("HERMES_API_KEY", "") or cfg.get("api_key", "")
+        masked = f"****{api_key[-4:]}" if len(api_key) > 4 else "(not set)"
+        base_url = os.environ.get("HERMES_BASE_URL", "") or cfg.get("base_url", "")
+
+        sections = [
+            {
+                "title": "Model",
+                "rows": [
+                    ["Model", model],
+                    ["Base URL", base_url or "(default)"],
+                    ["API Key", masked],
+                ],
+            },
+            {
+                "title": "Agent",
+                "rows": [
+                    ["Max Turns", str(_cfg_max_turns(cfg, 90))],
+                    ["Toolsets", ", ".join(cfg.get("enabled_toolsets", [])) or "all"],
+                    ["Verbose", str(cfg.get("verbose", False))],
+                ],
+            },
+            {
+                "title": "Environment",
+                "rows": [
+                    ["Working Dir", os.getcwd()],
+                    ["Config File", str(_hermes_home / "config.yaml")],
+                ],
+            },
+        ]
+        return _ok(rid, {"sections": sections})
+    except Exception as e:
+        return _err(rid, 5030, str(e))
+
+
+@method("tools.list")
+def _(rid, params: dict) -> dict:
+    try:
+        from toolsets import get_all_toolsets, get_toolset_info
+
+        session = _sessions.get(params.get("session_id", ""))
+        enabled = (
+            set(getattr(session["agent"], "enabled_toolsets", []) or [])
+            if session
+            else set(_load_enabled_toolsets() or [])
+        )
+
+        items = []
+        for name in sorted(get_all_toolsets().keys()):
+            info = get_toolset_info(name)
+            if not info:
+                continue
+            items.append(
+                {
+                    "name": name,
+                    "description": info["description"],
+                    "tool_count": info["tool_count"],
+                    "enabled": name in enabled if enabled else True,
+                    "tools": info["resolved_tools"],
+                }
+            )
+        return _ok(rid, {"toolsets": items})
+    except Exception as e:
+        return _err(rid, 5031, str(e))
+
+
+@method("tools.show")
+def _(rid, params: dict) -> dict:
+    try:
+        from model_tools import get_toolset_for_tool, get_tool_definitions
+
+        session = _sessions.get(params.get("session_id", ""))
+        enabled = (
+            getattr(session["agent"], "enabled_toolsets", None)
+            if session
+            else _load_enabled_toolsets()
+        )
+        tools = get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)
+        sections = {}
+
+        for tool in sorted(tools, key=lambda t: t["function"]["name"]):
+            name = tool["function"]["name"]
+            desc = str(tool["function"].get("description", "") or "").split("\n")[0]
+            if ". " in desc:
+                desc = desc[: desc.index(". ") + 1]
+            sections.setdefault(get_toolset_for_tool(name) or "unknown", []).append(
+                {
+                    "name": name,
+                    "description": desc,
+                }
+            )
+
+        return _ok(
+            rid,
+            {
+                "sections": [
+                    {"name": name, "tools": rows}
+                    for name, rows in sorted(sections.items())
+                ],
+                "total": len(tools),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5034, str(e))
+
+
+@method("tools.configure")
+def _(rid, params: dict) -> dict:
+    action = str(params.get("action", "") or "").strip().lower()
+    targets = [
+        str(name).strip() for name in params.get("names", []) or [] if str(name).strip()
+    ]
+    if action not in {"disable", "enable"}:
+        return _err(rid, 4017, f"unknown tools action: {action}")
+    if not targets:
+        return _err(rid, 4018, "names required")
+
+    try:
+        from hermes_cli.config import load_config, save_config
+        from hermes_cli.tools_config import (
+            CONFIGURABLE_TOOLSETS,
+            _apply_mcp_change,
+            _apply_toolset_change,
+            _get_platform_tools,
+            _get_plugin_toolset_keys,
+        )
+
+        cfg = load_config()
+        valid_toolsets = {
+            ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS
+        } | _get_plugin_toolset_keys()
+        toolset_targets = [name for name in targets if ":" not in name]
+        mcp_targets = [name for name in targets if ":" in name]
+        unknown = [name for name in toolset_targets if name not in valid_toolsets]
+        toolset_targets = [name for name in toolset_targets if name in valid_toolsets]
+
+        if toolset_targets:
+            _apply_toolset_change(cfg, "cli", toolset_targets, action)
+
+        missing_servers = (
+            _apply_mcp_change(cfg, mcp_targets, action) if mcp_targets else set()
+        )
+        save_config(cfg)
+
+        session = _sessions.get(params.get("session_id", ""))
+        info = (
+            _reset_session_agent(params.get("session_id", ""), session)
+            if session
+            else None
+        )
+        enabled = sorted(
+            _get_platform_tools(load_config(), "cli", include_default_mcp_servers=False)
+        )
+        changed = [
+            name
+            for name in targets
+            if name not in unknown
+            and (":" not in name or name.split(":", 1)[0] not in missing_servers)
+        ]
+
+        return _ok(
+            rid,
+            {
+                "changed": changed,
+                "enabled_toolsets": enabled,
+                "info": info,
+                "missing_servers": sorted(missing_servers),
+                "reset": bool(session),
+                "unknown": unknown,
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5035, str(e))
+
+
+@method("toolsets.list")
+def _(rid, params: dict) -> dict:
+    try:
+        from toolsets import get_all_toolsets, get_toolset_info
+
+        session = _sessions.get(params.get("session_id", ""))
+        enabled = (
+            set(getattr(session["agent"], "enabled_toolsets", []) or [])
+            if session
+            else set(_load_enabled_toolsets() or [])
+        )
+
+        items = []
+        for name in sorted(get_all_toolsets().keys()):
+            info = get_toolset_info(name)
+            if not info:
+                continue
+            items.append(
+                {
+                    "name": name,
+                    "description": info["description"],
+                    "tool_count": info["tool_count"],
+                    "enabled": name in enabled if enabled else True,
+                }
+            )
+        return _ok(rid, {"toolsets": items})
+    except Exception as e:
+        return _err(rid, 5032, str(e))
+
+
+@method("agents.list")
+def _(rid, params: dict) -> dict:
+    try:
+        from tools.process_registry import process_registry
+
+        procs = process_registry.list_sessions()
+        return _ok(
+            rid,
+            {
+                "processes": [
+                    {
+                        "session_id": p["session_id"],
+                        "command": p["command"][:80],
+                        "status": p["status"],
+                        "uptime": p["uptime_seconds"],
+                    }
+                    for p in procs
+                ]
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5033, str(e))
+
+
+@method("cron.manage")
+def _(rid, params: dict) -> dict:
+    action, jid = params.get("action", "list"), params.get("name", "")
+    try:
+        from tools.cronjob_tools import cronjob
+
+        if action == "list":
+            return _ok(rid, json.loads(cronjob(action="list")))
+        if action == "add":
+            return _ok(
+                rid,
+                json.loads(
+                    cronjob(
+                        action="create",
+                        name=jid,
+                        schedule=params.get("schedule", ""),
+                        prompt=params.get("prompt", ""),
+                    )
+                ),
+            )
+        if action in {"remove", "pause", "resume"}:
+            return _ok(rid, json.loads(cronjob(action=action, job_id=jid)))
+        return _err(rid, 4016, f"unknown cron action: {action}")
+    except Exception as e:
+        return _err(rid, 5023, str(e))
+
+
+@method("skills.manage")
+def _(rid, params: dict) -> dict:
+    action, query = params.get("action", "list"), params.get("query", "")
+    try:
+        if action == "list":
+            from hermes_cli.banner import get_available_skills
+
+            return _ok(rid, {"skills": get_available_skills()})
+        if action == "search":
+            from tools.skills_hub import (
+                GitHubAuth,
+                create_source_router,
+                unified_search,
+            )
+
+            raw = (
+                unified_search(
+                    query,
+                    create_source_router(GitHubAuth()),
+                    source_filter="all",
+                    limit=20,
+                )
+                or []
+            )
+            return _ok(
+                rid,
+                {
+                    "results": [
+                        {"name": r.name, "description": r.description} for r in raw
+                    ]
+                },
+            )
+        if action == "install":
+            from hermes_cli.skills_hub import do_install
+
+            class _Q:
+                def print(self, *a, **k):
+                    pass
+
+            do_install(query, skip_confirm=True, console=_Q())
+            return _ok(rid, {"installed": True, "name": query})
+        if action == "browse":
+            from hermes_cli.skills_hub import browse_skills
+
+            pg = int(params.get("page", 0) or 0) or (
+                int(query) if query.isdigit() else 1
+            )
+            return _ok(
+                rid, browse_skills(page=pg, page_size=int(params.get("page_size", 20)))
+            )
+        if action == "inspect":
+            from hermes_cli.skills_hub import inspect_skill
+
+            return _ok(rid, {"info": inspect_skill(query) or {}})
+        return _err(rid, 4017, f"unknown skills action: {action}")
+    except Exception as e:
+        return _err(rid, 5024, str(e))
+
+
+@method("skills.reload")
+def _(rid, params: dict) -> dict:
+    try:
+        from agent.skill_commands import reload_skills
+
+        result = reload_skills()
+        added = result.get("added") or []
+        removed = result.get("removed") or []
+        total = int(result.get("total") or 0)
+
+        lines = ["Reloading skills..."]
+        if not added and not removed:
+            lines.append("No new skills detected.")
+        if added:
+            lines.append("Added skills:")
+            lines.extend(f"  - {item.get('name', '')}" for item in added)
+        if removed:
+            lines.append("Removed skills:")
+            lines.extend(f"  - {item.get('name', '')}" for item in removed)
+        lines.append(f"{total} skill(s) available")
+        return _ok(rid, {"output": "\n".join(lines), "result": result})
+    except Exception as e:
+        return _err(rid, 5025, str(e))
+
+
+# ── Methods: shell ───────────────────────────────────────────────────
+
+
+@method("shell.exec")
+def _(rid, params: dict) -> dict:
+    cmd = params.get("command", "")
+    if not cmd:
+        return _err(rid, 4004, "empty command")
+    try:
+        from tools.approval import detect_dangerous_command
+
+        is_dangerous, _, desc = detect_dangerous_command(cmd)
+        if is_dangerous:
+            return _err(
+                rid, 4005, f"blocked: {desc}. Use the agent for dangerous commands."
+            )
+    except ImportError:
+        pass
+    try:
+        r = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=30, cwd=os.getcwd()
+        )
+        return _ok(
+            rid,
+            {
+                "stdout": r.stdout[-4000:],
+                "stderr": r.stderr[-2000:],
+                "code": r.returncode,
+            },
+        )
+    except subprocess.TimeoutExpired:
+        return _err(rid, 5002, "command timed out (30s)")
+    except Exception as e:
+        return _err(rid, 5003, str(e))
+
+
+@method("intelligence.status")
+def _(rid, params: dict) -> dict:
+    try:
+        from agent.connectivity import get_connectivity_monitor
+        from agent.local_runtime import get_local_runtime_manager
+        from agent.self_consciousness import get_self_consciousness_engine
+        from tools.tts_tool import _check_kokoro_available
+
+        mon = get_connectivity_monitor()
+        status = mon.get_status(probe_if_stale=bool(params.get("probe", True)))
+        runtime = get_local_runtime_manager().get_status()
+        try:
+            autonomy = get_self_consciousness_engine().get_status_summary()
+        except Exception:
+            autonomy = None
+        return _ok(rid, {
+            **status,
+            "local_runtime": runtime,
+            "voice": {"kokoro_ready": _check_kokoro_available()},
+            "autonomy": autonomy,
+        })
+    except Exception as exc:
+        return _err(rid, 5030, str(exc))
+
+
+@method("intelligence.set_mode")
+def _(rid, params: dict) -> dict:
+    mode = str(params.get("mode") or "hybrid").strip().lower()
+    persist = bool(params.get("persist", True))
+    try:
+        from agent.connectivity import get_connectivity_monitor
+
+        mon = get_connectivity_monitor()
+        new_mode = mon.set_mode(mode, persist=persist)
+        status = mon.get_status(probe_if_stale=False)
+        sid = str(params.get("session_id") or "")
+        if sid:
+            _emit("intelligence.state", sid, status)
+        return _ok(rid, {"mode": new_mode, **status})
+    except Exception as exc:
+        return _err(rid, 5031, str(exc))
