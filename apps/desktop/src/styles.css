@@ -857,7 +857,7 @@ canvas {
 [data-slot='aui_assistant-message-content'] {
   padding-left: var(--message-text-indent);
   font-size: var(--conversation-text-font-size);
-  line-height: 1.5;
+  line-height: var(--dt-line-height, 1.62);
 }
 
 [data-slot='aui_assistant-message-root'] {
@@ -1013,12 +1013,17 @@ canvas {
 }
 
 [data-slot='composer-surface'] {
-  border-color: var(--ui-stroke-secondary) !important;
-  box-shadow: var(--shadow-composer) !important;
+  border-color: var(--tk-glass-border);
+  box-shadow: var(--shadow-composer);
+}
+
+[data-slot='composer-root']:focus-within [data-slot='composer-surface'] {
+  border-color: var(--tk-indigo-border);
+  box-shadow: var(--shadow-composer-focus);
 }
 
 [data-slot='composer-fade'] {
-  min-height: 2.375rem;
+  min-height: 2.5rem;
 }
 
 [data-slot='composer-rich-input'] {
