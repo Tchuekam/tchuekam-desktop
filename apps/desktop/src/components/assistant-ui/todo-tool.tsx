@@ -60,7 +60,7 @@ const Checkmark: FC<{ status: TodoStatus; label: string }> = ({ status, label })
       className={cn(
         'size-[1.1rem] shrink-0 rounded-full border-border/80 pointer-events-none disabled:cursor-default disabled:opacity-100',
         checked &&
-          'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground [&_[data-slot=checkbox-indicator]_svg]:size-3',
+          'data-[state=checked]:border-(--tk-indigo) data-[state=checked]:bg-(--tk-indigo) data-[state=checked]:text-white [&_[data-slot=checkbox-indicator]_svg]:size-3',
         status === 'cancelled' && 'border-muted-foreground/40'
       )}
       disabled
