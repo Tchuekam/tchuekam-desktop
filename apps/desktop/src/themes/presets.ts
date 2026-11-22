@@ -47,10 +47,10 @@ const NEUTRAL = {
 export const tchuekamTheme: DesktopTheme = {
   name: 'tchuekam',
   label: 'TchuekaM',
-  description: 'Neutral grayscale — calm, minimal, enterprise',
+  description: 'Midnight slate, electric indigo & frosted glass',
   colors: {
-    background: NEUTRAL[0],
-    foreground: NEUTRAL[950],
+    background: '#F8F9FC',
+    foreground: '#0F1424',
     card: NEUTRAL[0],
     cardForeground: NEUTRAL[950],
     muted: NEUTRAL[100],
