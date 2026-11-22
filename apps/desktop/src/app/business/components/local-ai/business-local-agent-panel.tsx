@@ -372,7 +372,7 @@ export function BusinessLocalAiModal() {
                     <div className="flex items-center gap-1.5">
                       {!model.installed ? (
                         <button
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+                          className="tk-btn-primary inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white disabled:opacity-50"
                           disabled={isInstalling || busyAction !== null}
                           onClick={() => void handleInstall(model.id)}
                           type="button"
@@ -381,13 +381,13 @@ export function BusinessLocalAiModal() {
                           Install
                         </button>
                       ) : model.active ? (
-                        <span className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        <span className="inline-flex h-8 items-center gap-1 rounded-xl bg-emerald-500/15 px-2.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                           <Codicon name="check" size="0.8rem" />
                           Active
                         </span>
                       ) : (
                         <button
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold hover:border-primary/50"
+                          className="inline-flex h-8 items-center gap-1 rounded-xl border border-(--tk-glass-border) bg-card px-2.5 text-xs font-semibold transition hover:border-(--tk-indigo-border)"
                           disabled={busyAction !== null}
                           onClick={() => void handleSwitchModel(model.id)}
                           type="button"
@@ -399,7 +399,7 @@ export function BusinessLocalAiModal() {
                       {model.installed && (
                         <button
                           aria-label={`Remove ${model.name}`}
-                          className="inline-flex h-8 items-center rounded-lg border border-border/70 px-2 text-xs text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+                          className="inline-flex h-8 items-center rounded-xl border border-(--tk-glass-border) px-2 text-xs text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
                           disabled={busyAction !== null || isInstalling}
                           onClick={() => void handleDeleteModel(model.id)}
                           title="Delete model file"
@@ -417,16 +417,16 @@ export function BusinessLocalAiModal() {
 
           {/* 2GB RAM Performance Tuning */}
           {status && (
-            <div className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4">
+            <div className="space-y-3 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) p-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
                 2 GB RAM Memory & Speed Tuning
               </h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs">
+                <label className="flex items-center justify-between gap-2 rounded-xl border border-(--tk-glass-border) bg-card/70 px-3 py-2 text-xs">
                   <span className="font-medium">Use Local AI for Business Hub actions</span>
                   <input
                     checked={status.config.enabled}
-                    className="size-4 accent-primary"
+                    className="size-4 accent-(--tk-indigo)"
                     onChange={event => void updateBusinessLocalAiConfig({ enabled: event.target.checked })}
                     type="checkbox"
                   />
