@@ -98,13 +98,15 @@ export const HoistedTodoPanel: FC<{ todos: TodoItem[] }> = ({ todos }) => {
             // Active row at full presence; everything else fades. Opacity on
             // the row so the checkbox glyph dims with the text.
             className={cn(
-              'flex min-w-0 items-center gap-3 py-1.5 transition-opacity',
-              todo.status === 'in_progress' ? 'opacity-100' : 'opacity-45'
+              'flex min-w-0 items-center gap-3 py-1 transition-opacity',
+              todo.status === 'in_progress' ? 'opacity-100' : 'opacity-55'
             )}
             key={todo.id}
           >
             <Checkmark label={todo.content} status={todo.status} />
-            <span className="min-w-0 wrap-anywhere text-[0.8rem] leading-[1.2rem] text-foreground">{todo.content}</span>
+            <span className="min-w-0 wrap-anywhere text-[0.8125rem] leading-[1.25rem] text-foreground">
+              {todo.content}
+            </span>
           </li>
         ))}
       </ul>
