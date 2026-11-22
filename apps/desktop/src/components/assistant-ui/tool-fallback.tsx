@@ -520,12 +520,18 @@ export const ToolGroupSlot: FC<PropsWithChildren<{ endIndex: number; startIndex:
               <FadeText
                 className={cn(
                   TOOL_HEADER_TITLE_CLASS,
+                  isRunning && 'shimmer text-foreground/75',
                   displayStatus === 'error' && 'text-destructive',
                   displayStatus === 'warning' && 'text-amber-700 dark:text-amber-300'
                 )}
               >
                 {groupTitle(visibleParts)}
               </FadeText>
+              {isRunning && (
+                <span className="shrink-0 rounded-full bg-(--tk-cyan-soft) px-1.5 py-0.5 text-[0.625rem] font-medium leading-none text-(--tk-cyan-text)">
+                  Running
+                </span>
+              )}
               {totalDurationLabel && <span className={TOOL_HEADER_DURATION_CLASS}>{totalDurationLabel}</span>}
             </span>
             {statusSummary && (
