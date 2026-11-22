@@ -411,7 +411,7 @@ export function DocumentWorkspace({
           {availableTemplates.length > 0 && (
             <select
               aria-label="Template"
-              className="h-8 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="h-8 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-foreground transition focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
               onChange={e =>
                 updateBusinessDocument(doc.id, current => ({
                   ...current,
@@ -430,7 +430,7 @@ export function DocumentWorkspace({
 
           <select
             aria-label="Document Language"
-            className="h-8 rounded-xl border border-border/70 bg-background/80 px-2.5 text-xs font-medium text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="h-8 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-2.5 text-xs font-medium text-foreground transition focus:border-(--tk-indigo) focus:outline-none focus:ring-2 focus:ring-(--tk-indigo-glow)"
             onChange={e =>
               updateBusinessDocument(doc.id, current => ({
                 ...current,
@@ -444,7 +444,7 @@ export function DocumentWorkspace({
           </select>
 
           <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) px-3 text-xs font-medium text-(--ui-text-secondary) transition hover:border-(--tk-indigo-border) hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
             disabled={!canUseAi || aiBusy !== null}
             onClick={handleTranslateDocument}
             title="Switch language and translate summary"
@@ -454,11 +454,11 @@ export function DocumentWorkspace({
             <span>AI Translate</span>
           </button>
 
-          {/* Apple-style Unified Undo/Redo Segment */}
-          <div className="inline-flex items-center rounded-xl border border-border/70 bg-background/80 p-0.5">
+          {/* Unified Undo/Redo Segment */}
+          <div className="inline-flex items-center rounded-xl border border-(--tk-glass-border) bg-(--tk-glass-subtle-bg) p-0.5">
             <button
               aria-label="Undo"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
+              className="rounded-lg p-1.5 text-(--ui-text-secondary) transition hover:bg-muted hover:text-foreground disabled:opacity-30"
               disabled={!canUndoDocument(doc.id)}
               onClick={() => void undoDocumentChange(doc.id)}
               title="Undo (⌘Z / Ctrl+Z)"
@@ -466,7 +466,7 @@ export function DocumentWorkspace({
             >
               <Codicon name="discard" size="0.85rem" />
             </button>
-            <span className="h-3.5 w-px bg-border/80" />
+            <span className="h-3.5 w-px bg-(--tk-glass-border)" />
             <button
               aria-label="Redo"
               className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-30"
