@@ -44,9 +44,9 @@ const Checkmark: FC<{ status: TodoStatus; label: string }> = ({ status, label })
     return (
       <span
         aria-label={`In progress: ${label}`}
-        className="grid size-[1.1rem] shrink-0 place-items-center rounded-full border border-ring/65 bg-[color-mix(in_srgb,var(--dt-ring)_14%,transparent)]"
+        className="grid size-[1.1rem] shrink-0 place-items-center rounded-full border border-(--tk-cyan-border) bg-(--tk-cyan-soft)"
       >
-        <Loader2Icon className="size-3 animate-spin text-ring" />
+        <Loader2Icon className="size-3 animate-spin text-(--tk-cyan)" />
       </span>
     )
   }
