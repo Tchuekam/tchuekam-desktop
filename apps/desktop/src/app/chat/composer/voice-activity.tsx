@@ -45,10 +45,10 @@ function formatElapsed(seconds: number) {
 
 function VoiceLevelBars({ level, active }: { active: boolean; level: number }) {
   const normalized = Math.max(0, Math.min(level, 1))
-  const bars = [0.5, 0.78, 1, 0.78, 0.5]
+  const bars = [0.38, 0.65, 0.88, 1, 0.88, 0.65, 0.38]
 
   return (
-    <div aria-hidden="true" className="flex h-4 items-center gap-0.5">
+    <div aria-hidden="true" className="flex h-4 items-center gap-[0.1875rem] text-(--tk-cyan)">
       {bars.map((weight, index) => {
         const height = active ? 0.25 + Math.min(0.68, normalized * weight) : 0.25
 
