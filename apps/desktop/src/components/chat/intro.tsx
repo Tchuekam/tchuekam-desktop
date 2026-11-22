@@ -42,7 +42,7 @@ const STARTERS: ReadonlyArray<{ icon: typeof IconChartBar; label: string; prompt
 function StarterCard({ icon: Icon, label, prompt }: (typeof STARTERS)[number]) {
   return (
     <button
-      className="group flex h-full cursor-pointer flex-col items-start gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors duration-150 ease-out hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="tk-glass-subtle tk-surface-hover group flex h-full cursor-pointer flex-col items-start gap-3 rounded-xl p-3.5 text-left hover:-translate-y-0.5 hover:border-(--tk-indigo-border) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--tk-indigo-border)"
       onClick={() => {
         requestComposerInsert(prompt, { mode: 'inline', target: 'main' })
         requestComposerFocus('main')
