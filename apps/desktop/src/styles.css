@@ -1104,21 +1104,23 @@ canvas {
 }
 
 /* Tool / thinking blocks are scaffolding around the model's reply, so we
-   keep them transparent and fade them slightly. The reading column (prose)
-   stays at full strength; scaffolding lifts back to full opacity on
-   hover/focus so it stays legible when the user actually wants to read it. */
+   keep them subtly recessed until hovered, focused, or expanded. */
 [data-slot='tool-block'],
 [data-slot='aui_thinking-disclosure'] {
   background: transparent !important;
 }
 
 [data-slot='aui_assistant-message-content'] > :is([data-slot='tool-block'], [data-slot='aui_thinking-disclosure']) {
-  opacity: 0.67;
-  transition: opacity 120ms ease-out;
+  opacity: 0.86;
+  transition: opacity 150ms ease-out;
 }
 
 [data-slot='aui_assistant-message-content']
-  > :is([data-slot='tool-block'], [data-slot='aui_thinking-disclosure']):is(:hover, :focus-within) {
+  > :is([data-slot='tool-block'], [data-slot='aui_thinking-disclosure']):is(
+    :hover,
+    :focus-within,
+    :has([aria-expanded='true'])
+  ) {
   opacity: 1;
 }
 
