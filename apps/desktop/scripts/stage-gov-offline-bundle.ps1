@@ -153,7 +153,7 @@ if (Test-Path $offlineModels) {
 Write-Host "      Offline models seeded (Business Local AI GGUF + llama-server + Kokoro TTS)."
 
 if ($SkipInstallerExecution) {
-  Write-Host "[4/4] SkipInstallerExecution set — offline model seeding complete."
+  Write-Host "[4/4] SkipInstallerExecution set -- offline model seeding complete."
   exit 0
 }
 
