@@ -65,8 +65,20 @@ async function stampExeIdentity(exe, desktopRoot = path.resolve(__dirname, '..')
   console.log(`[set-exe-identity] stamping ${exe}`)
   console.log(`[set-exe-identity] icon: ${icon}`)
 
+  const pkgPath = path.join(desktopRoot, 'package.json')
+  let pkgVersion = '0.15.3'
+  if (fs.existsSync(pkgPath)) {
+    try {
+      pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version || pkgVersion
+    } catch {
+      // keep fallback version
+    }
+  }
+
   await rcedit(exe, {
     icon,
+    'file-version': pkgVersion,
+    'product-version': pkgVersion,
     'version-string': {
       ProductName: 'TchuekaM',
       FileDescription: 'TchuekaM',
