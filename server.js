@@ -1,6 +1,25 @@
 /**
- * Tchuekam Agent Backend - Private AI Assistant API & WebSocket Gateway
- * Production Entry Point
+ * Tchuekam Agent — minimal HTTP/WebSocket edge shim.
+ *
+ * NOT THE API. This file serves exactly four things: /healthz, /health,
+ * /api/v1/status, and a WebSocket upgrade on /ws and /events that emits a
+ * "gateway:ready" frame. Every other path returns 404. It has no
+ * authentication, no users, no RBAC, no organizations, and it never opens a
+ * database connection — it only TCP-pings DATABASE_URL for the health check.
+ *
+ * The real multi-tenant API is the Python FastAPI application in
+ * tchuekam_backend/ (auth, RBAC, organizations, workspaces, teams,
+ * invitations, API keys, files, audit). Serve it with:
+ *
+ *     gunicorn -c gunicorn.conf.py tchuekam_backend.main:app
+ *
+ * render.yaml used to deploy THIS file as "tchuekam-agent-api" via
+ * `npm run start:prod`, so a deploy from that blueprint came up reporting
+ * healthy with no API behind it. All deploy descriptors now point at the
+ * Python app; see docs/CAPACITY.md.
+ *
+ * Keep this shim only for a deliberately dependency-free health/WS endpoint.
+ * Do not add API routes here — they belong in tchuekam_backend/.
  */
 
 import http from 'http';

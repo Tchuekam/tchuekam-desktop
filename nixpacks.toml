@@ -1,3 +1,13 @@
+# Nixpacks build for the TchueKAM SaaS API (tchuekam_backend, FastAPI).
+#
+# The start command previously launched `hermes_cli.main dashboard` — the
+# single-operator desktop dashboard, which spawns a PTY-backed TUI per session
+# and never served the multi-tenant API. See Procfile for the same correction.
+#
+# `scripts/db_migrate.py` wraps `alembic upgrade head` in a Postgres advisory
+# lock, so running it from every instance's start command is safe: one
+# instance migrates, the others wait and then boot on the migrated schema.
+
 [phases.setup]
 nixPkgs = ["python311", "nodejs_22", "ffmpeg", "ripgrep", "git"]
 
@@ -7,4 +17,4 @@ cmds = [
 ]
 
 [start]
-cmd = "sh -c 'INSECURE=\"\"; case \"${HERMES_DASHBOARD_INSECURE:-}\" in 1|true|TRUE|yes|YES) INSECURE=\"--insecure\" ;; esac; exec python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --skip-build --no-open $INSECURE'"
+cmd = "python scripts/db_migrate.py && gunicorn -c gunicorn.conf.py tchuekam_backend.main:app"

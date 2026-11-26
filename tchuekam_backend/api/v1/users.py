@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from tchuekam_backend.core.database import get_db
+from tchuekam_backend.core.realtime import notify_sessions_revoked
 from tchuekam_backend.domain.models import User
 from tchuekam_backend.domain.schemas import (
     ChangePasswordSchema,
@@ -87,4 +88,8 @@ def revoke_device_session(
     if not target_session or target_session.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appareil/Session non trouvé.")
     session_repo.revoke_session(session_id)
+    # Prévient les autres onglets / appareils de l'utilisateur, qui peuvent
+    # ainsi se déconnecter immédiatement au lieu d'attendre leur prochain
+    # appel authentifié pour découvrir la révocation.
+    notify_sessions_revoked(current_user.id, [session_id])
     return {"message": "Session révoquée avec succès."}

@@ -1,5 +1,20 @@
-# Render Blueprint for Tchuekam Agent Backend
-# Infrastructure as Code (IaC) definition
+# Render Blueprint — TchueKAM SaaS backend (Infrastructure as Code)
+#
+# This blueprint deploys tchuekam_backend (FastAPI, multi-tenant: auth, RBAC,
+# organizations, workspaces, teams, invitations, API keys, files, audit).
+#
+# It previously declared `runtime: node` with `npm run start:prod`, which runs
+# server.js — a placeholder that serves /healthz, /api/v1/status and a
+# "gateway:ready" WebSocket, and 404s every real API route. Nothing in the
+# blueprint started the Python API, so a deploy from it came up "healthy" with
+# no API behind it. The health check pointed at /healthz, which the FastAPI app
+# does not define, and the env var names (DATABASE_URL, JWT_SECRET,
+# CORS_ORIGIN) are not the ones the backend reads.
+#
+# Sizing: see docs/CAPACITY.md. The DB connection budget is
+#   (TCHUEKAM_DB_POOL_SIZE + TCHUEKAM_DB_MAX_OVERFLOW) x WEB_CONCURRENCY x instances
+# and must stay under the Postgres plan's max_connections.
+
 databases:
   - name: tchuekam-agent-db
     databaseName: tchuekam_agent_prod
@@ -9,32 +24,78 @@ databases:
     postgresMajorVersion: "16"
 
 services:
-  - type: web
-    name: tchuekam-agent-api
-    runtime: node
+  # Shared state across workers and instances: rate-limit quotas, JWT
+  # revocation, the RBAC cache and WebSocket fan-out. Without it each worker
+  # enforces its own quota (effective limit multiplied by worker count) and a
+  # WebSocket event only reaches sockets held by the publishing worker.
+  - type: keyvalue
+    name: tchuekam-agent-redis
     plan: starter
     region: frankfurt
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  - type: web
+    name: tchuekam-agent-api
+    runtime: python
+    plan: standard
+    region: frankfurt
     branch: main
-    buildCommand: npm ci && npm run build
-    startCommand: npm run start:prod
-    healthCheckPath: /healthz
+    buildCommand: pip install -r requirements-backend.txt
+    # Migrations run in preDeploy, not at app startup: N workers booting
+    # concurrently would race on CREATE TABLE, and a failed migration must
+    # abort the deploy rather than leave workers crash-looping.
+    preDeployCommand: alembic upgrade head
+    startCommand: gunicorn -c gunicorn.conf.py tchuekam_backend.main:app
+    healthCheckPath: /readyz
     autoDeploy: true
     scaling:
-      minInstances: 1
-      maxInstances: 1
-    maxShutdownDelaySeconds: 30
+      minInstances: 2
+      maxInstances: 4
+    # Must exceed gunicorn's graceful_timeout (25s) so in-flight requests
+    # finish before the container is killed.
+    maxShutdownDelaySeconds: 40
     envVars:
-      - key: NODE_ENV
+      - key: ENVIRONMENT
         value: production
-      - key: PORT
-        value: "10000"
-      - key: DATABASE_URL
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: TCHUEKAM_DATABASE_URL
         fromDatabase:
           name: tchuekam-agent-db
           property: connectionString
-      - key: JWT_SECRET
+      - key: REDIS_URL
+        fromService:
+          name: tchuekam-agent-redis
+          type: keyvalue
+          property: connectionString
+      - key: TCHUEKAM_JWT_SECRET_KEY
         generateValue: true
-      - key: API_PREFIX
-        value: /api/v1
-      - key: CORS_ORIGIN
-        value: "https://tchuekam.com,https://app.tchuekam.com,tchuekam://*"
+      - key: ALLOWED_ORIGINS
+        value: "https://tchuekam.com,https://app.tchuekam.com"
+      - key: FRONTEND_URL
+        value: https://tchuekam.com
+      - key: BACKEND_URL
+        value: https://api.tchuekam.com
+      # Worker and pool sizing. 4 x (10 + 10) = 80 connections per instance;
+      # with minInstances 2 that is 160, which exceeds the starter Postgres
+      # plan's max_connections. Raise the database plan before scaling out, or
+      # lower these two values. docs/CAPACITY.md has the table.
+      - key: WEB_CONCURRENCY
+        value: "4"
+      - key: TCHUEKAM_DB_POOL_SIZE
+        value: "10"
+      - key: TCHUEKAM_DB_MAX_OVERFLOW
+        value: "10"
+      # Render terminates TLS and forwards one hop, so the client address is
+      # the last X-Forwarded-For entry.
+      - key: TCHUEKAM_TRUSTED_PROXY_COUNT
+        value: "1"
+      - key: TCHUEKAM_RATE_LIMIT_ENABLED
+        value: "1"
+      - key: RATE_LIMIT_GLOBAL_PER_MINUTE
+        value: "120"
+      # Interactive API docs stay off in production: they advertise every
+      # route and schema to unauthenticated callers. Set to 1 to expose them.
+      - key: ENABLE_API_DOCS
+        value: "0"

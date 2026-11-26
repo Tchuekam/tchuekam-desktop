@@ -1,10 +1,29 @@
 fastapi>=0.104.0,<0.135
 uvicorn[standard]>=0.24.0,<0.42
+# Serveur de production : gunicorn supervise N workers UvicornWorker, gère le
+# rechargement sans coupure et le drainage à l'arrêt. `uvicorn` seul ne sert
+# qu'un processus, donc un seul cœur.
+gunicorn>=22.0.0,<24
 pydantic>=2.10.0,<3.0.0
 pydantic-settings>=2.0.0,<3.0.0
 email-validator>=2.0.0,<3.0.0
 sqlalchemy>=2.0.0,<3.0.0
+# Migrations de schéma. `Base.metadata.create_all` ne sait pas faire évoluer
+# une base déjà peuplée, et N workers qui l'exécutent au démarrage se
+# marchent dessus.
+alembic>=1.13.0,<2
+# Pilote PostgreSQL. psycopg (v3) est le pilote maintenu et celui que
+# SQLAlchemy 2.1 choisit par défaut pour `postgresql://` ; psycopg2-binary
+# reste listé pour les images qui l'ont déjà figé (core/database.py nomme le
+# pilote explicitement, donc les deux fonctionnent).
+psycopg[binary]>=3.2.0,<4
 psycopg2-binary>=2.9.9,<3.0.0
+# État partagé entre workers : quotas de débit, révocation de jetons, cache
+# RBAC, diffusion WebSocket. Sans lui chaque worker applique ses propres
+# quotas et ne voit que ses propres sockets.
+redis>=5.0.0,<7
+# Export des métriques Prometheus sur /metrics.
+prometheus-client>=0.20.0,<1
 pyjwt[crypto]>=2.9.0,<3.0.0
 bcrypt>=4.0.0,<5.0.0
 argon2-cffi>=23.1.0,<24.0.0

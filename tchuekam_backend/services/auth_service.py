@@ -20,6 +20,7 @@ from tchuekam_backend.core.security import (
     verify_password,
 )
 from tchuekam_backend.core.audit_logger import log_security_event
+from tchuekam_backend.core.realtime import notify_sessions_revoked
 from tchuekam_backend.repositories.user_repository import UserRepository
 from tchuekam_backend.repositories.session_repository import SessionRepository
 from tchuekam_backend.repositories.rbac_repository import RbacRepository
@@ -222,6 +223,8 @@ class AuthService:
         revoked = self.session_repo.revoke_session(session_id)
         if revoked:
             self.audit_repo.log("USER_LOGOUT_SESSION", user_id=user_id, resource=session_id)
+            if user_id:
+                notify_sessions_revoked(user_id, [session_id])
         return revoked
 
     def logout_all(self, user_id: str, jti: Optional[str] = None) -> int:
@@ -230,4 +233,6 @@ class AuthService:
             revoke_jti(jti)
         count = self.session_repo.revoke_all_user_sessions(user_id)
         self.audit_repo.log("USER_LOGOUT_ALL_DEVICES", user_id=user_id, details={"count": count})
+        if count:
+            notify_sessions_revoked(user_id)
         return count

@@ -127,3 +127,6 @@ apps/desktop/src/app/image-studio/open-generative-ai/static/
 apps/desktop/src/app/image-studio/open-generative-ai/*-manifest.json
 apps/desktop/src/app/image-studio/open-generative-ai/trace
 
+
+# Produced by scripts/check_production_boot.py
+gunicorn-boot-check.log

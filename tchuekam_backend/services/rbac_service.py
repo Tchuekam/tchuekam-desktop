@@ -5,6 +5,8 @@ Service de contrôle d'accès basé sur les rôles et permissions dynamiques (RB
 from typing import Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
+from tchuekam_backend.core import rbac_cache
+from tchuekam_backend.core.cache import cache_service
 from tchuekam_backend.domain.models import Role, Permission
 from tchuekam_backend.repositories.rbac_repository import RbacRepository
 from tchuekam_backend.repositories.user_repository import UserRepository
@@ -57,21 +59,49 @@ class RbacService:
             p_ids = [created_perms[pname].id for pname in perm_names if pname in created_perms]
             self.rbac_repo.assign_permissions_to_role(role.id, p_ids)
 
+    @staticmethod
+    def _permission_token(module: str, resource: str, action: str) -> str:
+        """Forme canonique d'une permission, pour une comparaison en O(1)."""
+        return f"{module.lower()}:{resource.lower()}:{action.upper()}"
+
+    def _load_user_authz(self, user_id: str) -> dict:
+        """Lit en base les rôles et permissions d'un utilisateur.
+
+        Deux requêtes, dont une jointure sur trois tables : c'est précisément
+        ce que le cache évite de refaire à chaque requête HTTP.
+        """
+        return {
+            "roles": [r.name for r in self.user_repo.get_user_roles(user_id)],
+            "perms": sorted(
+                {
+                    self._permission_token(p.module, p.resource, p.action)
+                    for p in self.rbac_repo.get_user_permissions(user_id)
+                }
+            ),
+        }
+
+    def get_user_authz(self, user_id: str) -> dict:
+        """Rôles et permissions d'un utilisateur, en passant par le cache."""
+        if not rbac_cache.is_enabled():
+            return self._load_user_authz(user_id)
+
+        key = rbac_cache.user_key(str(user_id))
+        cached = cache_service.get(key)
+        if isinstance(cached, dict) and "roles" in cached and "perms" in cached:
+            return cached
+
+        authz = self._load_user_authz(user_id)
+        cache_service.set(key, authz, ttl_seconds=rbac_cache.cache_ttl_seconds())
+        return authz
+
     def has_permission(self, user_id: str, module: str, resource: str, action: str) -> bool:
         """Évalue si un utilisateur possède la permission requise."""
-        user_roles = [r.name for r in self.user_repo.get_user_roles(user_id)]
-        if "Super Admin" in user_roles:
+        authz = self.get_user_authz(user_id)
+
+        if "Super Admin" in authz.get("roles", ()):
             return True
 
-        user_perms = self.rbac_repo.get_user_permissions(user_id)
-        for perm in user_perms:
-            if (
-                perm.module.lower() == module.lower()
-                and perm.resource.lower() == resource.lower()
-                and perm.action.upper() == action.upper()
-            ):
-                return True
-        return False
+        return self._permission_token(module, resource, action) in set(authz.get("perms", ()))
 
     def create_role(self, name: str, description: Optional[str] = None, permission_ids: List[str] = None) -> Role:
         role = self.rbac_repo.create_role(name, description, is_system_role=False)

@@ -6,25 +6,33 @@ génération de jetons sécurisés et liste noire de révocations.
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Set, Tuple
 
 import jwt
+from tchuekam_backend.core import redis_client
 from tchuekam_backend.core.config import settings
 
-# Liste noire de révocation en mémoire, pour invalidation immédiate d'un JWT.
+logger = logging.getLogger("tchuekam_backend.security")
+
+# Liste noire de révocation, pour invalidation immédiate d'un JWT.
 #
-# Limite connue : elle est locale au processus. Elle est vidée à chaque
-# redémarrage et n'est pas partagée entre workers uvicorn, elle ne peut donc
-# pas constituer l'unique mécanisme de révocation. La révocation durable
-# s'appuie sur ``UserSession.is_revoked`` et sur la comparaison du
-# ``refresh_token_hash`` persisté (voir ``AuthService.refresh_access_token``) ;
-# cette liste ne fait qu'accélérer le rejet au sein du processus courant.
+# Elle est portée par Redis dès qu'il est configuré, donc partagée par tous
+# les workers et toutes les instances : un jeton révoqué sur un worker est
+# rejeté par tous. Sans Redis, le repli est le dictionnaire local ci-dessous,
+# qui ne protège qu'un déploiement mono-worker.
+#
+# Dans les deux cas cette liste n'est qu'un accélérateur : la révocation
+# durable s'appuie sur ``UserSession.is_revoked`` et sur la comparaison du
+# ``refresh_token_hash`` persisté (voir ``AuthService.refresh_access_token``),
+# vérifiés en base à chaque requête authentifiée.
 #
 # JTI -> horodatage d'expiration (epoch). Les entrées périmées sont purgées
 # pour éviter une croissance non bornée.
@@ -32,45 +40,156 @@ _REVOKED_JTI_BLACKLIST: Dict[str, float] = {}
 _REVOCATION_LOCK = threading.Lock()
 _REVOCATION_SWEEP_THRESHOLD = 10_000
 
+
+def _jti_redis_key(jti: str) -> str:
+    return redis_client.namespaced("jti", jti)
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+#: Paramètres Argon2id. Les valeurs par défaut sont celles d'``argon2-cffi``
+#: (time_cost=3, memory_cost=64 MiB, parallelism=4), conformes à la RFC 9106.
+#:
+#: Elles sont rendues configurables parce qu'elles ne concernent pas seulement
+#: la robustesse du hachage : 64 MiB sont alloués *par vérification en cours*.
+#: Quarante connexions simultanées réservent donc 2,5 Gio, et un service qui ne
+#: borne pas cette concurrence se fait évincer par l'OOM killer sur une simple
+#: rafale de connexions. On préfère borner la concurrence (voir
+#: ``_HASHING_SLOTS``) plutôt qu'affaiblir le hachage, mais un exploitant qui
+#: connaît sa cible doit pouvoir arbitrer.
+_ARGON2_TIME_COST = _int_env("TCHUEKAM_ARGON2_TIME_COST", 3)
+_ARGON2_MEMORY_COST_KIB = _int_env("TCHUEKAM_ARGON2_MEMORY_KIB", 65536)
+_ARGON2_PARALLELISM = _int_env("TCHUEKAM_ARGON2_PARALLELISM", 4)
+
 # Try importing argon2 or bcrypt for primary enterprise hashing
 try:
     from argon2 import PasswordHasher
-    _ARGON2_HASHER = PasswordHasher()
+
+    _ARGON2_HASHER = PasswordHasher(
+        time_cost=_ARGON2_TIME_COST,
+        memory_cost=_ARGON2_MEMORY_COST_KIB,
+        parallelism=_ARGON2_PARALLELISM,
+    )
 except ImportError:
     _ARGON2_HASHER = None
 
 
-def hash_password(password: str) -> str:
-    """Hache un mot de passe de manière sécurisée (Argon2id si disponible, ou PBKDF2-HMAC-SHA256)."""
-    if _ARGON2_HASHER:
-        try:
-            return f"argon2id${_ARGON2_HASHER.hash(password)}"
-        except Exception:
-            pass
+def _default_hashing_slots() -> int:
+    """Nombre de hachages de mot de passe autorisés en parallèle.
 
-    salt = os.urandom(16)
-    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 120_000)
-    return f"pbkdf2_sha256$120000${base64.b64encode(salt).decode('ascii')}${base64.b64encode(key).decode('ascii')}"
+    Mesuré sur ce backend : le chemin de connexion plafonne à 17,8 req/s avec
+    un p50 de 2,1 s à 40 connexions simultanées, pendant que le reste de l'API
+    est privé de processeur. C'est le comportement attendu d'une fonction
+    délibérément coûteuse — mais sans borne, une rafale de connexions (après un
+    déploiement, ou une attaque par bourrage d'identifiants répartie sur de
+    nombreuses adresses) consomme tout le processeur et toute la mémoire.
+
+    Les protections existantes ne couvrent pas ce cas : le limiteur
+    anti-force-brute est indexé *par e-mail* (5 tentatives / 5 min), et le
+    quota global est *par adresse IP*. Ni l'un ni l'autre ne borne la
+    concurrence agrégée.
+
+    La valeur par défaut suit le nombre de cœurs, puisque le hachage est
+    borné par le processeur : au-delà, les hachages supplémentaires ne font
+    que se disputer les mêmes cœurs tout en réservant chacun leur mémoire.
+    """
+    explicit = _int_env("TCHUEKAM_PASSWORD_HASH_CONCURRENCY", 0)
+    if explicit:
+        return explicit
+    return max(2, min(os.cpu_count() or 2, 8))
+
+
+#: Les endpoints synchrones de FastAPI tournent dans un pool de threads, donc
+#: un sémaphore de threads est le bon outil (et non un sémaphore asyncio).
+_HASHING_SLOTS = threading.BoundedSemaphore(_default_hashing_slots())
+
+#: Attente maximale d'un créneau de hachage. Au-delà, mieux vaut refuser que
+#: faire patienter un client qui a déjà abandonné.
+_HASHING_WAIT_SECONDS = float(os.getenv("TCHUEKAM_PASSWORD_HASH_WAIT_SECONDS", "") or 5.0)
+
+
+class PasswordHashingBusy(RuntimeError):
+    """Aucun créneau de hachage disponible dans le délai imparti.
+
+    L'appelant doit répondre 503 : le service est saturé, l'identifiant fourni
+    n'est pas en cause et le client peut réessayer.
+    """
+
+
+@contextmanager
+def _hashing_slot():
+    acquired = _HASHING_SLOTS.acquire(timeout=_HASHING_WAIT_SECONDS)
+    if not acquired:
+        raise PasswordHashingBusy(
+            "Trop de vérifications de mot de passe simultanées."
+        )
+    try:
+        yield
+    finally:
+        _HASHING_SLOTS.release()
+
+
+def hashing_capacity() -> dict:
+    """État du limiteur de hachage (observabilité et tests)."""
+    return {
+        "slots": _default_hashing_slots(),
+        "argon2_memory_kib": _ARGON2_MEMORY_COST_KIB,
+        "argon2_time_cost": _ARGON2_TIME_COST,
+        "max_resident_kib": _default_hashing_slots() * _ARGON2_MEMORY_COST_KIB,
+    }
+
+
+def hash_password(password: str) -> str:
+    """Hache un mot de passe de manière sécurisée (Argon2id si disponible, ou PBKDF2-HMAC-SHA256).
+
+    Raises:
+        PasswordHashingBusy: si aucun créneau n'est libre dans le délai imparti.
+    """
+    with _hashing_slot():
+        if _ARGON2_HASHER:
+            try:
+                return f"argon2id${_ARGON2_HASHER.hash(password)}"
+            except Exception:
+                pass
+
+        salt = os.urandom(16)
+        key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 120_000)
+        return f"pbkdf2_sha256$120000${base64.b64encode(salt).decode('ascii')}${base64.b64encode(key).decode('ascii')}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Vérifie qu'un mot de passe en clair correspond au hash enregistré (Argon2id ou PBKDF2)."""
-    try:
-        if hashed_password.startswith("argon2id$"):
-            if _ARGON2_HASHER:
-                raw_hash = hashed_password[len("argon2id$"):]
-                return _ARGON2_HASHER.verify(raw_hash, plain_password)
+    """Vérifie qu'un mot de passe en clair correspond au hash enregistré (Argon2id ou PBKDF2).
 
-        parts = hashed_password.split('$')
-        if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
+    Raises:
+        PasswordHashingBusy: si aucun créneau n'est libre dans le délai imparti.
+            Volontairement propagé et non transformé en ``False`` : renvoyer
+            « mot de passe invalide » parce que le serveur est chargé
+            verrouillerait des comptes légitimes et enverrait l'utilisateur
+            réinitialiser un mot de passe correct.
+    """
+    with _hashing_slot():
+        try:
+            if hashed_password.startswith("argon2id$"):
+                if _ARGON2_HASHER:
+                    raw_hash = hashed_password[len("argon2id$"):]
+                    return _ARGON2_HASHER.verify(raw_hash, plain_password)
+
+            parts = hashed_password.split('$')
+            if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
+                return False
+            iterations = int(parts[1])
+            salt = base64.b64decode(parts[2].encode('ascii'))
+            expected_key = base64.b64decode(parts[3].encode('ascii'))
+            computed_key = hashlib.pbkdf2_hmac('sha256', plain_password.encode('utf-8'), salt, iterations)
+            return hmac.compare_digest(computed_key, expected_key)
+        except Exception:
             return False
-        iterations = int(parts[1])
-        salt = base64.b64decode(parts[2].encode('ascii'))
-        expected_key = base64.b64decode(parts[3].encode('ascii'))
-        computed_key = hashlib.pbkdf2_hmac('sha256', plain_password.encode('utf-8'), salt, iterations)
-        return hmac.compare_digest(computed_key, expected_key)
-    except Exception:
-        return False
 
 
 #: Hash de leurre calculé paresseusement, utilisé pour égaliser le temps de
@@ -183,19 +302,7 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
     return payload
 
 
-def revoke_jti(jti: str, expires_at: Optional[float] = None) -> None:
-    """Ajoute un ID unique de jeton (JTI) à la liste noire de révocation.
-
-    Chaque entrée porte une date d'expiration : au-delà, le jeton est de toute
-    façon rejeté par la vérification de signature, et le conserver ne ferait
-    que faire croître l'ensemble sans limite (fuite mémoire alimentée par le
-    trafic). À défaut de date connue, on retient l'entrée le temps de vie
-    maximal d'un refresh token.
-    """
-    if not jti:
-        return
-    if expires_at is None:
-        expires_at = time.time() + settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
+def _revoke_jti_in_memory(jti: str, expires_at: float) -> None:
     with _REVOCATION_LOCK:
         _REVOKED_JTI_BLACKLIST[jti] = expires_at
         now = time.time()
@@ -204,15 +311,115 @@ def revoke_jti(jti: str, expires_at: Optional[float] = None) -> None:
                 del _REVOKED_JTI_BLACKLIST[stale]
 
 
+def revoke_jti(jti: str, expires_at: Optional[float] = None) -> None:
+    """Ajoute un ID unique de jeton (JTI) à la liste noire de révocation.
+
+    Chaque entrée porte une date d'expiration : au-delà, le jeton est de toute
+    façon rejeté par la vérification de signature, et le conserver ne ferait
+    que faire croître l'ensemble sans limite (fuite mémoire alimentée par le
+    trafic). À défaut de date connue, on retient l'entrée le temps de vie
+    maximal d'un refresh token.
+
+    Avec Redis configuré, l'entrée est écrite dans Redis *et* en mémoire. La
+    copie locale coûte un pointeur et garantit que la révocation tient sur ce
+    worker même si Redis tombe juste après l'écriture.
+    """
+    if not jti:
+        return
+    if expires_at is None:
+        expires_at = time.time() + settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
+
+    remaining = expires_at - time.time()
+    if remaining <= 0:
+        # Jeton déjà expiré : la vérification de signature le rejette de toute
+        # façon, donc l'inscrire en liste noire n'apporte rien. Et il ne faut
+        # surtout pas l'y inscrire « au moins une seconde » pour satisfaire le
+        # TTL minimum de Redis : ``is_jti_revoked`` le rapporterait alors comme
+        # révoqué pendant cette seconde, c'est-à-dire répondrait « révoqué »
+        # pour un jeton simplement périmé.
+        return
+
+    if redis_client.is_configured():
+        client = redis_client.get_sync_client()
+        if client is not None:
+            # Redis expire l'entrée tout seul : pas de purge à faire, et
+            # aucune croissance non bornée même sous un trafic de révocations.
+            try:
+                client.set(_jti_redis_key(jti), "1", ex=max(1, int(remaining)))
+            except Exception as exc:
+                redis_client.report_failure(exc)
+
+    _revoke_jti_in_memory(jti, expires_at)
+
+
+def reset_revocation_state(*jtis: str) -> None:
+    """Efface la liste noire de révocation, en mémoire *et* dans Redis.
+
+    Vider ``_REVOKED_JTI_BLACKLIST`` ne suffit plus : depuis que la liste est
+    portée par Redis, la copie partagée survit à l'effacement local. Un test
+    qui veut exercer la détection de rejeu *durable* — la comparaison du hash
+    de refresh token persisté, qui est le mécanisme de défense réel — doit donc
+    effacer les deux, sinon ``decode_jwt_token`` court-circuite sur la
+    révocation partagée et le code n'atteint jamais cette comparaison.
+
+    Sans argument, efface tout. Avec des JTI, n'efface que ceux-là.
+    """
+    with _REVOCATION_LOCK:
+        if jtis:
+            for jti in jtis:
+                _REVOKED_JTI_BLACKLIST.pop(jti, None)
+        else:
+            _REVOKED_JTI_BLACKLIST.clear()
+
+    if not redis_client.is_configured():
+        return
+    client = redis_client.get_sync_client()
+    if client is None:
+        return
+    try:
+        if jtis:
+            client.delete(*[_jti_redis_key(jti) for jti in jtis])
+            return
+        pattern = redis_client.namespaced("jti", "*")
+        cursor = 0
+        while True:
+            cursor, keys = client.scan(cursor=cursor, match=pattern, count=500)
+            if keys:
+                client.delete(*keys)
+            if cursor == 0:
+                break
+    except Exception as exc:
+        redis_client.report_failure(exc)
+
+
 def is_jti_revoked(jti: str) -> bool:
-    """Vérifie si un JTI est dans la liste noire et toujours pertinent."""
+    """Vérifie si un JTI est dans la liste noire et toujours pertinent.
+
+    La copie locale est consultée d'abord : c'est une recherche en dictionnaire
+    et elle évite un aller-retour réseau pour les jetons révoqués par ce
+    worker. Redis est ensuite interrogé pour les révocations prononcées
+    ailleurs.
+    """
     if not jti:
         return False
+
     with _REVOCATION_LOCK:
         expires_at = _REVOKED_JTI_BLACKLIST.get(jti)
-        if expires_at is None:
-            return False
-        if expires_at <= time.time():
+        if expires_at is not None:
+            if expires_at > time.time():
+                return True
             del _REVOKED_JTI_BLACKLIST[jti]
-            return False
-        return True
+
+    if redis_client.is_configured():
+        client = redis_client.get_sync_client()
+        if client is not None:
+            try:
+                return bool(client.exists(_jti_redis_key(jti)))
+            except Exception as exc:
+                # Panne Redis : on retombe sur le résultat local (déjà calculé
+                # ci-dessus, donc « non révoqué »). La vérification en base de
+                # ``UserSession.is_revoked``, faite à chaque requête
+                # authentifiée, reste le filet de sécurité durable.
+                redis_client.report_failure(exc)
+
+    return False

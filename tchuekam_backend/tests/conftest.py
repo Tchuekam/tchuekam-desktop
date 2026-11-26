@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tchuekam_backend.core import database
 from tchuekam_backend.core.database import Base, get_db
 from tchuekam_backend.main import app
 
@@ -29,6 +30,12 @@ def override_get_db():
 
 
 app.dependency_overrides[get_db] = override_get_db
+
+# Les chemins qui ne peuvent pas passer par la dépendance ``get_db`` — le canal
+# WebSocket, qui doit relâcher sa connexion SQL avant d'entrer dans sa boucle
+# de réception — ouvrent leur session via ``database.new_session()``. Sans ce
+# remplacement, ils toucheraient la vraie base au lieu de celle des tests.
+database.SessionLocal = TestingSessionLocal
 
 
 @pytest.fixture(autouse=True)

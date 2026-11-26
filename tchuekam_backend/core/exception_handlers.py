@@ -10,20 +10,29 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tchuekam_backend.core.exceptions import AppException
+from tchuekam_backend.core.request_context import get_request_id
+from tchuekam_backend.core.security import PasswordHashingBusy
 
 logger = logging.getLogger("tchuekam_backend.exceptions")
 
 
 def format_error_response(code: str, message: str, details: Any = None) -> Dict[str, Any]:
-    """Builds a standardized error envelope dictionary."""
-    return {
-        "success": False,
-        "error": {
-            "code": code,
-            "message": message,
-            "details": details if details is not None else [],
-        },
+    """Builds a standardized error envelope dictionary.
+
+    The current request id is included when there is one. A 500 tells the
+    caller nothing actionable on its own; with the id, a support request can
+    be matched to the exact server-side log line and stack trace, which is the
+    difference between diagnosing one report and guessing.
+    """
+    error: Dict[str, Any] = {
+        "code": code,
+        "message": message,
+        "details": details if details is not None else [],
     }
+    request_id = get_request_id()
+    if request_id:
+        error["request_id"] = request_id
+    return {"success": False, "error": error}
 
 
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
@@ -79,6 +88,35 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             code="VALIDATION_ERROR",
             message="Erreur de validation de la requête.",
             details=formatted_details,
+        ),
+    )
+
+
+async def password_hashing_busy_handler(
+    request: Request, exc: PasswordHashingBusy
+) -> JSONResponse:
+    """Handler for password-hashing saturation.
+
+    503 and not 500: nothing failed and nothing is broken — the bounded pool
+    of Argon2 slots was full (see core/security.py). A 500 would send the
+    caller to support and would read as an outage in error dashboards; a 503
+    with Retry-After tells them, correctly, to try again shortly.
+    """
+    logger.warning(
+        "Password hashing saturated on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        headers={"Retry-After": "2"},
+        content=format_error_response(
+            code="SERVICE_OVERLOADED",
+            message=(
+                "Service d'authentification momentanément saturé. "
+                "Veuillez réessayer dans quelques instants."
+            ),
         ),
     )
 

@@ -5,8 +5,8 @@
     "dockerfilePath": "Dockerfile.backend"
   },
   "deploy": {
-    "startCommand": "python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --insecure --skip-build --no-open",
-    "healthcheckPath": "/health",
+    "startCommand": "python scripts/db_migrate.py && gunicorn -c gunicorn.conf.py tchuekam_backend.main:app",
+    "healthcheckPath": "/readyz",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10

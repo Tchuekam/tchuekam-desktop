@@ -47,9 +47,16 @@ def test_rotated_refresh_token_rejected_after_process_restart():
     rotated = _refresh(first)
     assert rotated.status_code == 200, rotated.text
 
-    # Simule un redémarrage du processus / un second worker uvicorn :
-    # la liste noire de JTI en mémoire est vide.
-    security_module._REVOKED_JTI_BLACKLIST.clear()
+    # Simule un redémarrage du processus / un second worker uvicorn : plus
+    # aucune trace de la révocation.
+    #
+    # On efface mémoire *et* Redis, et non le seul dictionnaire local. Avec
+    # Redis configuré, la révocation partagée survivrait au vidage local et le
+    # rejeu serait rejeté par la liste noire — ce qui est le bon comportement,
+    # mais rendrait ce test aveugle à ce qu'il protège : le rejet *durable* par
+    # comparaison du hash de refresh token persisté, seul mécanisme encore
+    # debout sur un déploiement sans Redis.
+    security_module.reset_revocation_state()
 
     replayed = _refresh(first)
     assert replayed.status_code != 200, (
@@ -66,11 +73,18 @@ def test_refresh_token_reuse_revokes_the_whole_session():
     assert rotated.status_code == 200
     current = _refresh_token_of(rotated)
 
-    security_module._REVOKED_JTI_BLACKLIST.clear()
+    # On efface toute la liste noire de révocation — mémoire *et* Redis. C'est
+    # ce qui force l'exécution jusqu'à la détection de rejeu *durable* (la
+    # comparaison du hash de refresh token persisté). Sans cela,
+    # ``decode_jwt_token`` rejette le jeton sur la seule liste noire et le code
+    # n'atteint jamais cette comparaison : le test passerait sans rien vérifier
+    # du mécanisme qu'il nomme. Vider le dictionnaire local ne suffit plus
+    # depuis que la liste est partagée via Redis.
+    security_module.reset_revocation_state()
     assert _refresh(first).status_code != 200
 
     # Le jeton légitime en cours doit lui aussi être invalidé après détection.
-    security_module._REVOKED_JTI_BLACKLIST.clear()
+    security_module.reset_revocation_state()
     assert _refresh(current).status_code != 200, (
         "La session n'a pas ete revoquee apres detection de rejeu"
     )

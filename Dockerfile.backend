@@ -1,10 +1,17 @@
-FROM node:22-bookworm-slim AS node_runtime
+# TchueKAM SaaS API (tchuekam_backend, FastAPI) — production image.
+#
+# Serves the multi-tenant API under gunicorn with N UvicornWorkers. The image
+# previously defaulted to `hermes_cli.main dashboard`, the single-operator
+# desktop dashboard, which spawns a PTY-backed TUI child per session and never
+# served the API. Worker and connection-pool sizing: gunicorn.conf.py and
+# docs/CAPACITY.md.
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install minimal system dependencies (Node 22 copied from node_runtime avoids 400+ Debian npm packages)
+# curl is kept for the HEALTHCHECK below; the rest are needed by psycopg's
+# binary wheel and by git-based dependency resolution.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -12,42 +19,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=node_runtime /usr/local/bin/node /usr/local/bin/node
-COPY --from=node_runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
-
-# Copy requirements and install
+# Dependencies are copied and installed before the application code so that a
+# code change does not invalidate the (slow) dependency layer.
 COPY requirements-backend.txt ./
 RUN pip install --no-cache-dir -r requirements-backend.txt
 
-# Copy application code, agent/gateway modules, and prebuilt apps/desktop/dist-web
 COPY . .
 
-# Install the package so hermes CLI and entrypoints are available
-RUN pip install --no-cache-dir -e .
-
-# Create non-root runtime user
+# Create non-root runtime user.
+#
+# /app/metrics holds the Prometheus multiprocess files that every worker
+# writes to, so it must be writable by the runtime user — without it
+# /metrics would report a single worker's numbers (see core/metrics.py).
 RUN useradd --create-home --shell /bin/sh appuser \
-    && mkdir -p /app/data \
-    && chown -R appuser:appuser /app/data
+    && mkdir -p /app/data /app/metrics \
+    && chown -R appuser:appuser /app/data /app/metrics
 
-# Environment defaults
-ENV PYTHONUNBUFFERED=1
-ENV ENVIRONMENT=production
-ENV PORT=8000
-ENV HERMES_DASHBOARD_TUI=1
-ENV HERMES_HOME=/app/data
-ENV HERMES_WEB_DIST=/app/apps/desktop/dist-web
-ENV HERMES_SKIP_NODE_BOOTSTRAP=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ENVIRONMENT=production \
+    PORT=8000 \
+    PROMETHEUS_MULTIPROC_DIR=/app/metrics
 
 USER appuser
 
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+# Probes the readiness endpoint, not /health: /readyz also fails when the
+# database is unreachable or the instance is draining, which is exactly when
+# traffic should stop being routed here. start-period covers migrations plus
+# worker boot.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS http://localhost:${PORT:-8000}/readyz || exit 1
 
-# Start command (opt-in --insecure via HERMES_DASHBOARD_INSECURE=1)
-CMD ["sh", "-c", "INSECURE=''; case \"${HERMES_DASHBOARD_INSECURE:-}\" in 1|true|TRUE|yes|YES) INSECURE='--insecure' ;; esac; exec python -m hermes_cli.main dashboard --host 0.0.0.0 --port ${PORT:-8000} --skip-build --no-open $INSECURE"]
+# Migrations run before the server starts. scripts/db_migrate.py takes a
+# Postgres advisory lock, so several instances starting at once serialise:
+# one migrates, the others wait and boot on the migrated schema. A failed
+# migration exits non-zero and the container never serves a wrong schema.
+CMD ["sh", "-c", "python scripts/db_migrate.py && exec gunicorn -c gunicorn.conf.py tchuekam_backend.main:app"]
