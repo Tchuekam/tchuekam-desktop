@@ -156,7 +156,7 @@ jobs:
           python-version: '3.11'
 
       - name: Download every platform's artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist-artifacts
           pattern: installers-*
