@@ -542,6 +542,106 @@ def test_websocket_auth_does_not_hold_a_database_session():
 
 
 # ---------------------------------------------------------------------------
+# Audit log pagination
+# ---------------------------------------------------------------------------
+
+
+def test_audit_offset_is_capped():
+    """Deep OFFSET pagination must be refused, not served slowly.
+
+    OFFSET n makes the engine read and discard n rows, so cost grows with the
+    offset. Measured on audit_logs: 0.1 ms at offset 0, 18.7 ms at offset
+    40 000 — about 0.45 ms per thousand rows skipped. audit_logs only grows,
+    so at a few million rows one deep request occupies a pool connection for
+    seconds, and a handful of them exhausts a pool of a few dozen.
+    """
+    from tchuekam_backend.api.v1.audit import MAX_AUDIT_OFFSET
+
+    # Asserted against the published contract rather than by calling the route
+    # unauthenticated: FastAPI resolves the auth dependency before validating
+    # query parameters, so an unauthenticated call returns 401 whatever the
+    # cap is — the assertion would hold with no cap at all and prove nothing.
+    schema = client.get("/api/v1/openapi.json").json()
+    params = schema["paths"]["/api/v1/audit/logs"]["get"]["parameters"]
+    offset_param = next(p for p in params if p["name"] == "offset")
+    assert offset_param["schema"]["maximum"] == MAX_AUDIT_OFFSET
+    assert MAX_AUDIT_OFFSET <= 100_000, (
+        "the cap must stay low enough that one request cannot hold a pool "
+        "connection for seconds"
+    )
+
+
+def test_audit_cursor_pagination_walks_history_without_offset(db_session):
+    """`before` must page through history at constant cost.
+
+    This is the escape hatch the offset cap points callers at, so it has to
+    actually work: successive pages must not overlap and must move backwards
+    in time.
+    """
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+
+    from tchuekam_backend.domain.models import AuditLog
+    from tchuekam_backend.repositories.audit_repository import AuditRepository
+
+    base = datetime.now(timezone.utc)
+    for i in range(12):
+        db_session.add(
+            AuditLog(
+                action="PAGINATION_PROBE",
+                resource=f"r-{i}",
+                details_json=_json.dumps({}),
+                created_at=base - timedelta(minutes=i),
+            )
+        )
+    db_session.commit()
+
+    repo = AuditRepository(db_session)
+    first = repo.list_logs(limit=5)
+    assert len(first) == 5
+
+    cursor = first[-1].created_at
+    second = repo.list_logs(limit=5, before=cursor)
+
+    assert {row.id for row in first}.isdisjoint({row.id for row in second})
+    assert all(row.created_at < cursor for row in second)
+
+
+def test_audit_before_and_after_bound_the_window(db_session):
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+
+    from tchuekam_backend.domain.models import AuditLog
+    from tchuekam_backend.repositories.audit_repository import AuditRepository
+
+    base = datetime.now(timezone.utc)
+    for i in range(10):
+        db_session.add(
+            AuditLog(
+                action="WINDOW_PROBE",
+                details_json=_json.dumps({}),
+                created_at=base - timedelta(hours=i),
+            )
+        )
+    db_session.commit()
+
+    repo = AuditRepository(db_session)
+    lower, upper = base - timedelta(hours=5), base - timedelta(hours=1)
+    windowed = repo.list_logs(limit=100, after=lower, before=upper)
+    assert windowed, "the window should not be empty"
+
+    def as_utc(value):
+        # SQLite has no native timestamptz: DateTime(timezone=True) round-trips
+        # as a naive value there, while Postgres returns it tz-aware. The
+        # stored instant is UTC either way, so normalise before comparing
+        # rather than asserting something only one backend satisfies.
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    for row in windowed:
+        assert lower < as_utc(row.created_at) < upper
+
+
+# ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
 

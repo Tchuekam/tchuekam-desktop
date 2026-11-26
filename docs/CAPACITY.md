@@ -74,6 +74,15 @@ Per-request cost is ≈ **6.8 ms of CPU**. That is the number to scale with:
 carries 1000 users at this think time with headroom, and two instances give
 both headroom and failover.
 
+**Memory: 2 GB per instance** at 4 workers. Measured 132.6 MB resident per
+worker (531 MB for four) plus up to 256 MB reserved by concurrent Argon2
+hashing — about 790 MB peak. A 1 GB container leaves too little headroom once
+the OS and a traffic spike are counted. Full figures in `docs/BENCHMARKS.md`.
+
+**Useful operating range: ~50 concurrent in-flight requests per instance.**
+That is where throughput peaks (406 req/s); beyond it latency climbs and
+throughput slowly declines. Add instances rather than pushing one harder.
+
 ### Deliberate overload — 1000 users, no think time
 
 1000 requests permanently in flight against a service with 80 slots. Nobody
@@ -228,6 +237,7 @@ done
 | Symptom | Likely cause | Check |
 |---|---|---|
 | 500s with `QueuePool limit ... reached` | Thread pool wider than connection pool, or pool too small | `tchuekam_db_pool_connections{state="checked_out"}` at `pool_size+max_overflow` |
+| One endpoint slow and holding connections, others fine | Deep `OFFSET` pagination — cost grows with the offset | `docs/BENCHMARKS.md` §7; use `before=` cursor pagination |
 | 503 `SERVICE_OVERLOADED` | Admission control shedding — working as designed | `tchuekam_rate_limit_rejected_total{scope="admission_*"}`; add capacity |
 | 503 on `/auth/signin` only | Hashing slots saturated | §5; raise `TCHUEKAM_PASSWORD_HASH_CONCURRENCY` only if RAM allows |
 | 429 | Per-client quota | `RATE_LIMIT_GLOBAL_PER_MINUTE` |

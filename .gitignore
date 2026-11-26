@@ -130,3 +130,6 @@ apps/desktop/src/app/image-studio/open-generative-ai/trace
 
 # Produced by scripts/check_production_boot.py
 gunicorn-boot-check.log
+
+# Produced by scripts/benchmark.py
+benchmark-server.log

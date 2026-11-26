@@ -3,6 +3,7 @@ Dépôt de données pour la persistance des journaux d'audit de sécurité.
 """
 
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -37,10 +38,28 @@ class AuditRepository:
         self.db.refresh(audit)
         return audit
 
-    def list_logs(self, limit: int = 100, offset: int = 0) -> List[AuditLog]:
+    def list_logs(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        before: Optional[datetime] = None,
+        after: Optional[datetime] = None,
+    ) -> List[AuditLog]:
+        """Journaux d'audit, les plus récents d'abord.
+
+        ``before`` / ``after`` filtrent sur ``created_at``, qui est indexé :
+        la borne est donc résolue par l'index au lieu d'être atteinte en
+        lisant puis en jetant les lignes précédentes. C'est ce qui rend la
+        pagination par curseur insensible à la profondeur, là où ``offset``
+        coûte proportionnellement au décalage.
+        """
+        query = self.db.query(AuditLog)
+        if before is not None:
+            query = query.filter(AuditLog.created_at < before)
+        if after is not None:
+            query = query.filter(AuditLog.created_at > after)
         return (
-            self.db.query(AuditLog)
-            .order_by(AuditLog.created_at.desc())
+            query.order_by(AuditLog.created_at.desc())
             .offset(offset)
             .limit(limit)
             .all()
